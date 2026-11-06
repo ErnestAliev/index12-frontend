@@ -134,3 +134,157 @@ test("the first new message gets an unread badge, and revocation clears cached m
   assert.equal(EventSource.sources.at(-1).closed, true);
   s.stop();
 });
+
+test("outgoing messages appear immediately, send in order, and do not lock the composer or reload identity", async () => {
+  const s = fixture(),
+    posts = [];
+  let meReads = 0;
+  teamApi.defaults.adapter = (config) => {
+    if (config.url === "/me") {
+      meReads++;
+      return Promise.resolve({
+        status: 200,
+        data: {
+          workspaceId: "workspace",
+          actorId: "author",
+          displayName: "Author",
+          status: "active",
+        },
+      });
+    }
+    if (config.url === "/state")
+      return Promise.resolve({ status: 200, data: empty() });
+    return new Promise((resolve) =>
+      posts.push({
+        body: JSON.parse(config.data),
+        resolve: (data) => resolve({ status: 200, data }),
+      }),
+    );
+  };
+  await s.start("workspace");
+  const first = s.send("First"),
+    second = s.send("Second");
+  assert.equal(s.outbox.length, 2);
+  assert.equal(s.busy, false);
+  await tick();
+  assert.equal(posts.length, 1);
+  posts[0].resolve({
+    message: {
+      _id: first,
+      text: "First",
+      createdAt: "2026-11-06T06:00:00Z",
+      attachments: [],
+      version: 0,
+    },
+  });
+  await tick();
+  assert.equal(posts.length, 2);
+  assert.equal(posts[1].body.id, second);
+  assert.equal(s.outbox[0]._id, second);
+  posts[1].resolve({
+    message: {
+      _id: second,
+      text: "Second",
+      createdAt: "2026-11-06T06:00:01Z",
+      attachments: [],
+      version: 0,
+    },
+  });
+  await tick();
+  assert.equal(s.outbox.length, 0);
+  assert.deepEqual(
+    s.state.messages.map((m) => m._id),
+    [first, second],
+  );
+  assert.equal(meReads, 1);
+  s.stop();
+});
+test("a failed send retries the same ID and an earlier live confirmation wins over a late POST response", async () => {
+  const s = fixture(),
+    posts = [];
+  let messages = [];
+  teamApi.defaults.adapter = (config) => {
+    if (config.url === "/me")
+      return Promise.resolve({
+        status: 200,
+        data: {
+          workspaceId: "workspace",
+          actorId: "author",
+          displayName: "Author",
+          status: "active",
+        },
+      });
+    if (config.url === "/state")
+      return Promise.resolve({ status: 200, data: { ...empty(), messages } });
+    return new Promise((resolve, reject) =>
+      posts.push({
+        body: JSON.parse(config.data),
+        resolve: (data) => resolve({ status: 200, data }),
+        reject,
+      }),
+    );
+  };
+  await s.start("workspace");
+  const id = s.send("Retry");
+  await tick();
+  posts[0].reject(new Error("offline"));
+  await tick();
+  assert.equal(s.outbox[0]._delivery, "failed");
+  s.retryMessage(id);
+  s.retryMessage(id);
+  await tick();
+  assert.equal(posts.length, 2);
+  assert.equal(posts[1].body.id, id);
+  messages = [
+    {
+      _id: id,
+      text: "Retry",
+      createdAt: "2026-11-06T06:00:00Z",
+      version: 2,
+      approval: { state: "approved" },
+      attachments: [],
+    },
+  ];
+  await s.refresh();
+  assert.equal(s.outbox.length, 0);
+  posts[1].resolve({
+    message: { ...messages[0], version: 0, approval: undefined },
+  });
+  await tick();
+  assert.equal(s.state.messages.length, 1);
+  assert.equal(s.state.messages[0].approval.state, "approved");
+  s.stop();
+});
+test("a workspace switch clears outgoing messages and ignores an old send acknowledgement", async () => {
+  const s = fixture();
+  let complete;
+  teamApi.defaults.adapter = (config) => {
+    if (config.url === "/me")
+      return Promise.resolve({
+        status: 200,
+        data: {
+          workspaceId: config.headers["x-index12-workspace-id"],
+          actorId: "author",
+          displayName: "Author",
+          status: "active",
+        },
+      });
+    if (config.url === "/state")
+      return Promise.resolve({ status: 200, data: empty() });
+    return new Promise(
+      (resolve) => (complete = (data) => resolve({ status: 200, data })),
+    );
+  };
+  await s.start("old");
+  const id = s.send("Private old draft");
+  await tick();
+  await s.start("new");
+  assert.equal(s.outbox.length, 0);
+  complete({
+    message: { _id: id, text: "Private old draft", attachments: [] },
+  });
+  await tick();
+  assert.equal(s.state.messages.length, 0);
+  assert.equal(s.me.workspaceId, "new");
+  s.stop();
+});

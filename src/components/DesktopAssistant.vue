@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
+import { useCodexDeliveryStore } from '@/stores/codexDeliveryStore';
 import CodexComposer from './CodexComposer.vue';
 import CodexGlyph from './CodexGlyph.vue';
 import CodexFileCard from './CodexFileCard.vue';
@@ -11,6 +12,7 @@ import { useCodexVoice } from '@/composables/useCodexVoice';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
+const delivery = useCodexDeliveryStore();
 const scopeKey = computed(() => `${store.user?._id || store.user?.id || ''}:${store.user?.currentWorkspaceId || ''}`);
 const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref(''), attachments = ref([]);
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
@@ -21,10 +23,10 @@ const voiceAvailable = ref(false);
 const downloadingFiles = ref(new Set());
 const pendingRequests = ref([]), activeJobId = ref(null), submittingAnswers = ref(new Set()), answerErrors = ref({});
 let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
-let retry = null;
+const visibleMessages = computed(() => [...messages.value, ...delivery.rows.filter(row => (!row.chatId || row.chatId === selectedId.value) && !messages.value.some(message => message.id === row.id))]);
 const codexBase = () => `${props.apiBaseUrl.replace(/\/$/, '')}/codex`;
 const isImage = file => /^image\/(png|jpeg|webp|gif)$/.test(file.mimeType || '');
-const fileUrl = file => file.url || `${codexBase()}/files/${encodeURIComponent(file.fileId)}`;
+const fileUrl = file => file.previewUrl || file.url || `${codexBase()}/files/${encodeURIComponent(file.fileId)}`;
 function clearAttachments() { for (const file of attachments.value) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value = []; }
 function removeAttachment(index) { const file = attachments.value[index]; if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value.splice(index, 1); }
 const storageKey = () => `index12-desktop-chat:${scopeKey.value}`;
@@ -105,8 +107,9 @@ async function answerCodex(request, answer) {
   finally { submittingAnswers.value.delete(request.id); }
 }
 watch(() => pendingRequests.value.map(request => request.id).join(','), () => { if (pendingRequests.value.length) scrollBottom(); });
-function showHistory(result, older = false) {
+function showHistory(result, older = false, allowTextMatch = true) {
   const rows = (result.messages || []).map(m => ({ ...m, text: m.content }));
+  if (!older) delivery.reconcile(selectedId.value, rows, allowTextMatch);
   const unique = new Map((older ? [...rows, ...messages.value] : rows).map(m => [m.id, m]));
   messages.value = [...unique.values()]; cursor.value = result.nextCursor || null;
   if (!older) scrollBottom();
@@ -118,12 +121,12 @@ async function history(session, older = false) {
 async function selectChat(id) {
   if (busy.value || voiceActive.value || !id) return;
   const session = controller;
-  selectedId.value = id; localStorage.setItem(storageKey(), id); retry = null;
+  selectedId.value = id; localStorage.setItem(storageKey(), id);
   busy.value = true; error.value = ''; messages.value = []; cursor.value = null; threadId.value = null;
   try {
     const data = await api(`/chats/${encodeURIComponent(id)}`, null, session);
     threadId.value = data.chat.threadId;
-    if (data.cachedHistory) showHistory(data.cachedHistory);
+    if (data.cachedHistory) showHistory(data.cachedHistory, false, !data.pendingJob);
     if (connected.value) {
       if (data.pendingJob) await waitJob(data.pendingJob, session);
       await history(session);
@@ -134,7 +137,7 @@ async function selectChat(id) {
 async function createChat(session) {
   const data = await api('/chats', {}, session);
   chats.value.unshift(data.chat); selectedId.value = data.chat.id; threadId.value = null;
-  messages.value = []; cursor.value = null; retry = null;
+  messages.value = []; cursor.value = null;
   localStorage.setItem(storageKey(), selectedId.value);
 }
 async function newChat() {
@@ -144,45 +147,50 @@ async function newChat() {
   finally { if (session === controller) busy.value = false; }
 }
 function stopRecording() { recording.value = false; try { recognition?.stop(); } catch { /* Already stopped. */ } }
-async function send(forced) {
-  const text = (typeof forced === 'string' ? forced : input.value).trim();
-  if ((!text && !attachments.value.length) || busy.value || voiceActive.value) return;
-  const session = controller; busy.value = true; error.value = ''; stopRecording();
-  let media;
-  let accepted = false;
+async function send(forced, existing = null) {
+  const text = existing ? existing.text : (typeof forced === 'string' ? forced : input.value).trim();
+  if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || voiceActive.value) return;
+  const session = controller;
+  delivery.setScope(scopeKey.value);
+  const attempt = existing || delivery.add({ id: 'local:'+crypto.randomUUID(), requestId:crypto.randomUUID(), role:'user', text, chatId:selectedId.value, attachments:[...attachments.value], sourceFiles:[...attachments.value], knownIds:messages.value.filter(row=>row.role==='user').map(row=>row.id), delivery:'sending', sendError:'', accepted:false });
+  if (!existing) {
+    if (typeof forced !== 'string' || input.value.trim() === text) input.value = '';
+    attachments.value = [];
+  }
+  attempt.delivery = 'sending'; attempt.sendError = '';
+  busy.value = true; error.value = ''; stopRecording(); scrollBottom();
   try {
     const status = await api('/status', null, session); connected.value = status.connected; provider.value = status.provider || 'desktop';
     if (!status.connected) throw new Error(status.reason || 'Нет связи с Codex на Mac. Запустите связку Index12.');
-    if (!selectedId.value) await createChat(session);
-    media = [];
-    for (const file of attachments.value) {
-      if (!file.uploaded || file.chatId !== selectedId.value) {
+    if (!attempt.chatId) { await createChat(session); attempt.chatId = selectedId.value; }
+    const media = [];
+    for (const file of attempt.sourceFiles) {
+      if (!file.uploaded || file.chatId !== attempt.chatId) {
         file.uploading = true;
-        const response = await fetch(`${codexBase()}/chats/${encodeURIComponent(selectedId.value)}/files`, { method: 'POST', credentials: 'include', signal: session.signal, headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name), 'X-File-Type': file.mimeType || 'application/octet-stream' }, body: file.file });
+        const response = await fetch(`${codexBase()}/chats/${encodeURIComponent(attempt.chatId)}/files`, { method:'POST', credentials:'include', signal:session.signal, headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name),'X-File-Type':file.mimeType || 'application/octet-stream'}, body:file.file });
         const result = await response.json(); current(session); file.uploading = false;
         if (!response.ok) throw new Error(result.error || 'Не удалось загрузить файл.');
-        file.uploaded = result.file; file.chatId = selectedId.value;
+        file.uploaded = result.file; file.chatId = attempt.chatId;
       }
       media.push(file.uploaded);
     }
-    const fingerprint = JSON.stringify([selectedId.value, text, media]);
-    if (retry?.fingerprint !== fingerprint) retry = { fingerprint, requestId: crypto.randomUUID() };
-    const { job } = await api(`/chats/${selectedId.value}/jobs`, { kind: 'send', message: text, attachments: media, requestId: retry.requestId }, session);
-    accepted = true; retry = null; input.value = ''; clearAttachments();
-    messages.value.push({ id: crypto.randomUUID(), role: 'user', text, attachments: media }); scrollBottom();
-    const result = await waitJob(job, session); threadId.value = result.threadId;
-    messages.value.push({ id: crypto.randomUUID(), role: 'assistant', text: result.text }); scrollBottom();
+    const { job } = await api(`/chats/${encodeURIComponent(attempt.chatId)}/jobs`, { kind:'send', message:text, attachments:media, requestId:attempt.requestId }, session);
+    attempt.accepted = true; attempt.delivery = 'processing'; attempt.attachments = media;
+    const result = await waitJob(job, session); current(session); threadId.value = result.threadId;
+    messages.value.push({ id:attempt.id, role:'user', text, attachments:media });
+    delivery.remove(attempt.id);
+    messages.value.push({ id:crypto.randomUUID(), role:'assistant', text:result.text }); scrollBottom();
     chats.value = (await api('/chats', null, session)).chats;
-    // Reload canonical history, including messages sent from desktop.
     await history(session);
   } catch (e) {
     if (e.name !== 'AbortError') {
       error.value = e.message;
-      if (e.execution) { messages.value.push({ id: `${crypto.randomUUID()}-execution`, role: 'assistant', text: e.execution.text, execution: e.execution }); scrollBottom(); }
+      if (delivery.rows.some(row=>row.id===attempt.id)) { attempt.delivery = attempt.accepted ? 'sent' : 'failed'; attempt.sendError = e.message; }
+      if (e.execution && attempt.accepted) { messages.value.push({ id:attempt.id,role:'user',text:attempt.text,attachments:attempt.attachments }); delivery.remove(attempt.id); }
+      if (e.execution) { messages.value.push({ id:`${crypto.randomUUID()}-execution`,role:'assistant',text:e.execution.text,execution:e.execution }); scrollBottom(); }
       if (e.status === 503) connected.value = false;
-      if (accepted) retry = null;
     }
-  } finally { if (session === controller) { busy.value = false; attachments.value.forEach(file => { file.uploading = false; }); } }
+  } finally { if (session === controller) { busy.value = false; attempt.sourceFiles.forEach(file=>{file.uploading=false;}); } }
 }
 async function loadOlder() {
   if (busy.value || voiceActive.value) return;
@@ -222,7 +230,7 @@ function addFiles(event) {
   finally { event.target.value = ''; }
 }
 async function downloadFile(file) {
-  if (downloadingFiles.value.has(file.fileId)) return;
+  if (!file.fileId || downloadingFiles.value.has(file.fileId)) return;
   downloadingFiles.value.add(file.fileId);
   try {
     const session = controller;
@@ -258,12 +266,12 @@ watch(scopeKey, () => {
   voice.stop(); voiceAvailable.value = false;
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
-  input.value = ''; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; retry = null;
+  input.value = ''; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; delivery.setScope(scopeKey.value);
   pendingRequests.value = []; activeJobId.value = null; answerErrors.value = {}; submittingAnswers.value.clear();
   refresh();
 });
-onMounted(() => { refresh(); timer = setInterval(() => refresh(), 5000); });
-onBeforeUnmount(() => { voice.stop(); clearInterval(timer); controller.abort(); stopRecording(); clearAttachments(); });
+onMounted(() => { delivery.setScope(scopeKey.value); refresh(); timer = setInterval(() => refresh(), 5000); });
+onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer); controller.abort(); stopRecording(); clearAttachments(); });
 </script>
 
 <template>
@@ -282,18 +290,19 @@ onBeforeUnmount(() => { voice.stop(); clearInterval(timer); controller.abort(); 
     </div>
     <div ref="box" class="codex-messages" aria-live="polite">
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
-      <article v-for="message in messages" :key="message.id" class="codex-message" :class="message.role">
+      <article v-for="message in visibleMessages" :key="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
           <CodexMessageText v-if="message.text" :text="message.text" :plain="message.role === 'user'" />
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
-            <img v-if="file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" />
-            <CodexFileCard v-if="file.fileId" :file="file" :loading="downloadingFiles.has(file.fileId)" @download="downloadFile(file)" />
+            <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" />
+            <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" @download="downloadFile(file)" />
           </div>
+          <div v-if="message.delivery" class="codex-delivery" :class="{failed:message.delivery==='failed'}" role="status"><span :title="message.sendError">{{ message.delivery==='sending'?'Отправляется…':message.delivery==='failed'?'Не отправлено':message.delivery==='processing'?'Обрабатывается…':'Отправлено' }}</span><button v-if="message.delivery==='failed'" type="button" class="codex-action-btn" :disabled="busy || voiceActive" @click="send(undefined,message)">Повторить отправку</button></div>
           <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)"><CodexGlyph :name="message.copied ? 'check' : 'copy'" /><span>{{ message.copied ? 'Скопировано' : 'Копировать' }}</span></button></div>
         </div>
       </article>
       <CodexRequestCard v-for="request in pendingRequests" :key="request.id" :request="request" :submitting="submittingAnswers.has(request.id)" :error="answerErrors[request.id]" @answer="answerCodex(request, $event)" />
-      <div v-if="busy && !pendingRequests.length" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
+      <div v-if="busy && !pendingRequests.length && !delivery.rows.some(row => row.delivery === 'sending')" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
     </div>
     <div v-if="error" class="desktop-error" role="alert"><CodexGlyph name="alert" /><span>{{ error }}</span></div>
     <div v-if="attachments.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы" tabindex="0">

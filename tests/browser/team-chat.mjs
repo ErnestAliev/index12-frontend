@@ -198,12 +198,43 @@ export async function verifyTeamChat({
     const box = await mobile.boundingBox();
     assert.equal(Math.round(box.width), 390);
     assert.equal(Math.round(box.height), 844);
+    let releaseMessage;
+    await employee.route("**/team-chat/messages", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await new Promise((resolve) => (releaseMessage = resolve));
+      await route.continue();
+    });
     await mobile
       .getByLabel("Сообщение сотрудникам", { exact: true })
       .fill("Mobile employee online");
     await mobile
       .getByRole("button", { name: "Отправить", exact: true })
       .click();
+    assert.equal(
+      await mobile
+        .getByLabel("Сообщение сотрудникам", { exact: true })
+        .inputValue(),
+      "",
+    );
+    await mobile.getByText("Mobile employee online", { exact: true }).waitFor();
+    await mobile
+      .locator(".team-delivery")
+      .getByText("Отправляется…", { exact: true })
+      .waitFor();
+    await mobile
+      .getByLabel("Сообщение сотрудникам", { exact: true })
+      .fill("Следующий черновик");
+    assert.equal(
+      await mobile
+        .getByRole("button", { name: "Отправить", exact: true })
+        .isEnabled(),
+      true,
+    );
+    for (let i = 0; i < 50 && !releaseMessage; i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(releaseMessage);
+    releaseMessage();
+    await employee.unroute("**/team-chat/messages");
     await chat.getByText("Mobile employee online", { exact: true }).waitFor();
     assert.equal(await mobile.getByRole("tab", { name: /^Заявки/ }).count(), 1);
     assert.equal(
@@ -224,6 +255,12 @@ export async function verifyTeamChat({
     );
     const manifestData = await manifestResponse.json();
     assert.equal(manifestData.start_url, "/team/" + token);
+    assert.equal(
+      await mobile
+        .getByLabel("Сообщение сотрудникам", { exact: true })
+        .inputValue(),
+      "Следующий черновик",
+    );
     const persisted = await employee.storageState();
     const persistentCookie = persisted.cookies.find(
       (c) => c.name === "index12_team",
@@ -259,6 +296,7 @@ export async function verifyTeamChat({
     assert.equal(await mobile.getByRole("tab", { name: /^Заявки/ }).count(), 1);
     async function holdMessage(targetPage, bubble) {
       await targetPage.bringToFront();
+      await bubble.locator(".team-delivery").waitFor({ state: "hidden" });
       await bubble.scrollIntoViewIfNeeded();
       const box = await bubble.boundingBox();
       await targetPage.mouse.move(

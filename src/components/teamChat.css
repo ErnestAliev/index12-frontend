@@ -832,3 +832,24 @@
   background: var(--codex-pane-user);
   color: var(--codex-pane-text);
 }
+
+.team-delivery {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  color: var(--codex-pane-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.team-delivery.failed {
+  color: var(--codex-pane-danger);
+}
+.team-pane .team-delivery button {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: transparent;
+  color: inherit;
+}

@@ -99,16 +99,18 @@ try {
   // Error and upload states retain all files and keep the composer usable.
   if(['desktop-dark','mobile-dark','short-dark','mobile-keyboard'].includes(fixture.name)){
    mode='error';await dialog.getByRole('button',{name:'Отправить',exact:true}).click();await dialog.getByRole('alert').waitFor();
-   assert.equal(await dialog.locator('.desktop-attachments .codex-file-card').count(),5);
-   const before=await textarea.inputValue();assert.ok(before.includes('Проверь'));
+   const failed=dialog.locator('.codex-message.user').filter({has:page.locator('.codex-delivery.failed')});
+   assert.equal(await failed.locator('.codex-file-card').count(),5);
+   assert.equal(await textarea.inputValue(),'');assert.ok((await failed.innerText()).includes('Проверь'));
    const errorBounds=await dialog.getByRole('alert').boundingBox(),panelBounds=await dialog.boundingBox(),sendBounds=await dialog.getByRole('button',{name:'Отправить',exact:true}).boundingBox();
    assert.ok(errorBounds.y+errorBounds.height<=sendBounds.y+1,fixture.name+' error does not overlap composer');
    assert.ok(sendBounds.y+sendBounds.height<=panelBounds.y+panelBounds.height,fixture.name+' error keeps send visible '+JSON.stringify({sendBounds,panelBounds}));
    await page.screenshot({path:`${root}/output/playwright/codex-style-${fixture.name}-error.png`});
-   mode='upload';await dialog.getByRole('button',{name:'Отправить',exact:true}).click();await dialog.getByText('Загрузка…',{exact:true}).first().waitFor();
-   assert.equal(await dialog.locator('.codex-file-remove:disabled').count(),5);
+   mode='upload';await dialog.getByRole('button',{name:'Повторить отправку',exact:true}).click();await dialog.getByText('Загрузка…',{exact:true}).first().waitFor();
+   assert.equal(await dialog.locator('.codex-message.user .codex-file-card').count(),5);
+   assert.equal(await dialog.locator('.codex-file-remove').count(),0);
    await page.screenshot({path:`${root}/output/playwright/codex-style-${fixture.name}-upload.png`});
-   await page.waitForFunction(()=>!document.querySelector('.codex-typing'));
+   await page.waitForFunction(()=>document.querySelector('.desktop-toolbar button') && !document.querySelector('.desktop-toolbar button').disabled);
    assert.equal(await dialog.locator('.desktop-attachments .codex-file-card').count(),0);
   }
   assert.deepEqual(errors,[]);console.log('PASS '+fixture.name+': '+JSON.stringify({width:geometry.panel.width,height:geometry.panel.height,textColor:geometry.textColor}));await context.close();

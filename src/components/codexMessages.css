@@ -21,3 +21,5 @@
 @media (prefers-reduced-motion: reduce) { .codex-typing-word { animation: none; } }
 
 @container codex-window (max-height: 420px) { .codex-messages { padding: 4px 10px; gap: 10px; } }
+
+.codex-delivery{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:8px;font-size:11px;line-height:16px;color:var(--codex-pane-muted)}.codex-delivery.failed{color:var(--codex-pane-danger)}.codex-delivery .codex-action-btn{font-size:11px;color:inherit}

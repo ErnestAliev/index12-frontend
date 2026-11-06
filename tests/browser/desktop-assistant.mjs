@@ -23,6 +23,8 @@ try {
       stop() { this.onend?.(); }
     };
   });
+  let acceptRelease, holdAcceptance = false, replayedNetworkJob;
+  const networkRequestIds = [];
   let connected = false;
   let history = [{ id: 'old-question', role: 'user', content: 'Старый вопрос' }, { id: 'old-answer', role: 'assistant', content: 'Сохранённая история' }];
   await page.route('**/api/**', async route => {
@@ -51,6 +53,8 @@ try {
         const body = request.postDataJSON();
         if (body.kind === 'history') data = { job: { status: 'completed', result: { messages: history, nextCursor: null } } };
         else {
+          if (body.message === "Проверка сети Codex") { networkRequestIds.push(body.requestId); if(replayedNetworkJob) return route.fulfill({contentType:"application/json",body:JSON.stringify(replayedNetworkJob)}); }
+          if (holdAcceptance) { holdAcceptance = false; await new Promise(resolve => acceptRelease = resolve); }
           sent.push(body);
           history.push({ id: `user-${sent.length}`, role: 'user', content: body.message, attachments: body.attachments });
           if (body.message === 'Проверка ошибки MCP') {
@@ -61,6 +65,7 @@ try {
           }
           history.push({ id: `answer-${sent.length}`, role: 'assistant', content: 'Проверка успешна' });
           data = { job: { status: 'completed', result: { text: 'Проверка успешна', threadId: 'thread' } } };
+          if(body.message === 'Проверка сети Codex') { replayedNetworkJob = data; return route.abort('failed'); }
         }
       }
     }
@@ -99,13 +104,28 @@ try {
   assert.equal(await page.locator('.hidden-widgets-container').count(), 0, 'no invisible legacy AI widgets');
   const input = dialog.getByRole('textbox');
   await input.fill('Проверка Enter'); await input.press('Enter');
+  assert.equal(await input.inputValue(), '');
   await dialog.getByRole('alert').waitFor();
-  assert.equal(await input.inputValue(), 'Проверка Enter'); assert.equal(sent.length, 0);
+  await dialog.getByText('Проверка Enter',{exact:true}).waitFor();
+  await dialog.getByRole('button',{name:'Повторить отправку',exact:true}).waitFor();
+  assert.equal(sent.length,0);
   connected = true;
   await dialog.getByText('Codex · подключён', { exact: true }).waitFor({ timeout: 8000 });
-  await input.press('Shift+Enter'); assert.ok((await input.inputValue()).endsWith('\n')); assert.equal(sent.length, 0);
-  await input.press('Enter'); await dialog.getByText('Проверка успешна', { exact: true }).waitFor();
-  assert.equal(sent.length, 1);
+  await input.fill('Следующий черновик');
+  await input.press('Shift+Enter'); assert.ok((await input.inputValue()).endsWith('\n')); assert.equal(sent.length,0);
+  holdAcceptance = true;
+  await dialog.getByRole('button',{name:'Повторить отправку',exact:true}).click();
+  await dialog.locator('.codex-delivery').getByText('Отправляется…',{exact:true}).waitFor();
+  assert.equal(await dialog.getByText('Проверка Enter',{exact:true}).count(),1);
+  assert.equal(await input.inputValue(),'Следующий черновик\n');
+  await page.waitForFunction(()=>document.querySelector('.codex-delivery')?.textContent.includes('Отправляется'));
+  for(let i=0;i<50 && !acceptRelease;i++) await new Promise(resolve=>setTimeout(resolve,20));
+  assert.ok(acceptRelease);acceptRelease();
+  await dialog.getByText('Проверка успешна',{exact:true}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('.codex-send-btn').disabled || document.querySelector('.codex-messages').textContent.includes('Проверка успешна'));
+  assert.equal(sent.length,1);assert.equal(await input.inputValue(),'Следующий черновик\n');
+  await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
+  await input.fill('');
   await dialog.getByRole('button', { name: 'Голосовой ввод', exact: true }).click();
   assert.equal(await input.inputValue(), 'Голосовая проверка');
   await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -164,6 +184,19 @@ try {
   assert.equal(await dialog.getByText('Все операции успешно исправлены', { exact: true }).count(), 0);
   await dialog.getByRole('button', { name: 'Обновить связь и историю' }).click();
   await dialog.locator('.codex-message.assistant').filter({ hasText: 'Подтверждено выполненных действий: 0' }).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
+  const beforeNetworkSend=sent.length;
+  await input.fill('Проверка сети Codex');await input.press('Enter');
+  assert.equal(await input.inputValue(),'');
+  await dialog.getByRole('button',{name:'Повторить отправку',exact:true}).waitFor();
+  assert.equal(await dialog.getByText('Проверка сети Codex',{exact:true}).count(),1);
+  await input.fill('Новый черновик после ошибки');
+  await dialog.getByRole('button',{name:'Повторить отправку',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.desktop-toolbar button').disabled);
+  assert.equal(sent.length,beforeNetworkSend+1);
+  assert.equal(networkRequestIds.length,2);assert.equal(networkRequestIds[0],networkRequestIds[1]);
+  assert.equal(await dialog.getByText('Проверка сети Codex',{exact:true}).count(),1);
+  assert.equal(await input.inputValue(),'Новый черновик после ошибки');
   await dialog.getByRole('button', { name: 'Закрыть чат Codex' }).click();
   assert.deepEqual(legacyRequests, []); assert.deepEqual(browserErrors, []);
   console.log('PASS: Codex button placement; desktop width/height/keyboard resize; saved size; service interaction; journal has no chat; mobile Codex only; no legacy API requests; history, Enter, voice transcript and images');

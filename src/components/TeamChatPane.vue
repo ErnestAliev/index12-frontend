@@ -39,7 +39,7 @@ function cancelHold() {
 }
 function openMessageMenu(row) {
   cancelHold();
-  if (selectedMessageId.value === row._id) return;
+  if (row._delivery || selectedMessageId.value === row._id) return;
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
@@ -204,6 +204,9 @@ const shownMessages = computed(() =>
       (m) => !chat.state.messages.some((n) => n._id === m._id),
     ),
     ...chat.state.messages,
+    ...chat.outbox.filter(
+      (row) => !chat.state.messages.some((message) => message._id === row._id),
+    ),
   ].filter(
     (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
   ),
@@ -241,21 +244,13 @@ async function run(fn) {
   }
 }
 async function send() {
-  if (
-    uploading.value ||
-    chat.busy ||
-    (!message.value.trim() && !files.value.length)
-  )
-    return;
-  const sentText = message.value,
-    sentFiles = files.value.map((f) => f.fileId);
-  const result = await run(() => chat.send(sentText, sentFiles));
-  if (result) {
-    if (message.value === sentText) message.value = "";
-    files.value = files.value.filter((f) => !sentFiles.includes(f.fileId));
-    await nextTick();
-    if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
-  }
+  if (uploading.value || (!message.value.trim() && !files.value.length)) return;
+  const id = chat.send(message.value, files.value);
+  if (!id) return;
+  message.value = "";
+  files.value = [];
+  await nextTick();
+  if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
 }
 async function attach(event) {
   uploading.value = true;
@@ -520,6 +515,7 @@ async function copy(text) {
               v-for="file in m.attachments"
               :key="file.fileId"
               class="team-file"
+              :disabled="!!m._delivery"
               @click="download(file)"
             >
               <UiIcon name="attach" />{{ file.name }}
@@ -527,6 +523,7 @@ async function copy(text) {
             <template
               v-for="file in m.attachments.filter(
                 (f) =>
+                  !m._delivery &&
                   f.isPdf &&
                   !f.invoiceRequestId &&
                   !f.invoiceDismissed &&
@@ -559,6 +556,24 @@ async function copy(text) {
                 </div>
               </div></template
             >
+            <div
+              v-if="m._delivery"
+              class="team-delivery"
+              :class="{ failed: m._delivery === 'failed' }"
+              role="status"
+            >
+              <span :title="m._sendError">{{
+                m._delivery === "sending" ? "Отправляется…" : "Не отправлено"
+              }}</span>
+              <button
+                v-if="m._delivery === 'failed'"
+                type="button"
+                @pointerdown.stop
+                @click.stop="chat.retryMessage(m._id)"
+              >
+                Повторить отправку
+              </button>
+            </div>
             <div v-if="m.reactions?.length" class="team-reactions">
               <button
                 v-for="reaction in m.reactions"
@@ -604,7 +619,7 @@ async function copy(text) {
           @change="attach"
         /><CodexComposer
           v-model="message"
-          :busy="chat.busy || uploading"
+          :busy="uploading"
           :mobile="mobile"
           attachments-enabled
           hide-microphone

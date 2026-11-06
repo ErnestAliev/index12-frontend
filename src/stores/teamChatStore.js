@@ -14,6 +14,7 @@ export const teamApi = axios.create({
 export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
+  const outbox = ref([]);
   const notice = ref(""),
     olderMessageIds = ref([]);
   const tab = ref("messages"),
@@ -50,8 +51,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     again = false,
     workspace = "",
     lastMessage = "",
-    sendId = null,
-    sendKey = "",
+    messageQueue = Promise.resolve(),
     loaded = false;
   function stop() {
     ++generation;
@@ -73,7 +73,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     error.value = "";
     loaded = false;
     lastMessage = "";
-    sendId = null;
+    outbox.value = [];
+    messageQueue = Promise.resolve();
     delete teamApi.defaults.headers.common["x-index12-workspace-id"];
     delete teamApi.defaults.headers.common["x-index12-chat-only"];
     window.removeEventListener("focus", wake);
@@ -99,6 +100,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       lastMessage = newest;
       loaded = true;
       state.value = data;
+      const confirmed = new Set(data.messages.map((row) => row._id));
+      outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
       if (data.identity) me.value = data.identity;
       error.value = "";
     } catch (e) {
@@ -112,6 +115,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
             members: [],
             companies: [],
           };
+          outbox.value = [];
           if (me.value) me.value = { ...me.value, status: "revoked" };
         }
       }
@@ -238,15 +242,87 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       if (g === generation) busy.value = false;
     }
   }
-  async function send(text, fileIds) {
-    const key = JSON.stringify([text, fileIds]);
-    if (!sendId || key !== sendKey) {
-      sendId = crypto.randomUUID();
-      sendKey = key;
+  async function deliverMessage(id, g) {
+    if (g !== generation) return;
+    const row = outbox.value.find((row) => row._id === id);
+    if (!row || row._delivery !== "sending") return;
+    try {
+      const { data } = await teamApi.post("/messages", {
+        id: row._id,
+        text: row.text,
+        fileIds: row.attachments.map((file) => file.fileId),
+      });
+      if (g !== generation) return;
+      ++ticket;
+      const existing = state.value.messages.find(
+        (message) => message._id === id,
+      );
+      const confirmed = {
+        ...data.message,
+        attachments: (data.message.attachments || []).map((file) => ({
+          ...file,
+          isPdf: /\.pdf$/i.test(file.name),
+        })),
+      };
+      const message =
+        existing &&
+        (existing.deletedAt ||
+          Number(existing.version || 0) >= Number(confirmed.version || 0))
+          ? { ...confirmed, ...existing }
+          : confirmed;
+      state.value.messages = [
+        ...state.value.messages.filter((message) => message._id !== id),
+        message,
+      ].sort(
+        (a, b) =>
+          new Date(a.createdAt) - new Date(b.createdAt) ||
+          a._id.localeCompare(b._id),
+      );
+      outbox.value = outbox.value.filter((message) => message._id !== id);
+      schedule();
+    } catch (e) {
+      if (g !== generation) return;
+      const pending = outbox.value.find((message) => message._id === id);
+      if (pending) {
+        pending._delivery = "failed";
+        pending._sendError = teamError(e);
+      }
+      if ([401, 403].includes(e.response?.status)) void refresh();
     }
-    const result = await action("/messages", { id: sendId, text, fileIds });
-    if (result) sendId = null;
-    return result;
+  }
+  function queueMessage(row) {
+    const g = generation;
+    messageQueue = messageQueue
+      .catch(() => {})
+      .then(() => deliverMessage(row._id, g));
+  }
+  function send(text, files = []) {
+    if (me.value?.status !== "active" || (!text.trim() && !files.length))
+      return null;
+    const row = {
+      _id: crypto.randomUUID(),
+      workspaceId: me.value.workspaceId,
+      authorId: me.value.actorId,
+      authorName: me.value.displayName,
+      text: text.trim(),
+      createdAt: new Date().toISOString(),
+      attachments: files.map((file) =>
+        typeof file === "string" ? { fileId: file } : { ...file },
+      ),
+      _delivery: "sending",
+      _sendError: "",
+    };
+    outbox.value.push(row);
+    queueMessage(row);
+    return row._id;
+  }
+  function retryMessage(id) {
+    const row = outbox.value.find((message) => message._id === id);
+    if (!row || row._delivery !== "failed" || me.value?.status !== "active")
+      return;
+    row._delivery = "sending";
+    row._sendError = "";
+    queueMessage(row);
   }
   function show() {
     open.value = true;
@@ -255,6 +331,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    outbox,
+    retryMessage,
     isOwner,
     notice,
     olderMessageIds,

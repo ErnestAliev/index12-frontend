@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import CodexGlyph from './CodexGlyph.vue';
-const props = defineProps({ file: { type: Object, required: true }, removable: Boolean, disabled: Boolean, loading: Boolean });
+const props = defineProps({ file: { type: Object, required: true }, removable: Boolean, disabled: Boolean, loading: Boolean, uploading: Boolean });
 const emit = defineEmits(['remove', 'download']);
 const extension = computed(() => props.file.name?.split('.').at(-1)?.toUpperCase().slice(0, 5) || 'ФАЙЛ');
 const kind = computed(() => /^(XLSX?|XLSM|CSV)$/.test(extension.value) ? 'sheet' : extension.value === 'PDF' ? 'pdf' : 'document');
@@ -16,7 +16,7 @@ const size = computed(() => props.file.size >= 1024 * 1024 ? `${(props.file.size
       <span v-else class="codex-file-symbol"><CodexGlyph name="file" /><span>{{ extension }}</span></span>
       <span class="codex-file-details">
         <span class="desktop-file-name" :title="file.name">{{ file.name }}</span>
-        <span class="codex-file-meta">{{ loading ? (removable ? 'Загрузка…' : 'Скачивание…') : size }}</span>
+        <span class="codex-file-meta">{{ loading ? ((removable || uploading) ? 'Загрузка…' : 'Скачивание…') : size }}</span>
       </span>
       <CodexGlyph v-if="!removable" :name="loading ? 'loader' : 'download'" class="codex-file-download" />
     </component>
