@@ -140,23 +140,27 @@ export async function verifyReplies({
   await account
     .getByRole("button", { name: "Настройки чата", exact: true })
     .click();
-  await account.getByText("Сотрудник", { exact: true }).waitFor();
-  await account
-    .getByRole("button", { name: "Уведомления", exact: true })
+  await account.waitFor({ state: "hidden" });
+  const settings = mobile.getByRole("region", {
+    name: "Настройки чата",
+    exact: true,
+  });
+  await settings
+    .getByRole("heading", { name: "Уведомления", exact: true })
     .waitFor();
-  await account.getByRole("button", { name: "Выйти", exact: true }).waitFor();
-  await account
-    .getByRole("button", { name: "Назад к разделам чата", exact: true })
-    .click();
-  await account
+  assert.equal(
+    await phone.getByRole("dialog", { name: "Chat", exact: true }).count(),
+    0,
+  );
+  await settings.getByRole("button", { name: "Выйти", exact: true }).waitFor();
+  await settings
     .getByRole("button", { name: "Тёмная тема", exact: true })
     .click();
   assert.equal(
     await phone.evaluate(() => localStorage.getItem("theme")),
     "dark",
   );
-  await mobile.getByRole("button", { name: "Меню чата", exact: true }).click();
-  await account
+  await settings
     .getByRole("button", { name: "Светлая тема", exact: true })
     .click();
   await selectSection(mobile, "Задачи");

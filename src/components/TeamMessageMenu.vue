@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
-const props = defineProps({ message: Object });
+const props = defineProps({ message: Object, suppressOpeningTouch: Boolean });
 const emit = defineEmits(["close", "deleted", "reply"]);
 const chat = useTeamChatStore(),
   panel = ref(null),
@@ -38,6 +38,17 @@ const title = computed(
 );
 const bounds = ref({});
 let previousFocus;
+let waitingForRelease = false;
+function releaseOpeningTouch(event) {
+  if (!waitingForRelease) return;
+  if (event.type === "touchend") {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  waitingForRelease = false;
+  document.removeEventListener("touchend", releaseOpeningTouch, true);
+  document.removeEventListener("touchcancel", releaseOpeningTouch, true);
+}
 function viewport() {
   const v = window.visualViewport;
   bounds.value = {
@@ -153,6 +164,14 @@ function keys(event) {
   }
 }
 onMounted(async () => {
+  waitingForRelease = props.suppressOpeningTouch;
+  if (waitingForRelease) {
+    document.addEventListener("touchend", releaseOpeningTouch, {
+      capture: true,
+      passive: false,
+    });
+    document.addEventListener("touchcancel", releaseOpeningTouch, true);
+  }
   previousFocus = document.activeElement;
   if (previousFocus?.matches("input,textarea")) previousFocus.blur();
   viewport();
@@ -163,6 +182,8 @@ onMounted(async () => {
   panel.value.focus({ preventScroll: true });
 });
 onBeforeUnmount(() => {
+  document.removeEventListener("touchend", releaseOpeningTouch, true);
+  document.removeEventListener("touchcancel", releaseOpeningTouch, true);
   window.visualViewport?.removeEventListener("resize", viewport);
   window.visualViewport?.removeEventListener("scroll", viewport);
   window.removeEventListener("resize", viewport);
@@ -181,6 +202,7 @@ onBeforeUnmount(() => {
       <section
         ref="panel"
         class="team-message-menu"
+        :data-message-id="message._id"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -215,7 +237,17 @@ onBeforeUnmount(() => {
               {{ emoji }}
             </button>
           </div>
-          <button type="button" class="menu-action" :disabled="busy" @click="emit('reply',message); emit('close')"><UiIcon name="reply" />Ответить</button>
+          <button
+            type="button"
+            class="menu-action"
+            :disabled="busy"
+            @click="
+              emit('reply', message);
+              emit('close');
+            "
+          >
+            <UiIcon name="reply" />Ответить
+          </button>
           <button
             v-if="own && message.kind !== 'request'"
             type="button"

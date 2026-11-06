@@ -25,7 +25,9 @@ import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
-defineProps({ mobile: Boolean });
+import TeamChatSettings from "./TeamChatSettings.vue";
+defineProps({ mobile: Boolean, inviteToken: String });
+const emit = defineEmits(["logout"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = computed({
@@ -59,6 +61,7 @@ const chat = useTeamChatStore(),
   gaps = ref([]),
   loadingGap = ref(null);
 const selectedMessageId = ref(null);
+const suppressOpeningTouch = ref(false);
 const selectedMessage = computed(() =>
   shownMessages.value.find((m) => m._id === selectedMessageId.value),
 );
@@ -71,24 +74,27 @@ function cancelHold() {
   clearTimeout(holdTimer);
   holdTimer = null;
 }
-function openMessageMenu(row) {
+function openMessageMenu(row, touchHold = false) {
   cancelHold();
   resetSwipe();
   if (row._delivery || selectedMessageId.value === row._id) return;
+  suppressOpeningTouch.value = touchHold;
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
   if (
     event.button !== 0 ||
     selectedMessage.value ||
-    event.target.closest("input,textarea,button,select,a")
+    event.target.closest("input,textarea,select,[contenteditable='true']")
   )
     return;
   cancelHold();
   suppressedClick = null;
   holdStart = { x: event.clientX, y: event.clientY };
   gesture =
-    !row._delivery && row.kind !== "request"
+    !row._delivery &&
+    row.kind !== "request" &&
+    !event.target.closest("button,a")
       ? {
           id: row._id,
           pointerId: event.pointerId,
@@ -104,7 +110,7 @@ function holdMessage(event, row) {
     }
   holdTimer = setTimeout(() => {
     suppressedClick = row._id;
-    openMessageMenu(row);
+    openMessageMenu(row, event.pointerType === "touch");
   }, 450);
 }
 function moveMessage(event) {
@@ -840,6 +846,7 @@ async function copy(text) {
     <TeamMessageMenu
       v-if="selectedMessage"
       :message="selectedMessage"
+      :suppress-opening-touch="suppressOpeningTouch"
       @close="selectedMessageId = null"
       @deleted="deletedMessage"
       @reply="startReply"
@@ -960,12 +967,13 @@ async function copy(text) {
               "
               tabindex="0"
               :aria-label="`Сообщение ${m.authorName}`"
-              @pointerdown="holdMessage($event, m)"
-              @pointermove="moveMessage"
-              @pointerup="finishMessagePointer($event, m)"
-              @pointercancel="pointerCancelled"
+              @pointerdown.capture="holdMessage($event, m)"
+              @pointermove.capture="moveMessage"
+              @pointerup.capture="finishMessagePointer($event, m)"
+              @pointercancel.capture="pointerCancelled"
+              @dragstart.capture="pointerCancelled"
               @click.capture="messageClick($event, m)"
-              @contextmenu.prevent="openMessageMenu(m)"
+              @contextmenu.capture.prevent="openMessageMenu(m)"
               @keydown="messageKeys($event, m)"
             >
               <header>
@@ -985,11 +993,7 @@ async function copy(text) {
               <span v-if="m.forwardedFrom" class="team-forwarded"
                 >Переслано · {{ m.forwardedFrom.authorName }}</span
               >
-              <div
-                v-if="m.kind === 'request'"
-                @pointerdown.stop
-                @contextmenu.stop
-              >
+              <div v-if="m.kind === 'request'">
                 <TeamChatRequestMessage
                   :request-id="m.requestId"
                   @edit="editRequest"
@@ -1180,7 +1184,12 @@ async function copy(text) {
       id="team-panel"
       role="region"
       :aria-label="
-        { requests: 'Заявки', tasks: 'Задачи', members: 'Участники' }[tab]
+        {
+          requests: 'Заявки',
+          tasks: 'Задачи',
+          members: 'Роли и участники',
+          settings: 'Настройки чата',
+        }[tab]
       "
       class="team-scroll"
       @focusin="revealField"
@@ -1302,6 +1311,11 @@ async function copy(text) {
       <template v-else-if="tab === 'members' && chat.isOwner"
         ><TeamChatMembers />
       </template>
+      <TeamChatSettings
+        v-else-if="tab === 'settings'"
+        :invite-token="inviteToken"
+        @logout="emit('logout')"
+      />
     </div>
   </div>
 </template>

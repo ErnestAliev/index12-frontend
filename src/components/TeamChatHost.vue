@@ -75,7 +75,8 @@ async function editRequest(event) {
     categoryId: row.categoryId,
     subcategoryId: row.subcategoryId,
     projectId: row.projectId || row.placement?.projectId,
-    projectIds: row.placement?.projectIds || (row.projectId ? [row.projectId] : []),
+    projectIds:
+      row.placement?.projectIds || (row.projectId ? [row.projectId] : []),
     description: row.placement?.description || row.title,
     comment: row.comment || "",
   };
@@ -248,13 +249,14 @@ async function decide(status) {
   <ChatWindowFrame
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
+    heading-owns-close
     :mobile="route.name === 'mobile-home'"
     title="Сотрудники"
     window-id="team-chat-window"
     side="left"
     storage-key="index12-team-chat-window-size"
     @close="chat.open = false"
-    ><template #heading><TeamChatHeader /></template
+    ><template #heading="{ close }"><TeamChatHeader @close="close" /></template
     ><TeamChatPane :mobile="route.name === 'mobile-home'"
   /></ChatWindowFrame>
   <Teleport to="body"

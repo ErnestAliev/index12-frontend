@@ -8,30 +8,33 @@ import {
   onMounted,
   onBeforeUnmount,
 } from "vue";
-import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
+import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useAppearanceStore } from "@/stores/appearanceStore";
 import UiIcon from "./UiIcon.vue";
-import TeamChatRoleSelect from "./TeamChatRoleSelect.vue";
-const props = defineProps({ modelValue: String, setupAvailable: Boolean });
-const emit = defineEmits(["update:modelValue", "setup", "logout"]);
+const props = defineProps({ modelValue: String });
+const emit = defineEmits(["update:modelValue", "close"]);
 const chat = useTeamChatStore(),
   appearance = useAppearanceStore(),
   open = ref(false),
-  screen = ref("main"),
+  keyboard = ref(true),
   root = ref(null),
   trigger = ref(null),
   menu = ref(null),
   menuHeight = ref(420),
-  savingRole = ref(false),
   error = ref("");
 const menuId = useId();
-const sections = [
+const sections = computed(() => [
   { value: "messages", label: "Сообщения" },
   { value: "tasks", label: "Задачи" },
   { value: "requests", label: "Заявки" },
-];
+  ...(chat.isOwner ? [{ value: "members", label: "Роли и участники" }] : []),
+  { value: "settings", label: "Настройки чата" },
+]);
 const label = computed(
-  () => sections.find((s) => s.value === props.modelValue)?.label || "Роли",
+  () =>
+    ({ members: "Роли", settings: "Настройки" })[props.modelValue] ||
+    sections.value.find((s) => s.value === props.modelValue)?.label ||
+    "Сообщения",
 );
 let observer;
 function measure() {
@@ -50,7 +53,12 @@ function measure() {
   );
 }
 function outside(e) {
+  keyboard.value = false;
   if (!root.value?.contains(e.target)) open.value = false;
+}
+function keyboardInput(event) {
+  if (["Tab", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
+    keyboard.value = true;
 }
 function close(focus = true) {
   open.value = false;
@@ -58,20 +66,7 @@ function close(focus = true) {
 }
 function toggle() {
   if (open.value) close();
-  else {
-    screen.value = "main";
-    open.value = true;
-  }
-}
-async function showSettings() {
-  screen.value = "settings";
-  await nextTick();
-  menu.value?.querySelector("button")?.focus();
-}
-async function back() {
-  screen.value = "main";
-  await nextTick();
-  menu.value?.querySelector("button")?.focus();
+  else open.value = true;
 }
 function select(value) {
   if (value === "members" && !chat.isOwner) return;
@@ -85,21 +80,14 @@ async function keys(event) {
     close();
     return;
   }
-  if (
-    !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
-    event.target.closest("select,input")
-  )
-    return;
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   if (!open.value) {
     if (!event.target.closest(".team-navigation-trigger")) return;
-    screen.value = "main";
     open.value = true;
     await nextTick();
   }
   const nodes = [
-    ...(menu.value?.querySelectorAll(
-      "button:not(:disabled),select:not(:disabled)",
-    ) || []),
+    ...(menu.value?.querySelectorAll("button:not(:disabled)") || []),
   ];
   if (!nodes.length) return;
   event.preventDefault();
@@ -116,19 +104,6 @@ async function keys(event) {
           : (i + (event.key === "ArrowUp" ? -1 : 1) + nodes.length) %
             nodes.length;
   nodes[target].focus();
-}
-async function roleChanged(event) {
-  if (!chat.me?.owner || savingRole.value) return;
-  savingRole.value = true;
-  error.value = "";
-  try {
-    await chat.action("/settings", { ownerRole: event.target.value }, "patch");
-  } catch (e) {
-    event.target.value = chat.me.role;
-    error.value = teamError(e);
-  } finally {
-    savingRole.value = false;
-  }
 }
 function theme() {
   appearance.setMode(appearance.mode === "light" ? "dark" : "light");
@@ -152,7 +127,8 @@ watch(
   },
 );
 onMounted(() => {
-  document.addEventListener("pointerdown", outside);
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", keyboardInput, true);
   window.addEventListener("resize", measure);
   window.visualViewport?.addEventListener("resize", measure);
   if (typeof ResizeObserver !== "undefined") {
@@ -162,7 +138,8 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", outside);
+  document.removeEventListener("pointerdown", outside, true);
+  document.removeEventListener("keydown", keyboardInput, true);
   window.removeEventListener("resize", measure);
   window.visualViewport?.removeEventListener("resize", measure);
   observer?.disconnect();
@@ -172,6 +149,7 @@ onBeforeUnmount(() => {
   <nav
     ref="root"
     class="team-chat-navigation"
+    :data-keyboard="keyboard"
     aria-label="Навигация чата"
     @keydown="keys"
     @focusout="
@@ -205,89 +183,44 @@ onBeforeUnmount(() => {
         aria-label="Меню чата"
         :style="{ maxHeight: `${menuHeight}px` }"
       >
-        <template v-if="screen === 'main'">
-          <button
-            v-for="s in sections"
-            :key="s.value"
-            type="button"
-            :aria-pressed="modelValue === s.value"
-            aria-controls="team-panel"
-            @click="select(s.value)"
-          >
-            <UiIcon
-              name="check"
-              :class="{ 'team-navigation-unchecked': modelValue !== s.value }"
-            />{{ s.label }}
-          </button>
-          <hr />
-          <button
-            v-if="chat.isOwner"
-            type="button"
-            :aria-pressed="modelValue === 'members'"
-            @click="select('members')"
-          >
-            <UiIcon name="settings" />Роли и участники
-          </button>
-          <button type="button" @click="showSettings">
-            <UiIcon name="settings" />Настройки чата
-          </button>
-          <button type="button" @click="theme">
-            <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
-              appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
-            }}
-          </button>
-        </template>
-        <template v-else>
-          <button
-            type="button"
-            aria-label="Назад к разделам чата"
-            @click="back"
-          >
-            <UiIcon name="chevron-left" />Настройки чата
-          </button>
-          <hr />
-          <TeamChatRoleSelect
-            v-if="chat.me?.owner"
-            :value="chat.me.role"
-            :roles="chat.me.roles"
-            label="Моя роль в чате"
-            :disabled="savingRole"
-            @change="roleChanged"
-          />
-          <span v-else class="team-navigation-role">{{
-            chat.me?.roles?.[chat.me.role]
-          }}</span>
-          <button
-            v-if="setupAvailable"
-            type="button"
-            @click="
-              close();
-              emit('setup');
-            "
-          >
-            <UiIcon name="bell" />Уведомления
-          </button>
-          <button
-            v-if="chat.me && !chat.me.owner"
-            type="button"
-            @click="
-              close();
-              emit('logout');
-            "
-          >
-            <UiIcon name="logout" />Выйти
-          </button>
-        </template>
+        <button
+          v-for="s in sections"
+          :key="s.value"
+          type="button"
+          :aria-pressed="modelValue === s.value"
+          aria-controls="team-panel"
+          @click="select(s.value)"
+        >
+          <UiIcon
+            name="check"
+            :class="{ 'team-navigation-unchecked': modelValue !== s.value }"
+          />{{ s.label }}
+        </button>
+        <hr />
+        <button type="button" @click="theme">
+          <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
+            appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
+          }}
+        </button>
         <p v-if="error" role="alert">{{ error }}</p>
       </section>
     </div>
+    <button
+      type="button"
+      class="team-heading-close"
+      aria-label="Закрыть чат Сотрудники"
+      title="Закрыть"
+      @click="emit('close')"
+    >
+      <UiIcon name="close" />
+    </button>
   </nav>
 </template>
 <style scoped>
 .team-chat-navigation {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   flex: 1;
   min-width: 0;
@@ -295,13 +228,12 @@ onBeforeUnmount(() => {
   color: var(--codex-pane-text);
 }
 .team-navigation-identity {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 .team-navigation-picker {
   position: relative;
-  flex: none;
+  min-width: 0;
 }
 .team-chat-navigation .team-navigation-trigger {
   display: flex;
@@ -335,9 +267,26 @@ onBeforeUnmount(() => {
 .team-navigation-trigger:hover {
   background: var(--codex-pane-hover);
 }
+.team-chat-navigation .team-heading-close {
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.team-heading-close:hover {
+  background: var(--codex-pane-hover);
+}
 .team-navigation-menu {
   position: absolute;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
   top: calc(100% + 6px);
   z-index: 70;
   width: min(230px, calc(100vw - 48px));
@@ -347,7 +296,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--codex-pane-border);
   border-radius: 10px;
   background: var(--codex-pane-surface);
-  box-shadow: 0 8px 28px #0003;
+  box-shadow: 0 8px 24px #0002;
 }
 .team-navigation-menu button {
   display: flex;
@@ -380,25 +329,16 @@ onBeforeUnmount(() => {
   border: 0;
   border-top: 1px solid var(--codex-pane-border);
 }
-.team-navigation-role {
-  display: block;
-  padding: 10px;
-  font-size: 12px;
-  color: var(--codex-pane-muted);
-}
-.team-navigation-menu :deep(.team-role-select) {
-  display: flex;
-  max-width: none;
-  width: 100%;
-}
 .team-navigation-menu p {
   margin: 6px;
   color: var(--color-danger, #c65048);
   font-size: 12px;
 }
-.team-chat-navigation button:focus-visible,
-.team-chat-navigation select:focus-visible {
-  outline: 2px solid var(--codex-pane-focus);
-  outline-offset: -2px;
+.team-chat-navigation button:focus {
+  outline: none !important;
+  box-shadow: none;
+}
+.team-chat-navigation[data-keyboard="true"] button:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--codex-pane-focus);
 }
 </style>

@@ -85,6 +85,14 @@ async function run(id, fn) {
     pending.value.delete(id);
   }
 }
+async function ownRoleChanged(event) {
+  if (!chat.me?.owner) return;
+  const ok = await run("owner-role", async () => {
+    await chat.action("/settings", { ownerRole: event.target.value }, "patch");
+    return true;
+  });
+  if (!ok && chat.me) event.target.value = chat.me.role;
+}
 async function newInvite() {
   await run("new", async () => {
     const data = await chat.action("/invite", { role: "employee" });
@@ -239,6 +247,16 @@ const statusLabel = (s) =>
   <div class="member-admin">
     <div v-if="error" class="member-error" role="alert">{{ error }}</div>
     <div class="member-toolbar">
+      <div v-if="chat.me?.owner" class="member-owner-row">
+        <span :title="chat.me.displayName">{{ chat.me.displayName }}</span>
+        <TeamChatRoleSelect
+          :value="chat.me.role"
+          :roles="chat.me.roles"
+          label="Моя роль в чате"
+          :disabled="pending.has('owner-role')"
+          @change="ownRoleChanged"
+        />
+      </div>
       <button
         ref="inviteButton"
         class="member-create"
@@ -530,6 +548,19 @@ const statusLabel = (s) =>
   </div>
 </template>
 <style scoped>
+.member-owner-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.member-owner-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .member-admin {
   display: flex;
   flex-direction: column;
@@ -568,6 +599,8 @@ const statusLabel = (s) =>
 }
 .member-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: flex-end;
 }

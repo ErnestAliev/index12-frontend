@@ -1,8 +1,4 @@
-import {
-  selectSection,
-  openChatSettings,
-  closeChatMenu,
-} from "./team-chat-navigation.mjs";
+import { selectSection, closeChatMenu } from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
 export async function verifyAdministrationBrowser({
   context,
@@ -35,12 +31,8 @@ export async function verifyAdministrationBrowser({
       .count(),
     0,
   );
-  await openChatSettings(frame);
   assert.equal(
-    await frame
-      .locator(".team-heading")
-      .getByLabel("Моя роль в чате", { exact: true })
-      .count(),
+    await frame.getByLabel("Моя роль в чате", { exact: true }).count(),
     1,
   );
   await closeChatMenu(frame);

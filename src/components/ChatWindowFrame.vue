@@ -17,6 +17,7 @@ import CodexGlyph from "./CodexGlyph.vue";
 const props = defineProps({
   open: Boolean,
   closable: { type: Boolean, default: true },
+  headingOwnsClose: Boolean,
   mobile: Boolean,
   title: { type: String, default: "Codex" },
   windowId: { type: String, default: "codex-chat-window" },
@@ -67,8 +68,7 @@ const stopHistory =
 function saveSize() {
   try {
     const before = JSON.parse(
-      localStorage.getItem(props.storageKey) ||
-        '{\"width\":440,\"height\":650}',
+      localStorage.getItem(props.storageKey) || '{"width":440,"height":650}',
     );
     localStorage.setItem(props.storageKey, JSON.stringify(size.value));
     if (props.windowId === "codex-chat-window")
@@ -210,11 +210,11 @@ onBeforeUnmount(() => {
       @keydown="escape"
     >
       <header class="codex-window-header">
-        <slot name="heading"
+        <slot name="heading" :close="() => emit('close')"
           ><slot name="icon"><CodexIcon /></slot><span>{{ title }}</span></slot
         >
         <button
-          v-if="closable"
+          v-if="closable && !headingOwnsClose"
           type="button"
           class="codex-close"
           title="Закрыть"

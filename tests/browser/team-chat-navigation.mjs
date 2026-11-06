@@ -4,11 +4,6 @@ export async function openChatMenu(frame) {
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
   const menu = frame.getByRole("dialog", { name: "Меню чата", exact: true });
-  const back = menu.getByRole("button", {
-    name: "Назад к разделам чата",
-    exact: true,
-  });
-  if (await back.count()) await back.click();
   return menu;
 }
 export async function openChatSettings(frame) {
@@ -16,7 +11,7 @@ export async function openChatSettings(frame) {
   await menu
     .getByRole("button", { name: "Настройки чата", exact: true })
     .click();
-  return menu;
+  return frame.getByRole("region", { name: "Настройки чата", exact: true });
 }
 export async function closeChatMenu(frame) {
   const trigger = frame.getByRole("button", { name: "Меню чата", exact: true });
@@ -67,6 +62,11 @@ export async function verifyTopNavigation(page, frame, output) {
       { id: await frame.getAttribute("id"), ...viewport },
     );
     const button = await trigger.boundingBox();
+    const header = await frame.locator(".codex-window-header").boundingBox();
+    assert.ok(
+      Math.abs(button.x + button.width / 2 - header.x - header.width / 2) < 2,
+      "Compact dropdown is centered in the full header",
+    );
     assert.ok(
       button.y < 70 && button.width <= 138 && button.height >= 44,
       "One compact dropdown remains at the top on every device",
@@ -101,6 +101,12 @@ export async function verifyTopNavigation(page, frame, output) {
     await menu
       .getByRole("button", { name: "Настройки чата", exact: true })
       .waitFor();
+    const focus = await trigger.evaluate((el) => ({
+      outline: getComputedStyle(el).outlineStyle,
+      shadow: getComputedStyle(el).boxShadow,
+    }));
+    assert.equal(focus.outline, "none");
+    assert.equal(focus.shadow, "none", "Pointer taps never leave a focus ring");
     if (output)
       await page.screenshot({
         path: `${output}/team-chat-header-${viewport.width}.png`,

@@ -354,20 +354,26 @@ const closedText = (status) =>
     <ChatWindowFrame
       v-else
       :open="true"
+      heading-owns-close
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
       @close="chatClosed = true"
-      ><template #heading
-        ><TeamChatHeader
-          setup-available
-          @setup="setup?.open()"
-          @logout="logout" /></template
-      ><TeamChatPane mobile
+      ><template #heading="{ close }"
+        ><TeamChatHeader @close="close" /></template
+      ><TeamChatPane
+        mobile
+        :invite-token="String(route.params.token)"
+        @logout="logout"
     /></ChatWindowFrame>
     <TeamChatSetup
-      v-if="valid && !booting && mode === 'auth'"
+      v-if="
+        valid &&
+        !booting &&
+        mode === 'auth' &&
+        !(chat.me?.status === 'active' && chat.tab === 'settings')
+      "
       ref="setup"
       :token="String(route.params.token)"
       :workspace-id="invitation?.workspaceId"
