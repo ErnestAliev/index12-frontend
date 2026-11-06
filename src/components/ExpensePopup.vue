@@ -1210,10 +1210,10 @@ watch(defaultProjectId, (defId) => {
 
 .operation-comment{box-sizing:border-box;display:block;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px;min-height:64px}
 
-.request-draft-popup{--request-panel:#242424;--request-field:#1a1a1a;--request-text:#e7e7e7;--request-muted:#ababab;background:var(--request-panel)!important;color:var(--request-text)}
-:global([data-theme="light"]) .request-draft-popup{--request-panel:#fff;--request-field:#fff;--request-text:#263631;--request-muted:#5c6863}
+.request-draft-popup{--request-panel:#242424;--request-field:#1a1a1a;--request-text:#e7e7e7;--request-muted:#ababab;--request-border:var(--color-border,#444);background:var(--request-panel)!important;color:var(--request-text)}
+:global(html[data-theme="light"] .request-draft-popup){--request-panel:var(--light-canvas,#f4f6f5);--request-field:var(--light-surface,#fff);--request-text:var(--light-text,#263631);--request-muted:var(--light-secondary,#5c6863);--request-border:var(--light-border-strong,#c4cec9)}
 .request-draft-popup h3{color:inherit}
-.request-draft-popup .operation-comment,.request-draft-popup .custom-input-box,.request-draft-popup :deep(.select-trigger){background:var(--request-field)!important;color:var(--request-text)!important;border-color:var(--color-border)!important}
+.request-draft-popup .operation-comment,.request-draft-popup .custom-input-box,.request-draft-popup :deep(.select-trigger){background:var(--request-field)!important;color:var(--request-text)!important;border-color:var(--request-border)!important}
 .request-draft-popup .real-input,.request-draft-popup .date-value-text,.request-draft-popup :deep(.selected-text){color:var(--request-text)!important}
 .request-draft-popup .floating-label,.request-draft-popup :deep(.small-label),.request-draft-popup :deep(.sub-text),.request-draft-popup :deep(.right-text){color:var(--request-muted)!important}
 .request-draft-popup .operation-comment::placeholder{color:var(--request-muted);opacity:1}
