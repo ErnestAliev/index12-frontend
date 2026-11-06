@@ -15,10 +15,21 @@ import TeamRejectDialog from "./TeamRejectDialog.vue";
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
 import TeamChatRequestMessage from "./TeamChatRequestMessage.vue";
 import { decisionStatus } from "@/utils/teamRequestStatus";
+import {
+  accountLabel,
+  accountRequestForecast,
+  liveRequestCosts,
+} from "@/utils/teamCashForecast";
 import TeamRequestCard from "./TeamRequestCard.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
-defineProps({ mobile: Boolean });
+import TeamReplyQuote from "./TeamReplyQuote.vue";
+import TeamChatDialog from "./TeamChatDialog.vue";
+import TeamChatMobileBar from "./TeamChatMobileBar.vue";
+import { useChatCompact } from "@/composables/useChatCompact";
+defineProps({ mobile: Boolean, setupAvailable: Boolean });
+const emit = defineEmits(["setup", "logout"]),
+  compact = useChatCompact();
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = ref(chat.tab || "messages"),
@@ -31,6 +42,11 @@ const chat = useTeamChatStore(),
   mentionRange = ref(null),
   mentionedPeople = ref([]),
   rejecting = ref(null),
+  replyDraft = ref(null),
+  quoteView = ref(null),
+  quoteError = ref(""),
+  highlightedMessage = ref(null),
+  swipe = ref({ id: null, x: 0 }),
   feed = ref(null),
   uploading = ref(false),
   olderLoading = ref(false),
@@ -45,13 +61,18 @@ const selectedMessageId = ref(null);
 const selectedMessage = computed(() =>
   shownMessages.value.find((m) => m._id === selectedMessageId.value),
 );
-let holdTimer, holdStart, suppressedClick;
+let holdTimer, holdStart, suppressedClick, gesture, highlightTimer;
+function resetSwipe() {
+  gesture = null;
+  swipe.value = { id: null, x: 0 };
+}
 function cancelHold() {
   clearTimeout(holdTimer);
   holdTimer = null;
 }
 function openMessageMenu(row) {
   cancelHold();
+  resetSwipe();
   if (row._delivery || selectedMessageId.value === row._id) return;
   selectedMessageId.value = row._id;
 }
@@ -65,6 +86,21 @@ function holdMessage(event, row) {
   cancelHold();
   suppressedClick = null;
   holdStart = { x: event.clientX, y: event.clientY };
+  gesture =
+    !row._delivery && row.kind !== "request"
+      ? {
+          id: row._id,
+          pointerId: event.pointerId,
+          offset: event.currentTarget.offsetLeft,
+          ...holdStart,
+        }
+      : null;
+  if (gesture)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* Pointer capture is optional for older browsers. */
+    }
   holdTimer = setTimeout(() => {
     suppressedClick = row._id;
     openMessageMenu(row);
@@ -76,6 +112,86 @@ function moveMessage(event) {
     Math.hypot(event.clientX - holdStart.x, event.clientY - holdStart.y) > 10
   )
     cancelHold();
+  if (!gesture || gesture.pointerId !== event.pointerId) return;
+  const dx = event.clientX - gesture.x,
+    dy = Math.abs(event.clientY - gesture.y);
+  if (dy > 14 && dy > Math.abs(dx)) {
+    resetSwipe();
+    return;
+  }
+  if (dx > 12 && dx > dy * 1.4)
+    swipe.value = {
+      id: gesture.id,
+      x: Math.min(80, dx),
+      offset: gesture.offset,
+    };
+}
+function finishMessagePointer(event, row) {
+  cancelHold();
+  const reply =
+    gesture?.id === row._id && swipe.value.x >= 64 && !selectedMessage.value;
+  resetSwipe();
+  if (reply) {
+    suppressedClick = row._id;
+    void startReply(row);
+  }
+}
+function pointerCancelled() {
+  cancelHold();
+  resetSwipe();
+}
+async function startReply(row) {
+  if (row._delivery) return;
+  replyDraft.value = {
+    messageId: row._id,
+    authorId: row.authorId,
+    authorName: row.authorName,
+    text: String(row.text || "").slice(0, 1000),
+    fileName: row.attachments?.[0]?.name || "",
+    fileCount: row.attachments?.length || 0,
+    contentVersion: row.contentVersion || 0,
+  };
+  selectedMessageId.value = null;
+  localError.value = "";
+  composeArea.value?.querySelector("textarea")?.focus({ preventScroll: true });
+  await nextTick();
+  composeArea.value?.querySelector("textarea")?.focus({ preventScroll: true });
+}
+function displayQuote(quote) {
+  return chat.state.deletedMessageIds?.includes(quote.messageId)
+    ? { ...quote, deleted: true }
+    : quote;
+}
+async function showOriginal(quote) {
+  if (displayQuote(quote).deleted) return;
+  const source = [
+    ...(feed.value?.querySelectorAll("[data-message-id]") || []),
+  ].find((e) => e.dataset.messageId === quote.messageId);
+  if (source) {
+    source.scrollIntoView({ block: "center", behavior: "smooth" });
+    highlightedMessage.value = quote.messageId;
+    clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => (highlightedMessage.value = null), 2000);
+    return;
+  }
+  const workspace = chat.me?.workspaceId;
+  quoteError.value = "";
+  quoteView.value = { loading: true };
+  try {
+    const { data } = await teamApi.get(`/messages/${quote.messageId}`);
+    if (workspace === chat.me?.workspaceId) {
+      quoteView.value = data.message;
+      trackVisibleHistory();
+      chat.schedule();
+      void teamApi
+        .post("/messages/read", { ids: [data.message._id] })
+        .catch(() => {});
+    }
+  } catch (e) {
+    if (workspace === chat.me?.workspaceId)
+      quoteError.value =
+        e.response?.status === 404 ? "Сообщение удалено" : teamError(e);
+  }
 }
 function messageClick(event, row) {
   if (suppressedClick === row._id) {
@@ -92,6 +208,8 @@ function messageKeys(event, row) {
 }
 function deletedMessage(id) {
   older.value = older.value.filter((m) => m._id !== id);
+  if (replyDraft.value?.messageId === id)
+    replyDraft.value = { ...replyDraft.value, deleted: true };
 }
 async function reactToMessage(row, reaction) {
   await run(() =>
@@ -218,6 +336,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   clearTimeout(noticeTimer);
+  clearTimeout(highlightTimer);
   clearTimeout(readTimer);
   clearTimeout(scrollTimer);
   cancelHold();
@@ -261,6 +380,15 @@ const money = (cents) =>
     currency: "KZT",
     maximumFractionDigits: 2,
   }).format(cents / 100);
+const accountForecasts = computed(() =>
+  (chat.state.financial?.accounts || []).map((a) =>
+    accountRequestForecast(
+      a,
+      liveRequestCosts(chat.state.activeRequestCosts, chat.state.requests),
+      chat.state.financial.asOf,
+    ),
+  ),
+);
 const isReviewer = computed(
   () => chat.isOwner || ["manager", "director"].includes(chat.me?.role),
 );
@@ -282,6 +410,20 @@ const shownMessages = computed(() =>
         a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
     ),
 );
+watch(
+  () => [chat.state.deletedMessageIds, chat.state.messageUpdates],
+  () => {
+    const id = quoteView.value?._id;
+    if (!id) return;
+    if (chat.state.deletedMessageIds?.includes(id)) {
+      quoteError.value = "Сообщение удалено";
+      quoteView.value = { loading: false };
+    } else {
+      const updated = chat.state.messageUpdates?.find((m) => m._id === id);
+      if (updated) quoteView.value = updated;
+    }
+  },
+);
 watch(selectedMessage, (value) => {
   if (!value) selectedMessageId.value = null;
 });
@@ -289,6 +431,9 @@ watch(
   () => chat.me?.workspaceId,
   () => {
     older.value = [];
+    replyDraft.value = null;
+    quoteView.value = null;
+    resetSwipe();
     acknowledgedReads.clear();
     mentionedPeople.value = [];
     mentionQuery.value = null;
@@ -358,13 +503,20 @@ async function run(fn) {
 }
 async function send() {
   if (uploading.value || (!message.value.trim() && !files.value.length)) return;
+  if (replyDraft.value && displayQuote(replyDraft.value).deleted) {
+    localError.value =
+      "Исходное сообщение удалено. Отмените ответ или выберите другое сообщение";
+    return;
+  }
   const id = chat.send(message.value, files.value, {
+    replyTo: replyDraft.value,
     mentionIds: mentionedPeople.value
       .filter((p) => message.value.includes("@" + p.name))
       .map((p) => p._id),
   });
   if (!id) return;
   message.value = "";
+  replyDraft.value = null;
   mentionedPeople.value = [];
   mentionQuery.value = null;
   files.value = [];
@@ -421,7 +573,8 @@ function scheduleReads() {
       !feed.value ||
       document.visibilityState !== "visible" ||
       creating.value ||
-      selectedMessage.value
+      selectedMessage.value ||
+      quoteView.value
     )
       return;
     const box = feed.value.getBoundingClientRect(),
@@ -451,10 +604,13 @@ function scheduleReads() {
     }
   }, 200);
 }
-watch([shownMessages, tab, creating, selectedMessageId], async () => {
-  await nextTick();
-  scheduleReads();
-});
+watch(
+  [shownMessages, tab, creating, selectedMessageId, quoteView],
+  async () => {
+    await nextTick();
+    scheduleReads();
+  },
+);
 function trackVisibleHistory() {
   scheduleReads();
   if (!feed.value) return;
@@ -466,7 +622,11 @@ function trackVisibleHistory() {
     })
     .map((element) => element.dataset.messageId);
   chat.olderMessageIds = [
-    ...new Set([...ids, ...older.value.slice(-40).map((m) => m._id)]),
+    ...new Set([
+      ...(quoteView.value?._id ? [quoteView.value._id] : []),
+      ...ids,
+      ...older.value.slice(-40).map((m) => m._id),
+    ]),
   ].slice(0, 120);
 }
 let scrollTimer;
@@ -682,8 +842,36 @@ async function copy(text) {
       :message="selectedMessage"
       @close="selectedMessageId = null"
       @deleted="deletedMessage"
+      @reply="startReply"
     />
-    <nav class="team-tabs" role="tablist" aria-label="Разделы чата">
+    <TeamChatDialog
+      v-if="quoteView"
+      title="Исходное сообщение"
+      @close="quoteView = null"
+      ><div class="team-original-message">
+        <p v-if="quoteError" role="alert">{{ quoteError }}</p>
+        <span v-else-if="quoteView.loading" role="status"
+          >Загружаем сообщение…</span
+        ><template v-else
+          ><strong>{{ quoteView.authorName }}</strong
+          ><CodexMessageText :text="quoteView.text" /><button
+            v-for="file in quoteView.attachments"
+            :key="file.fileId"
+            type="button"
+            class="team-file"
+            @click="download(file)"
+          >
+            <UiIcon name="attach" />{{ file.name }}
+          </button></template
+        >
+      </div></TeamChatDialog
+    >
+    <nav
+      v-if="!compact"
+      class="team-tabs"
+      role="tablist"
+      aria-label="Разделы чата"
+    >
       <button
         role="tab"
         :aria-selected="tab === 'messages'"
@@ -752,7 +940,7 @@ async function copy(text) {
         class="team-feed"
         id="team-panel"
         role="tabpanel"
-        aria-labelledby="team-tab-messages"
+        :aria-labelledby="compact ? undefined : 'team-tab-messages'"
         aria-label="Сообщения сотрудников"
         aria-live="polite"
         :aria-busy="chat.historyLoading || olderLoading"
@@ -800,16 +988,32 @@ async function copy(text) {
           <article
             :data-message-id="m._id"
             class="team-message"
-            :class="{ self: m.authorId === chat.me.actorId }"
+            :class="{
+              self: m.authorId === chat.me.actorId,
+              'reply-target': highlightedMessage === m._id,
+              swiping: swipe.id === m._id,
+            }"
           >
+            <span
+              v-if="swipe.id === m._id"
+              class="team-swipe-reply"
+              :style="{ left: `${(swipe.offset || 0) + 4}px` }"
+              aria-hidden="true"
+              ><UiIcon name="reply"
+            /></span>
             <div
               class="team-bubble"
+              :style="
+                swipe.id === m._id
+                  ? { transform: `translateX(${swipe.x}px)` }
+                  : undefined
+              "
               tabindex="0"
               :aria-label="`Сообщение ${m.authorName}`"
               @pointerdown="holdMessage($event, m)"
               @pointermove="moveMessage"
-              @pointerup="cancelHold"
-              @pointercancel="cancelHold"
+              @pointerup="finishMessagePointer($event, m)"
+              @pointercancel="pointerCancelled"
               @click.capture="messageClick($event, m)"
               @contextmenu.prevent="openMessageMenu(m)"
               @keydown="messageKeys($event, m)"
@@ -823,6 +1027,11 @@ async function copy(text) {
                   })
                 }}</time>
               </header>
+              <TeamReplyQuote
+                v-if="m.replyTo"
+                :quote="displayQuote(m.replyTo)"
+                @open="showOriginal"
+              />
               <span v-if="m.forwardedFrom" class="team-forwarded"
                 >Переслано · {{ m.forwardedFrom.authorName }}</span
               >
@@ -975,6 +1184,12 @@ async function copy(text) {
             ><small>{{ chat.me.roles[person.role] }}</small>
           </button>
         </div>
+        <TeamReplyQuote
+          v-if="replyDraft"
+          :quote="displayQuote(replyDraft)"
+          composing
+          @cancel="replyDraft = null"
+        />
         <div v-if="files.length" class="team-staged">
           <span v-for="(f, i) in files" :key="f.fileId"
             >{{ f.name
@@ -1014,7 +1229,7 @@ async function copy(text) {
       ref="scroll"
       id="team-panel"
       role="tabpanel"
-      :aria-labelledby="`team-tab-${tab}`"
+      :aria-labelledby="compact ? undefined : `team-tab-${tab}`"
       class="team-scroll"
       @focusin="revealField"
     >
@@ -1073,17 +1288,14 @@ async function copy(text) {
             <details>
               <summary>Остатки на счетах</summary>
               <details
-                v-for="a in chat.state.financial.accounts"
+                v-for="a in accountForecasts"
                 :key="a._id"
                 class="team-account-forecast"
               >
                 <summary>
-                  <span
-                    >{{ a.name
-                    }}<small>{{
-                      chat.state.companies.find((c) => c._id === a.companyId)
-                        ?.name
-                    }}</small></span
+                  <span :title="accountLabel(a, chat.state.companies)">{{
+                    accountLabel(a, chat.state.companies)
+                  }}</span
                   ><span>{{ money(a.balanceCents) }}</span>
                 </summary>
                 <dl>
@@ -1096,9 +1308,9 @@ async function copy(text) {
                     <dd>−{{ money(a.approvedCents || 0) }}</dd>
                   </div>
                   <div>
-                    <dt>После всех заявок</dt>
-                    <dd :class="{ negative: a.afterRequestsCents < 0 }">
-                      {{ money(a.afterRequestsCents ?? a.balanceCents) }}
+                    <dt>После заявок на сегодня</dt>
+                    <dd :class="{ negative: a.afterDueRequestsCents < 0 }">
+                      {{ money(a.afterDueRequestsCents) }}
                     </dd>
                   </div>
                 </dl>
@@ -1133,6 +1345,13 @@ async function copy(text) {
         ><TeamChatMembers />
       </template>
     </div>
+    <TeamChatMobileBar
+      v-if="compact && chat.me?.status === 'active'"
+      v-model="tab"
+      :setup-available="setupAvailable"
+      @setup="emit('setup')"
+      @logout="emit('logout')"
+    />
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>

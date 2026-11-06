@@ -873,3 +873,14 @@
 .team-request-create-tab{display:flex;flex:1;align-items:flex-end;justify-content:center;min-height:120px;padding:12px 0}
 .team-tabs{overflow-x:auto;scrollbar-width:none;flex:none}.team-tabs::-webkit-scrollbar{display:none}.team-tabs button{white-space:nowrap;flex:none}
 @media(max-width:480px){.team-tabs{gap:2px!important;padding-right:4px}.team-tabs button{padding-right:8px!important;padding-left:8px!important;font-size:12px!important}}
+
+.team-feed{overflow-x:hidden}
+.team-message{position:relative}
+.team-bubble{touch-action:pan-y;transition:transform 140ms ease-out}
+.team-message.swiping>.team-bubble{transition:none}
+.team-swipe-reply{position:absolute;left:8px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;color:var(--codex-pane-accent);background:var(--codex-pane-surface-soft)}
+.team-message.reply-target>.team-bubble{box-shadow:0 0 0 2px var(--codex-pane-accent)}
+.team-original-message{overflow-y:auto;min-height:0;padding:16px;font-size:14px}
+@media(prefers-reduced-motion:reduce){.team-bubble{transition:none}}
+.team-account-forecast>summary>span:first-child{display:block;min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.team-account-forecast>summary>span:last-child{flex:none;white-space:nowrap}

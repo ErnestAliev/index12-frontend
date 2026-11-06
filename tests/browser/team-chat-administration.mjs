@@ -1,3 +1,4 @@
+import { selectSection } from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
 export async function verifyAdministrationBrowser({
   context,
@@ -22,7 +23,7 @@ export async function verifyAdministrationBrowser({
     await setup
       .getByRole("button", { name: "Закрыть настройку чата", exact: true })
       .click();
-  await frame.getByRole("tab", { name: /^Участники/ }).click();
+  await selectSection(frame, "Участники");
   assert.equal(await frame.locator(".member-own-role").count(), 0);
   assert.equal(
     await frame

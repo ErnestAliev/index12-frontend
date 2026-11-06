@@ -3,6 +3,11 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import UiIcon from "./UiIcon.vue";
 import { useTeamChatStore, teamApi } from "@/stores/teamChatStore";
 import { decisionStatus, reviewerLabel } from "@/utils/teamRequestStatus";
+import {
+  accountLabel,
+  accountRequestForecast,
+  liveRequestCosts,
+} from "@/utils/teamCashForecast";
 const props = defineProps({
     request: { type: Object, required: true },
     defaultOpen: Boolean,
@@ -96,11 +101,18 @@ onBeforeUnmount(() => {
   window.removeEventListener("index12:chat-dialog-closed", markRead);
   document.removeEventListener("visibilitychange", markRead);
 });
-const accountForecast = computed(() =>
-  chat.state.financial?.accounts?.find(
+const accountForecast = computed(() => {
+  const account = chat.state.financial?.accounts?.find(
     (a) => a._id === r.value.placement?.accountId,
-  ),
-);
+  );
+  return account
+    ? accountRequestForecast(
+        account,
+        liveRequestCosts(chat.state.activeRequestCosts, chat.state.requests),
+        chat.state.financial.asOf,
+      )
+    : null;
+});
 const canDelete = computed(
   () =>
     chat.me?.owner ||
@@ -189,11 +201,17 @@ function drag(event) {
       </p>
       <p v-if="r.comment" class="request-comment">{{ r.comment }}</p>
       <dl
-        v-if="accountForecast && !r.operationId"
+        v-if="
+          accountForecast &&
+          !r.operationId &&
+          ['manager_review', 'director_review', 'ready'].includes(r.state)
+        "
         class="request-account-balances"
       >
         <div>
-          <dt>{{ r.placement.accountName }}</dt>
+          <dt :title="accountLabel(accountForecast, chat.state.companies)">
+            {{ accountLabel(accountForecast, chat.state.companies) }}
+          </dt>
           <dd>{{ money(accountForecast.balanceCents) }}</dd>
         </div>
         <div>
@@ -201,8 +219,10 @@ function drag(event) {
           <dd>{{ money(accountForecast.balanceCents - r.amountCents) }}</dd>
         </div>
         <div>
-          <dt>С учётом всех заявок</dt>
-          <dd>{{ money(accountForecast.afterRequestsCents) }}</dd>
+          <dt>Все заявки на сегодня</dt>
+          <dd :class="{ negative: accountForecast.afterDueRequestsCents < 0 }">
+            {{ money(accountForecast.afterDueRequestsCents) }}
+          </dd>
         </div>
       </dl>
       <div class="request-actions">
@@ -364,7 +384,7 @@ function drag(event) {
             </div>
             <div v-if="r.placement?.accountName">
               <dt>Счёт</dt>
-              <dd>{{ r.placement.accountName }}</dd>
+              <dd>{{ accountLabel(accountForecast, chat.state.companies) }}</dd>
             </div>
             <div v-if="r.categoryNames?.length">
               <dt>Категория</dt>
@@ -612,5 +632,14 @@ function drag(event) {
   font-size: 12px;
   color: var(--codex-pane-muted);
   margin: 0 0 8px;
+}
+.request-account-balances > div:first-child dt {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.negative {
+  color: var(--codex-pane-danger);
 }
 </style>

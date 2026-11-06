@@ -1,3 +1,4 @@
+import { selectSection, hasSection } from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
@@ -104,7 +105,7 @@ export async function verifyTeamChat({
         animations: "disabled",
       });
     }
-    await chat.getByRole("tab", { name: /^Участники/ }).click();
+    await selectSection(chat, "Участники");
     await chat
       .getByRole("button", { name: "Пригласить по ссылке", exact: true })
       .click();
@@ -160,12 +161,12 @@ export async function verifyTeamChat({
     await page.reload({ waitUntil: "domcontentloaded" });
     await launcher.waitFor();
     await launcher.click();
-    await chat.getByRole("tab", { name: /^Участники/ }).click();
+    await selectSection(chat, "Участники");
     assert.equal(
       await chat.getByLabel("Моя роль в чате", { exact: true }).inputValue(),
       "manager",
     );
-    await chat.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    await selectSection(chat, "Сообщения");
     // A fresh invitee registers from a different browser context, with no INDEX12 access.
     const employee = await browser.newContext({
       viewport: { width: 390, height: 844 },
@@ -298,11 +299,8 @@ export async function verifyTeamChat({
     releaseMessage();
     await employee.unroute("**/team-chat/messages");
     await chat.getByText("Mobile employee online", { exact: true }).waitFor();
-    assert.equal(await mobile.getByRole("tab", { name: /^Заявки/ }).count(), 1);
-    assert.equal(
-      await mobile.getByRole("tab", { name: /^Участники/ }).count(),
-      0,
-    );
+    assert.equal(await hasSection(mobile, "Заявки"), 1);
+    assert.equal(await hasSection(mobile, "Участники"), 0);
     assert.equal(
       await mobile
         .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
@@ -386,7 +384,9 @@ export async function verifyTeamChat({
     await phone.keyboard.press("Escape");
     await phone.reload();
     await mobile.waitFor();
-    assert.equal(await mobile.getByRole("tab", { name: /^Заявки/ }).count(), 1);
+    assert.equal(await hasSection(mobile, "Заявки"), 1);
+    const { verifyReplies } = await import("./team-chat-replies.mjs");
+    await verifyReplies({ page, phone, chat, mobile, context, origin, output });
     async function holdMessage(targetPage, bubble) {
       await targetPage.bringToFront();
       await bubble.locator(".team-delivery").waitFor({ state: "hidden" });
@@ -482,10 +482,7 @@ export async function verifyTeamChat({
       .getByRole("dialog", { name: "Chat", exact: true })
       .getByRole("button", { name: "Позже", exact: true })
       .click();
-    assert.equal(
-      await directorChat.getByRole("tab", { name: /Участники/ }).count(),
-      0,
-    );
+    assert.equal(await hasSection(directorChat, "Участники"), 0);
     const directorBubble = directorChat
       .locator(".team-message")
       .filter({ hasText: "Mobile employee online" })
@@ -599,7 +596,7 @@ export async function verifyTeamChat({
     await mobile
       .getByText("Это счёт на оплату?", { exact: true })
       .waitFor({ state: "hidden" });
-    await mobile.getByRole("tab", { name: /^Заявки/ }).click();
+    await selectSection(mobile, "Заявки");
     assert.equal(await mobile.locator(".request-card").count(), 0);
     const createOnly = mobile.getByRole("button", {
       name: "Создать заявку",
@@ -610,7 +607,7 @@ export async function verifyTeamChat({
       createPosition.y > 700 &&
         Math.abs(createPosition.x + createPosition.width / 2 - 195) < 2,
     );
-    await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    await selectSection(mobile, "Сообщения");
     const addButton = mobile.getByRole("button", {
       name: "Добавить в чат",
       exact: true,
@@ -734,7 +731,7 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Отправить на согласование", exact: true })
       .click();
     await requestForm.waitFor({ state: "hidden" });
-    await mobile.getByRole("tab", { name: /^Задачи/ }).click();
+    await selectSection(mobile, "Задачи");
     await mobile.getByText("Обслуживание", { exact: true }).waitFor();
     await phone.evaluate(() => {
       delete window.visualViewport.height;
@@ -768,7 +765,7 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Реквизиты и история заявки", exact: true })
       .click();
     await phone.screenshot({ path: `${output}/team-chat-request-mobile.png` });
-    await chat.getByRole("tab", { name: /^Задачи/ }).click();
+    await selectSection(chat, "Задачи");
     const requestCard = chat
       .locator(".request-card")
       .filter({ hasText: "Обслуживание" });
@@ -851,8 +848,23 @@ export async function verifyTeamChat({
       .filter({ hasText: "Обслуживание" });
     await staged
       .locator(".request-account-balances")
-      .getByText("Team cash", { exact: true })
+      .getByText("Team cash / Team company", { exact: true })
       .waitFor();
+    const accountNumbers = await staged
+      .locator(".request-account-balances dd")
+      .allTextContents();
+    const amounts = accountNumbers.map((t) =>
+      Number(
+        t
+          .replace("−", "-")
+          .replace(/[^0-9,.-]/g, "")
+          .replace(",", "."),
+      ),
+    );
+    assert.ok(
+      amounts[2] <= amounts[1] && amounts[2] < amounts[0],
+      "Today's requests must reduce the account, including the request just placed",
+    );
     // Another participant changes the request while this form is open.
     await staged
       .getByRole("button", { name: "Изменить реквизиты", exact: true })
@@ -982,7 +994,7 @@ export async function verifyTeamChat({
       },
     );
     assert.equal(rejectedResponse.status(), 201);
-    await chat.getByRole("tab", { name: /^Задачи/ }).click();
+    await selectSection(chat, "Задачи");
     const rejectedCard = chat
       .locator(".request-card")
       .filter({ hasText: rejectedTitle });
@@ -1008,7 +1020,7 @@ export async function verifyTeamChat({
       .getByRole("button", { name: "Отклонить", exact: true })
       .click();
     await rejectDialog.waitFor({ state: "hidden" });
-    await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    await selectSection(mobile, "Сообщения");
     const authorRejection = mobile
       .locator(".request-card")
       .filter({ hasText: rejectedTitle });
@@ -1019,18 +1031,18 @@ export async function verifyTeamChat({
       .getByText("Отклонено Управляющим (Calendar owner)", { exact: true })
       .waitFor();
     // The sender can delete their own message; all viewers lose it.
-    await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    await selectSection(mobile, "Сообщения");
     menu = await holdMessage(phone, originalMobile());
     await menu.getByRole("button", { name: "Удалить", exact: true }).click();
     await phone
       .getByRole("dialog", { name: "Удалить сообщение?", exact: true })
       .getByRole("button", { name: "Удалить для всех", exact: true })
       .click();
-    await chat.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    await selectSection(chat, "Сообщения");
     await chat
       .getByText("Mobile employee online — edited", { exact: true })
       .waitFor({ state: "hidden" });
-    await chat.getByRole("tab", { name: /^Задачи/ }).click();
+    await selectSection(chat, "Задачи");
     await staged
       .getByRole("button", { name: "Удалить заявку", exact: true })
       .waitFor();

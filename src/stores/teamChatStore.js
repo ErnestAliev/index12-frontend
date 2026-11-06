@@ -257,6 +257,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       // The mutation is already committed. A subsequent refresh failure must not turn it into a failed save.
       ++ticket;
       if (data.request) {
+        if (state.value.activeRequestCosts) {
+          const costs = state.value.activeRequestCosts.filter(
+            (r) => r._id !== data.request._id,
+          );
+          state.value.activeRequestCosts = [...costs, data.request];
+        }
         const index = state.value.requests.findIndex(
           (r) => r._id === data.request._id,
         );
@@ -272,10 +278,16 @@ export const useTeamChatStore = defineStore("teamChat", () => {
             a.createdAt.localeCompare(b.createdAt) ||
             a._id.localeCompare(b._id),
         );
-      if (data.deletedRequestId)
+      if (data.deletedRequestId) {
         state.value.requests = state.value.requests.filter(
           (r) => r._id !== data.deletedRequestId,
         );
+        if (state.value.activeRequestCosts)
+          state.value.activeRequestCosts =
+            state.value.activeRequestCosts.filter(
+              (r) => r._id !== data.deletedRequestId,
+            );
+      }
       if (data.deletedMessageId)
         state.value.messages = state.value.messages.filter(
           (m) => m._id !== data.deletedMessageId,
@@ -313,6 +325,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         text: row.text,
         fileIds: row.attachments.map((file) => file.fileId),
         ...(row.mentionIds?.length ? { mentionIds: row.mentionIds } : {}),
+        ...(row.replyTo ? { replyToId: row.replyTo.messageId } : {}),
       });
       if (g !== generation) return;
       ++ticket;
@@ -367,6 +380,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       authorId: me.value.actorId,
       authorName: me.value.displayName,
       text: text.trim(),
+      ...(options.replyTo ? { replyTo: { ...options.replyTo } } : {}),
       ...(options.mentionIds?.length ? { mentionIds: options.mentionIds } : {}),
       createdAt: new Date().toISOString(),
       attachments: files.map((file) =>

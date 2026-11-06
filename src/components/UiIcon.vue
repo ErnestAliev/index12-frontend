@@ -1,6 +1,12 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  menu: "M4 6h16M4 12h16M4 18h16",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  sun: "M12 3V1m0 22v-2M3 12H1m22 0h-2M4.2 4.2l1.4 1.4m12.8 12.8 1.4 1.4M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0",
+  moon: "M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z",
+  logout: "M9 4H4v16h5M14 8l4 4-4 4M8 12h13",
+  reply: "m9 5-7 7 7 7M2 12h12a7 7 0 0 1 7 7",
   refresh: "M20 7V3l-3 3a8 8 0 1 0 3 8M20 3h-5",
   bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   share: "M12 16V3m-4 4 4-4 4 4M7 10H4v11h16V10h-3",

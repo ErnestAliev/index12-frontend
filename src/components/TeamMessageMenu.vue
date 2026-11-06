@@ -3,7 +3,7 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({ message: Object });
-const emit = defineEmits(["close", "deleted"]);
+const emit = defineEmits(["close", "deleted", "reply"]);
 const chat = useTeamChatStore(),
   panel = ref(null),
   mode = ref("actions"),
@@ -215,6 +215,7 @@ onBeforeUnmount(() => {
               {{ emoji }}
             </button>
           </div>
+          <button type="button" class="menu-action" :disabled="busy" @click="emit('reply',message); emit('close')"><UiIcon name="reply" />Ответить</button>
           <button
             v-if="own && message.kind !== 'request'"
             type="button"

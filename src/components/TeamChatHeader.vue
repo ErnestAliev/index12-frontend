@@ -3,6 +3,8 @@ import { ref } from "vue";
 import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
 import TeamChatRoleSelect from "./TeamChatRoleSelect.vue";
+import { useChatCompact } from "@/composables/useChatCompact";
+const compact = useChatCompact();
 const chat = useTeamChatStore();
 const savingRole = ref(false),
   roleError = ref("");
@@ -26,46 +28,48 @@ const emit = defineEmits(["logout", "setup"]);
   <div class="team-heading">
     <UiIcon name="chat" />
     <span class="team-heading-name">{{ chat.me?.displayName || "Чат" }}</span>
-    <TeamChatRoleSelect
-      v-if="chat.me?.owner"
-      :value="chat.me.role"
-      :roles="chat.me.roles"
-      label="Моя роль в чате"
-      :disabled="savingRole"
-      @change="changeRole"
-    />
-    <span
-      v-else-if="chat.me"
-      class="team-heading-role"
-      :title="`${chat.me.roles?.[chat.me.role] || ''}${chat.me.owner ? ' · Администратор' : ''}`"
-      >{{
-        chat.me.role === "director"
-          ? "Руководитель"
-          : chat.me.roles?.[chat.me.role]
-      }}</span
-    >
-    <button
-      v-if="setupAvailable"
-      type="button"
-      class="team-heading-exit"
-      aria-label="Установка и уведомления чата"
-      title="Установка и уведомления чата"
-      @click="emit('setup')"
-    >
-      <UiIcon name="bell" />
-    </button>
-    <span v-if="roleError" class="team-heading-error" role="alert">{{
-      roleError
-    }}</span>
-    <button
-      v-if="chat.me && !chat.me.owner"
-      type="button"
-      class="team-heading-exit"
-      title="Выйти из чата"
-      @click="emit('logout')"
-    >
-      Выйти
-    </button>
+    <template v-if="!compact"
+      ><TeamChatRoleSelect
+        v-if="chat.me?.owner"
+        :value="chat.me.role"
+        :roles="chat.me.roles"
+        label="Моя роль в чате"
+        :disabled="savingRole"
+        @change="changeRole"
+      />
+      <span
+        v-else-if="chat.me"
+        class="team-heading-role"
+        :title="`${chat.me.roles?.[chat.me.role] || ''}${chat.me.owner ? ' · Администратор' : ''}`"
+        >{{
+          chat.me.role === "director"
+            ? "Руководитель"
+            : chat.me.roles?.[chat.me.role]
+        }}</span
+      >
+      <button
+        v-if="setupAvailable"
+        type="button"
+        class="team-heading-exit"
+        aria-label="Установка и уведомления чата"
+        title="Установка и уведомления чата"
+        @click="emit('setup')"
+      >
+        <UiIcon name="bell" />
+      </button>
+      <span v-if="roleError" class="team-heading-error" role="alert">{{
+        roleError
+      }}</span>
+      <button
+        v-if="chat.me && !chat.me.owner"
+        type="button"
+        class="team-heading-exit"
+        title="Выйти из чата"
+        @click="emit('logout')"
+      >
+        Выйти
+      </button>
+    </template>
   </div>
 </template>
 <style scoped>
