@@ -1,6 +1,6 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref } from "vue";
-import { useRoute } from "vue-router";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
@@ -13,21 +13,28 @@ import {
   chatWorker,
 } from "@/utils/teamPush";
 const route = useRoute(),
-  chat = useTeamChatStore(),
-  name = ref(""),
+  router = useRouter(),
+  chat = useTeamChatStore();
+const name = ref(""),
   phone = ref(""),
   password = ref(""),
+  confirmPassword = ref(""),
   visible = ref(false),
   register = ref(true),
   booting = ref(true),
   invitation = ref(null),
   setup = ref(null),
   error = ref(""),
-  workspaceName = ref(""),
+  success = ref(""),
   busy = ref(false),
-  valid = ref(false);
-const originalTitle = document.title;
-const viewportHeight = ref(window.visualViewport?.height || window.innerHeight);
+  valid = ref(false),
+  mode = ref("auth"),
+  resetToken = ref(
+    typeof route.query.reset === "string" ? route.query.reset : "",
+  ),
+  resetName = ref("");
+const originalTitle = document.title,
+  viewportHeight = ref(window.visualViewport?.height || window.innerHeight);
 function resizeEntry() {
   viewportHeight.value = window.visualViewport?.height || window.innerHeight;
   requestAnimationFrame(() => {
@@ -35,17 +42,52 @@ function resizeEntry() {
       document.activeElement.scrollIntoView({ block: "nearest" });
   });
 }
+function clearCredentials() {
+  name.value = "";
+  phone.value = "";
+  password.value = "";
+  confirmPassword.value = "";
+  visible.value = false;
+}
+watch(
+  () => chat.me?.actorId,
+  (id, previous) => {
+    if (previous && !id) {
+      clearCredentials();
+      register.value = invitation.value?.joinable !== false;
+    }
+  },
+);
 onMounted(async () => {
   document.title = "Chat";
   window.visualViewport?.addEventListener("resize", resizeEntry);
   chat.stop();
   try {
-    const { data } = await teamApi.get(`/invite/${route.params.token}`);
-    workspaceName.value = data.name;
-    invitation.value = data;
+    const responses = await Promise.all([
+      teamApi.get(`/invite/${route.params.token}`),
+      ...(resetToken.value
+        ? [
+            teamApi
+              .get(`/recovery/${encodeURIComponent(resetToken.value)}`)
+              .catch((error) => ({ error })),
+          ]
+        : []),
+    ]);
+    invitation.value = responses[0].data;
     valid.value = true;
+    register.value = invitation.value.joinable !== false;
     if ("serviceWorker" in navigator) void chatWorker().catch(() => {});
-    await chat.start(data.workspaceId);
+    if (resetToken.value) {
+      if (responses[1].error) {
+        mode.value = "recovery";
+        error.value = teamError(responses[1].error);
+        resetToken.value = "";
+        await router.replace({ path: route.path, query: {} });
+      } else {
+        mode.value = "reset";
+        resetName.value = responses[1].data.name;
+      }
+    } else await chat.start(invitation.value.workspaceId);
   } catch (e) {
     error.value = teamError(e);
   } finally {
@@ -57,10 +99,44 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener("resize", resizeEntry);
   chat.stop();
 });
+function switchMode(value) {
+  mode.value = value;
+  error.value = "";
+  success.value = "";
+  password.value = "";
+  confirmPassword.value = "";
+}
 async function submit() {
+  if (busy.value) return;
   busy.value = true;
   error.value = "";
+  success.value = "";
   try {
+    if (mode.value === "recovery") {
+      await teamApi.post("/recovery", {
+        token: route.params.token,
+        phone: "+7" + nationalPhone(phone.value),
+      });
+      success.value =
+        "Если номер зарегистрирован и доступ открыт, владелец получит запрос. Свяжитесь с ним через известный контакт, чтобы подтвердить личность и получить ссылку";
+      return;
+    }
+    if (mode.value === "reset") {
+      if (password.value !== confirmPassword.value)
+        throw Error("Пароли не совпадают");
+      await teamApi.post(`/recovery/${encodeURIComponent(resetToken.value)}`, {
+        password: password.value,
+      });
+      chat.stop();
+      clearCredentials();
+      resetToken.value = "";
+      mode.value = "auth";
+      register.value = false;
+      await router.replace({ path: route.path, query: {} });
+      success.value =
+        "Пароль обновлён. Войдите с номером телефона и новым паролем";
+      return;
+    }
     await teamApi.post("/auth", {
       token: route.params.token,
       phone: "+7" + nationalPhone(phone.value),
@@ -71,6 +147,10 @@ async function submit() {
     password.value = "";
     await chat.start(invitation.value.workspaceId);
   } catch (e) {
+    if (e.response?.data?.code === "PHONE_REGISTERED") {
+      register.value = false;
+      password.value = "";
+    }
     error.value = teamError(e);
   } finally {
     busy.value = false;
@@ -81,16 +161,24 @@ async function logout() {
   try {
     endpoint = await chatPushEndpoint();
   } catch {
-    /* Logout still works without service workers. */
+    /* Device may not support push. */
   }
   await teamApi.post("/logout", { endpoint });
   chat.stop();
+  clearCredentials();
+  register.value = invitation.value?.joinable !== false;
   try {
     await unsubscribeChatPush();
   } catch {
     /* Server binding was already removed. */
   }
 }
+const closedText = (status) =>
+  ({
+    pending: "Ожидается одобрение владельца",
+    revoked: "Доступ к чату отозван владельцем. Попросите вернуть доступ",
+    rejected: "Заявка на доступ отклонена владельцем",
+  })[status] || "Доступ к чату закрыт";
 </script>
 <template>
   <main class="team-login" :style="{ height: `${viewportHeight}px` }">
@@ -102,24 +190,39 @@ async function logout() {
           : "Подключаемся к чату…"
       }}
     </section>
-    <form v-else-if="!chat.me" @submit.prevent="submit">
-      <h1>Chat</h1>
+    <form v-else-if="!chat.me || mode !== 'auth'" @submit.prevent="submit">
+      <h1>
+        {{
+          mode === "recovery"
+            ? "Восстановить доступ"
+            : mode === "reset"
+              ? "Новый пароль"
+              : "Chat"
+        }}
+      </h1>
       <div class="team-invite-context">
-        <strong>{{ workspaceName }}</strong>
-        <p v-if="invitation">
-          Приглашает {{ invitation.inviterName }}<br />Роль:
-          {{ invitation.roleName }} · после одобрения
+        <strong>{{ invitation?.name }}</strong>
+        <p v-if="mode === 'reset'">{{ resetName }}</p>
+        <p v-else-if="invitation && mode === 'auth'">
+          Приглашает {{ invitation.inviterName }}<br /><template
+            v-if="invitation.joinable !== false"
+            >Роль: {{ invitation.roleName }} · после одобрения</template
+          ><template v-else
+            >Приглашение закрыто. Участники могут войти с паролем</template
+          >
         </p>
       </div>
       <p v-if="error" role="alert">{{ error }}</p>
-      <template v-if="valid"
-        ><label v-if="register"
+      <p v-if="success" role="status">{{ success }}</p>
+      <template v-if="valid">
+        <label v-if="mode === 'auth' && register"
           >Имя<input
             v-model="name"
             autocomplete="name"
             required
-            maxlength="100" /></label
-        ><label
+            maxlength="100"
+        /></label>
+        <label v-if="mode !== 'reset'"
           >Номер телефона
           <div class="team-phone">
             <span aria-hidden="true">+7</span
@@ -131,18 +234,23 @@ async function logout() {
               inputmode="tel"
               autocomplete="tel-national"
               aria-label="Номер телефона"
-              placeholder="705 488 66 98"
+              placeholder="Номер телефона"
               pattern="[0-9]{3} [0-9]{3} [0-9]{2} [0-9]{2}"
               required
-            /></div></label
-        ><label
-          >Пароль
+            /></div
+        ></label>
+        <label v-if="mode !== 'recovery'"
+          >{{ mode === "reset" ? "Новый пароль" : "Пароль" }}
           <div class="team-password">
             <input
               v-model="password"
               :type="visible ? 'text' : 'password'"
-              :autocomplete="register ? 'new-password' : 'current-password'"
-              :minlength="register ? 10 : 1"
+              :autocomplete="
+                register || mode === 'reset'
+                  ? 'new-password'
+                  : 'current-password'
+              "
+              :minlength="register || mode === 'reset' ? 10 : 1"
               maxlength="128"
               required
             /><button
@@ -160,32 +268,80 @@ async function logout() {
                 <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
-            </button></div></label
-        ><button class="team-login-primary" :disabled="busy">
-          {{ register ? "Запросить доступ" : "Войти" }}</button
+            </button></div
+        ></label>
+        <label v-if="mode === 'reset'"
+          >Повторите пароль<input
+            v-model="confirmPassword"
+            :type="visible ? 'text' : 'password'"
+            autocomplete="new-password"
+            minlength="10"
+            maxlength="128"
+            required
+        /></label>
+        <button
+          class="team-login-primary"
+          :disabled="busy || (mode === 'recovery' && !!success)"
+        >
+          {{
+            busy
+              ? "Подождите…"
+              : mode === "recovery"
+                ? "Запросить восстановление"
+                : mode === "reset"
+                  ? "Сохранить пароль"
+                  : register
+                    ? "Запросить доступ"
+                    : "Войти"
+          }}
+        </button>
+        <template v-if="mode === 'auth'"
+          ><button
+            v-if="invitation?.joinable !== false"
+            type="button"
+            @click="
+              register = !register;
+              error = '';
+              success = '';
+            "
+          >
+            {{
+              register ? "Уже зарегистрирован" : "Зарегистрироваться"
+            }}</button
+          ><button
+            type="button"
+            class="team-login-link"
+            @click="switchMode('recovery')"
+          >
+            Забыли пароль?
+          </button></template
         ><button
+          v-else-if="mode === 'recovery'"
           type="button"
           @click="
-            register = !register;
-            error = '';
+            switchMode('auth');
+            register = false;
           "
         >
-          {{ register ? "Уже зарегистрирован" : "Зарегистрироваться" }}
-        </button></template
-      >
+          Вернуться ко входу
+        </button>
+      </template>
     </form>
     <section v-else-if="chat.me.status !== 'active'" class="team-wait">
       <h1>
         {{
-          chat.me.status === "pending" ? "Запрос отправлен" : "Доступ закрыт"
+          chat.me.status === "pending"
+            ? "Запрос отправлен"
+            : chat.me.status === "revoked"
+              ? "Доступ отозван"
+              : "Заявка отклонена"
         }}
       </h1>
-      <p>{{ chat.error || "Ожидается одобрение владельца" }}</p>
-      <p v-if="chat.me">
-        {{ chat.me.name }} · {{ chat.me.roles?.[chat.me.role] }}
-      </p>
-      <button @click="setup?.open()">Установка и уведомления</button>
-      <button @click="logout">Выйти</button>
+      <p role="status">{{ closedText(chat.me.status) }}</p>
+      <p>{{ chat.me.name }} · {{ chat.me.roles?.[chat.me.role] }}</p>
+      <button v-if="chat.me.status === 'pending'" @click="setup?.open()">
+        Установка и уведомления</button
+      ><button @click="logout">Выйти</button>
     </section>
     <ChatWindowFrame
       v-else
@@ -203,11 +359,15 @@ async function logout() {
       ><TeamChatPane mobile
     /></ChatWindowFrame>
     <TeamChatSetup
-      v-if="valid && !booting"
+      v-if="valid && !booting && mode === 'auth'"
       ref="setup"
       :token="String(route.params.token)"
       :workspace-id="invitation?.workspaceId"
-      :identity="chat.me"
+      :identity="
+        chat.me && ['active', 'pending'].includes(chat.me.status)
+          ? chat.me
+          : null
+      "
     />
   </main>
 </template>
@@ -347,5 +507,15 @@ async function logout() {
 .team-login {
   height: 100dvh;
   overflow-y: auto;
+}
+</style>
+
+<style scoped>
+.team-login .team-login-link {
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  font-size: 13px;
+  min-height: 36px;
 }
 </style>

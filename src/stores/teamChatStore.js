@@ -54,12 +54,20 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     workspace = "",
     lastMessage = "",
     messageQueue = Promise.resolve(),
-    loaded = false;
+    loaded = false,
+    pendingSnapshot = null,
+    dragFlush;
   function stop() {
     ++generation;
     ++ticket;
     clearInterval(timer);
     clearTimeout(debounce);
+    clearTimeout(dragFlush);
+    pendingSnapshot = null;
+    if (document.body?.dataset)
+      delete document.body.dataset.teamRequestDragging;
+    document.removeEventListener("drop", finishDrag, { capture: true });
+    document.removeEventListener("dragend", finishDrag, { capture: true });
     debounce = null;
     source?.close();
     source = null;
@@ -86,6 +94,36 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     running = false;
     again = false;
   }
+  function acceptSnapshot(data) {
+    const newest = data.messages.at(-1)?._id || "";
+    if (loaded && !open.value && newest !== lastMessage) unread.value++;
+    lastMessage = newest;
+    loaded = true;
+    historyReady.value = true;
+    state.value = {
+      ...data,
+      ...(!Object.hasOwn(data, "financial")
+        ? { financial: state.value.financial }
+        : {}),
+    };
+    const confirmed = new Set(data.messages.map((row) => row._id));
+    outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
+    if (data.identity) me.value = data.identity;
+    error.value = "";
+  }
+  function finishDrag() {
+    if (!me.value) return;
+    const g = generation;
+    clearTimeout(dragFlush);
+    dragFlush = setTimeout(() => {
+      if (g !== generation) return;
+      if (document.body?.dataset)
+        delete document.body.dataset.teamRequestDragging;
+      const p = pendingSnapshot;
+      pendingSnapshot = null;
+      if (p && p.g === generation && p.t === ticket) acceptSnapshot(p.data);
+    }, 0);
+  }
   async function refresh() {
     const g = generation,
       t = ++ticket;
@@ -98,23 +136,24 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         ]),
       ].slice(0, 150);
       const { data } = await teamApi.get("/state", {
-        params: watchedIds.length ? { messageIds: watchedIds.join(",") } : {},
+        params: {
+          section: tab.value,
+          ...(watchedIds.length ? { messageIds: watchedIds.join(",") } : {}),
+        },
       });
       if (g !== generation || t !== ticket) return;
-      const newest = data.messages.at(-1)?._id || "";
-      if (loaded && !open.value && newest !== lastMessage) unread.value++;
-      lastMessage = newest;
-      loaded = true;
-      historyReady.value = true;
-      state.value = data;
-      const confirmed = new Set(data.messages.map((row) => row._id));
-      outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
-      if (data.identity) me.value = data.identity;
-      error.value = "";
+      if (document.body?.dataset?.teamRequestDragging === "true")
+        pendingSnapshot = { data, g, t };
+      else acceptSnapshot(data);
     } catch (e) {
       if (g === generation && t === ticket) {
         error.value = teamError(e);
-        if ([401, 403].includes(e.response?.status)) {
+        if (e.response?.status === 401) {
+          stop();
+          error.value = teamError(e);
+          return;
+        }
+        if (e.response?.status === 403) {
           source?.close();
           state.value = {
             messages: [],
@@ -163,12 +202,15 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       if (data.status === "active") await start(workspace);
       else me.value = data;
     } catch (e) {
-      if (g === generation) error.value = teamError(e);
+      if (g === generation) {
+        if (e.response?.status === 401) stop();
+        error.value = teamError(e);
+      }
     }
   }
   async function wake() {
     if (document.visibilityState !== "hidden") {
-      if (me.value?.status === "pending") await checkPending();
+      if (me.value && me.value.status !== "active") await checkPending();
       else schedule();
     }
   }
@@ -182,11 +224,13 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
       me.value = data;
+      document.addEventListener("drop", finishDrag, { capture: true });
+      document.addEventListener("dragend", finishDrag, { capture: true });
       window.addEventListener("focus", wake);
       document.addEventListener("visibilitychange", wake);
       timer = setInterval(() => {
         if (document.visibilityState !== "hidden") {
-          if (me.value?.status === "pending") void checkPending();
+          if (me.value && me.value.status !== "active") void checkPending();
           else schedule();
         }
       }, 15000);
@@ -227,19 +271,18 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         state.value.messages = state.value.messages.filter(
           (m) => m._id !== data.deletedMessageId,
         );
-      try {
-        if (!data.identity) {
-          const { data: identity } = await teamApi.get("/me");
-          if (g !== generation) return data;
-          me.value = identity;
-        }
-      } catch {
-        /* Recover identity through the next state refresh. */
+      if (data.member) {
+        const at = state.value.members.findIndex(
+          (m) => m._id === data.member._id,
+        );
+        if (at >= 0) state.value.members[at] = data.member;
+        else state.value.members.unshift(data.member);
       }
-      if (g === generation) {
-        if (data.identity) schedule();
-        else await refresh();
-      }
+      if (data.deletedMemberId)
+        state.value.members = state.value.members.filter(
+          (m) => m._id !== data.deletedMemberId,
+        );
+      schedule();
       return data;
     } catch (e) {
       if (g === generation) {

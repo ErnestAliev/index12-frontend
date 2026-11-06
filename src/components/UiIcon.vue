@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  refresh: "M20 7V3l-3 3a8 8 0 1 0 3 8M20 3h-5",
   bell: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   share: "M12 16V3m-4 4 4-4 4 4M7 10H4v11h16V10h-3",
   chat: "M21 11.5a7.5 7.5 0 0 1-7.5 7.5H5l-3 3V11.5A7.5 7.5 0 0 1 9.5 4h4a7.5 7.5 0 0 1 7.5 7.5ZM7 10h9M7 14h6",

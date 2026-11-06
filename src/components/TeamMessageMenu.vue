@@ -512,7 +512,7 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-:global(html[data-theme="light"]) .team-message-menu-backdrop {
+:global(html[data-theme="light"] .team-message-menu-backdrop) {
   --codex-pane-bg: var(--light-canvas, #f4f6f5);
   --codex-pane-surface: var(--light-surface, #fff);
   --codex-pane-text: var(--light-text, #263631);

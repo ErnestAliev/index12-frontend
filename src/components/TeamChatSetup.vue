@@ -267,10 +267,15 @@ onBeforeUnmount(() => {
         <template v-if="!installed">
           <h3>Добавьте Chat на главный экран</h3>
           <p>Иконка откроет этот чат по вашей ссылке приглашения.</p>
-          <button class="setup-primary" :disabled="installing" @click="install">
-            Да, добавить
+          <button
+            v-if="deferred || (!iosDevice() && !instructions)"
+            class="setup-primary"
+            :disabled="installing"
+            @click="install"
+          >
+            {{ deferred ? "Установить Chat" : "Как добавить на главный экран" }}
           </button>
-          <ol v-if="instructions && iosDevice()">
+          <ol v-if="iosDevice()">
             <li>
               Нажмите «Поделиться» в меню браузера <UiIcon name="share" />.
             </li>

@@ -742,7 +742,7 @@
   }
 }
 
-:global(html[data-theme="light"]) .team-tabs button[aria-selected="true"] {
+:global(html[data-theme="light"] .team-tabs button[aria-selected="true"]) {
   background: var(--light-accent-soft, #e3edea);
   border-color: var(--light-border, #d5ded8);
   color: var(--light-text, #263631);
@@ -858,3 +858,7 @@
 .team-history-spinner { width:18px; height:18px; border:2px solid var(--codex-pane-border); border-top-color:var(--codex-pane-focus); border-radius:50%; animation:team-history-spin .8s linear infinite; }
 @keyframes team-history-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .team-history-spinner { animation:none; } }
+
+.team-pane :deep(select) { appearance:none; -webkit-appearance:none; padding-right:36px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23859390' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-size:14px 14px; background-position:right 12px center; line-height:20px; }
+.team-pane :deep(button:has(>svg)) { align-items:center; justify-content:center; vertical-align:middle; }
+.team-pane :deep(button:has(>svg:only-child)) { display:inline-flex; line-height:1; }

@@ -8,7 +8,6 @@ import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
 import ExpensePopup from "./ExpensePopup.vue";
-import { dayAt } from "@/utils/calendarTime";
 const main = useMainStore(),
   chat = useTeamChatStore(),
   route = useRoute(),
@@ -434,5 +433,19 @@ async function decide(status) {
 .team-approval select:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+</style>
+
+<style scoped>
+.team-approval select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23859390' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+  background-position: right 12px center;
+  min-height: 40px;
+  line-height: 20px;
 }
 </style>

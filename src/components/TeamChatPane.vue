@@ -14,6 +14,7 @@ import TeamContractorSelect from "./TeamContractorSelect.vue";
 import TeamRequestCard from "./TeamRequestCard.vue";
 import TeamExpenseTitle from "./TeamExpenseTitle.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
+import TeamChatMembers from "./TeamChatMembers.vue";
 import { formatAmountInputEvent } from "@/utils/amountInput";
 defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
@@ -24,8 +25,6 @@ const chat = useTeamChatStore(),
   input = ref(null),
   feed = ref(null),
   uploading = ref(false),
-  invite = ref(""),
-  inviteRole = ref("employee"),
   olderLoading = ref(false),
   historyMore = ref(!!chat.state.hasMore),
   historyError = ref(""),
@@ -174,6 +173,7 @@ const draft = ref({
 });
 watch(tab, (value) => {
   chat.tab = value;
+  chat.schedule();
 });
 watch(
   () => chat.requestedRequestId,
@@ -184,22 +184,8 @@ watch(
     }
   },
 );
-const selectedRoles = ref({}),
-  processingPdf = ref(null),
+const processingPdf = ref(null),
   focusedRequest = ref(chat.requestedRequestId || null);
-function updateRole(member, role) {
-  if (member.status === "pending") {
-    selectedRoles.value[member._id] = role;
-    return;
-  }
-  void run(() =>
-    chat.action(
-      `/members/${member._id}`,
-      { role, status: member.status, expectedVersion: member.version },
-      "patch",
-    ),
-  );
-}
 const money = (cents) =>
   new Intl.NumberFormat("ru-KZ", {
     style: "currency",
@@ -239,7 +225,6 @@ watch(
     loadingGap.value = null;
     olderLoading.value = false;
     historyError.value = "";
-    invite.value = "";
     files.value = [];
     message.value = "";
   },
@@ -534,13 +519,6 @@ async function removeRequest(row) {
   );
   if (result) chat.notice = "";
 }
-async function invitePeople() {
-  await run(async () => {
-    const data = await chat.action("/invite", { role: inviteRole.value });
-    invite.value = data.url;
-    await navigator.clipboard?.writeText(data.url).catch(() => {});
-  });
-}
 async function copy(text) {
   await run(() => navigator.clipboard.writeText(text));
 }
@@ -584,7 +562,9 @@ async function copy(text) {
         @click="tab = 'members'"
       >
         Участники
-        <small v-if="chat.pending.length">{{ chat.pending.length }}</small>
+        <small v-if="chat.pending.length || chat.state.recoveryCount">{{
+          chat.pending.length + (chat.state.recoveryCount || 0)
+        }}</small>
       </button>
     </nav>
     <div v-if="chat.notice" class="team-notice" role="status">
@@ -993,107 +973,8 @@ async function copy(text) {
           />
         </template>
       </template>
-      <template v-else-if="tab === 'members' && chat.isOwner">
-        <div class="team-settings">
-          <select
-            v-if="chat.isOwner"
-            :value="chat.me.role"
-            aria-label="Моя роль в чате"
-            :disabled="chat.busy"
-            @change="
-              run(() =>
-                chat.action(
-                  '/settings',
-                  { ownerRole: $event.target.value },
-                  'patch',
-                ),
-              )
-            "
-          >
-            <option value="employee">Сотрудник</option>
-            <option value="manager">Управляющий</option>
-            <option value="director">Руководитель компании</option>
-          </select>
-          <select v-model="inviteRole" aria-label="Роль приглашённого">
-            <option v-for="(name, id) in chat.me.roles" :key="id" :value="id">
-              {{ name }}
-            </option>
-          </select>
-          <button @click="invitePeople">Пригласить по ссылке</button
-          ><input
-            v-if="invite"
-            :value="invite"
-            readonly
-            aria-label="Ссылка приглашения в чат"
-            @focus="$event.target.select()"
-          />
-        </div>
-        <article
-          v-for="m in chat.state.members"
-          :key="m._id"
-          class="team-member"
-        >
-          <strong>{{ m.name }}</strong
-          ><span>{{ m.phone }}</span
-          ><select
-            :value="selectedRoles[m._id] || m.role"
-            :aria-label="`Роль ${m.name}`"
-            @change="updateRole(m, $event.target.value)"
-          >
-            <option
-              v-for="(label, role) in chat.me.roles"
-              :key="role"
-              :value="role"
-            >
-              {{ label }}
-            </option>
-          </select>
-          <div>
-            <span>{{
-              {
-                active: "В чате",
-                pending: "Ожидает одобрения",
-                rejected: "Отклонён",
-                revoked: "Доступ закрыт",
-              }[m.status]
-            }}</span
-            ><button
-              v-if="m.status === 'pending'"
-              @click="
-                run(() =>
-                  chat.action(
-                    `/members/${m._id}`,
-                    {
-                      role: selectedRoles[m._id] || m.role,
-                      status: 'active',
-                      expectedVersion: m.version,
-                    },
-                    'patch',
-                  ),
-                )
-              "
-            >
-              Одобрить</button
-            ><button
-              v-if="m.status === 'active'"
-              @click="
-                run(() =>
-                  chat.action(
-                    `/members/${m._id}`,
-                    {
-                      role: m.role,
-                      status: 'revoked',
-                      expectedVersion: m.version,
-                    },
-                    'patch',
-                  ),
-                )
-              "
-            >
-              Закрыть доступ
-            </button>
-          </div>
-        </article>
+      <template v-else-if="tab === 'members' && chat.isOwner"
+        ><TeamChatMembers />
       </template>
     </div>
   </div>

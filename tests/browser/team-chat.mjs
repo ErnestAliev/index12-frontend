@@ -104,12 +104,24 @@ export async function verifyTeamChat({
       });
     }
     await chat.getByRole("tab", { name: /^Участники/ }).click();
+    const invitationCreated = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/team-chat/invite") &&
+        r.request().method() === "POST",
+    );
     await chat
       .getByRole("button", { name: "Пригласить по ссылке", exact: true })
       .click();
-    const generated = await chat
-      .getByLabel("Ссылка приглашения в чат", { exact: true })
-      .inputValue();
+    const generated = (await (await invitationCreated).json()).url;
+    await page.waitForFunction(
+      (url) =>
+        [
+          ...document.querySelectorAll(
+            '[aria-label="Ссылка приглашения в чат"]',
+          ),
+        ].some((field) => field.value === url),
+      generated,
+    );
     assert.ok(generated.includes("/team/"));
     token = generated.split("/").at(-1);
     for (const role of ["director", "employee", "manager"]) {
@@ -176,7 +188,7 @@ export async function verifyTeamChat({
       window.dispatchEvent(event);
     });
     await setupDialog
-      .getByRole("button", { name: "Да, добавить", exact: true })
+      .getByRole("button", { name: "Установить Chat", exact: true })
       .click();
     assert.equal(await phone.evaluate(() => window.installPromptCount), 1);
     await phone.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
@@ -842,7 +854,11 @@ export async function verifyTeamChat({
       .getByText(/Передано руководителю/)
       .waitFor();
     assert.equal(submissions, 1);
-    assert.equal(failedIdentity, true);
+    assert.equal(
+      failedIdentity,
+      false,
+      "A successful mutation no longer waits for a redundant identity request",
+    );
     await context.unroute("**/team-chat/me");
     await context.unroute(
       `**/team-chat/requests/${pendingRequest._id}/placement`,
@@ -899,6 +915,18 @@ export async function verifyTeamChat({
       base: "http://127.0.0.1:5173",
       origin,
       token,
+      output,
+    });
+    const { verifyAdministrationBrowser } = await import(
+      "./team-chat-administration.mjs"
+    );
+    await verifyAdministrationBrowser({
+      context,
+      browser,
+      base: "http://127.0.0.1:5173",
+      origin,
+      token,
+      employeePage: phone,
       output,
     });
     assert.deepEqual(errors, []);

@@ -326,3 +326,74 @@ test("initial history has a retryable loader, and refresh watches current-page d
   assert.equal(s.historyReady, false);
   assert.equal(s.historyLoading, false);
 });
+
+test("member changes use one foreground request and apply the returned member without waiting for identity or full state", async () => {
+  const s = fixture();
+  teamApi.defaults.adapter = async (config) => ({
+    status: 200,
+    data:
+      config.url === "/me"
+        ? { workspaceId: "fast", status: "active", owner: true }
+        : empty(),
+  });
+  await s.start("fast");
+  s.state.members = [
+    { _id: "member", role: "employee", status: "revoked", version: 1 },
+  ];
+  const calls = [];
+  teamApi.defaults.adapter = async (config) => {
+    calls.push(config.url);
+    if (config.url !== "/members/member") return new Promise(() => {});
+    return {
+      status: 200,
+      data: {
+        member: {
+          _id: "member",
+          role: "manager",
+          status: "active",
+          version: 2,
+        },
+      },
+    };
+  };
+  await s.action(
+    "/members/member",
+    { role: "manager", status: "active", expectedVersion: 1 },
+    "patch",
+  );
+  assert.deepEqual(calls, ["/members/member"]);
+  assert.equal(s.state.members[0].status, "active");
+  assert.equal(s.busy, false);
+  assert.equal(s.me.owner, true);
+  s.stop();
+});
+
+test("background state cannot move a dragged request, and its deferred snapshot is discarded on logout", async () => {
+  const s = fixture();
+  let messages = [];
+  teamApi.defaults.adapter = async (config) => ({
+    status: 200,
+    data:
+      config.url === "/me"
+        ? { workspaceId: "drag", status: "active" }
+        : { ...empty(), messages },
+  });
+  await s.start("drag");
+  document.body = { dataset: { teamRequestDragging: "true" } };
+  messages = [{ _id: "new", text: "Arrived during drag" }];
+  await s.refresh();
+  assert.equal(s.state.messages.length, 0);
+  document.dispatchEvent(new Event("drop"));
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(s.state.messages[0]._id, "new");
+  document.body.dataset.teamRequestDragging = "true";
+  messages = [{ _id: "later", text: "Private deferred message" }];
+  await s.refresh();
+  s.stop();
+  document.dispatchEvent(new Event("dragend"));
+  await tick();
+  assert.equal(s.me, null);
+  assert.deepEqual(s.state.messages, []);
+  assert.equal(document.body.dataset.teamRequestDragging, undefined);
+  delete document.body;
+});

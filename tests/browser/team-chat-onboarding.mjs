@@ -17,9 +17,6 @@ export async function verifyOnboardingBrowser({
   await page.goto(base + "/team/" + token, { waitUntil: "domcontentloaded" });
   const setup = page.getByRole("dialog", { name: "Chat", exact: true });
   await setup.waitFor();
-  await setup
-    .getByRole("button", { name: "Да, добавить", exact: true })
-    .click();
   await setup.getByText(/Выберите «На экран Домой»/).waitFor();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
