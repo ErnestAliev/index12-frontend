@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { selectSection } from "./team-chat-navigation.mjs";
+import { selectSection, verifyTopNavigation } from "./team-chat-navigation.mjs";
 export async function verifyReplies({
   page,
   phone,
@@ -114,7 +114,7 @@ export async function verifyReplies({
   assert.equal(deleted.status(), 200);
   await replyBubble.getByText("Сообщение удалено", { exact: true }).waitFor();
   await touch.detach();
-  // Mobile navigation replaces tabs; account actions and persisted theme live in the bottom menu.
+  // The same top navigation is used on phone, tablet and desktop.
   assert.equal(await mobile.getByRole("tab").count(), 0);
   assert.equal(
     await mobile.locator(".team-heading-role,.team-heading-exit").count(),
@@ -126,12 +126,18 @@ export async function verifyReplies({
     }),
     navBox = await nav.boundingBox();
   assert.ok(Math.abs(navBox.x + navBox.width / 2 - 195) < 2);
+  assert.ok(navBox.y < 70, "Section picker must remain in the header");
   await mobile.getByRole("button", { name: "Меню чата", exact: true }).click();
   const account = mobile.getByRole("dialog", {
     name: "Меню чата",
     exact: true,
   });
   await account.getByText("Сотрудник", { exact: true }).waitFor();
+  const menuBox = await account.boundingBox();
+  assert.ok(
+    menuBox.y >= navBox.y + navBox.height,
+    "Menu must open below the header",
+  );
   await account
     .getByRole("button", { name: "Уведомления", exact: true })
     .waitFor();
@@ -150,6 +156,7 @@ export async function verifyReplies({
   await selectSection(mobile, "Задачи");
   assert.equal(await nav.inputValue(), "tasks");
   await selectSection(mobile, "Сообщения");
+  await verifyTopNavigation(phone, mobile, output);
   console.log(
     "PASS: hold-to-reply, native touch swipe, vertical-scroll preservation, quoted replies and deletion, mobile dropdown and account/theme menu",
   );

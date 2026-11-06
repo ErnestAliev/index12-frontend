@@ -45,12 +45,13 @@ onMounted(() => document.addEventListener("pointerdown", outside));
 onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
 </script>
 <template>
-  <nav class="team-mobile-bar" aria-label="Навигация чата">
-    <span aria-hidden="true"></span>
-    <div class="team-mobile-section">
+  <nav class="team-chat-navigation" aria-label="Навигация чата">
+    <div class="team-navigation-identity"><slot /></div>
+    <div class="team-navigation-section">
       <select
         :value="modelValue"
         aria-label="Раздел чата"
+        aria-controls="team-panel"
         @change="emit('update:modelValue', $event.target.value)"
       >
         <option value="messages">Сообщения</option>
@@ -61,13 +62,13 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
     </div>
     <div
       ref="root"
-      class="team-mobile-account"
+      class="team-navigation-account"
       @keydown.esc.stop.prevent="close"
     >
       <button
         ref="trigger"
         type="button"
-        class="team-mobile-menu-trigger"
+        class="team-navigation-menu-trigger"
         aria-label="Меню чата"
         aria-haspopup="dialog"
         :aria-expanded="open"
@@ -77,7 +78,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
       </button>
       <section
         v-if="open"
-        class="team-mobile-menu"
+        class="team-navigation-menu"
         role="dialog"
         aria-label="Меню чата"
       >
@@ -89,7 +90,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
           :disabled="savingRole"
           @change="roleChanged"
         />
-        <span v-else class="team-mobile-role">{{
+        <span v-else class="team-navigation-role">{{
           chat.me?.roles?.[chat.me.role]
         }}</span>
         <button
@@ -123,25 +124,27 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   </nav>
 </template>
 <style scoped>
-.team-mobile-bar {
+.team-chat-navigation {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 170px) minmax(44px, 1fr);
   align-items: center;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   min-height: 44px;
   box-sizing: border-box;
-  padding: 0 8px env(safe-area-inset-bottom, 0px);
-  border-top: 1px solid var(--codex-pane-border);
-  background: var(--codex-pane-bg);
   color: var(--codex-pane-text);
 }
-.team-mobile-section {
+.team-navigation-identity {
+  min-width: 0;
+  overflow: hidden;
+}
+.team-navigation-section {
   position: relative;
   justify-self: center;
-  min-width: 140px;
-  max-width: 190px;
+  width: 100%;
+  min-width: 0;
 }
-.team-mobile-section select {
+.team-navigation-section select {
   appearance: none !important;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -156,11 +159,11 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   text-align: center;
   cursor: pointer;
 }
-.team-mobile-section select option {
+.team-navigation-section select option {
   color: var(--codex-pane-text);
   background: var(--codex-pane-surface);
 }
-.team-mobile-section > .ui-icon {
+.team-navigation-section > .ui-icon {
   position: absolute;
   right: 7px;
   top: 50%;
@@ -169,10 +172,11 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   height: 14px;
   pointer-events: none;
 }
-.team-mobile-account {
+.team-navigation-account {
   position: relative;
+  justify-self: end;
 }
-.team-mobile-bar .team-mobile-menu-trigger {
+.team-chat-navigation .team-navigation-menu-trigger {
   display: grid;
   place-items: center;
   width: 44px;
@@ -181,14 +185,15 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   padding: 0;
   background: transparent;
   color: inherit;
+  cursor: pointer;
 }
-.team-mobile-menu {
+.team-navigation-menu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   z-index: 70;
-  width: 230px;
-  max-height: min(420px, 65dvh);
+  width: min(230px, calc(100vw - 48px));
+  max-height: min(420px, calc(100dvh - 100px));
   box-sizing: border-box;
   overflow-y: auto;
   padding: 6px;
@@ -197,7 +202,7 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   background: var(--codex-pane-surface);
   box-shadow: 0 8px 28px #0003;
 }
-.team-mobile-menu button {
+.team-navigation-menu button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -213,23 +218,33 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", outside));
   text-align: left;
   cursor: pointer;
 }
-.team-mobile-menu button:hover {
+.team-navigation-menu button:hover {
   background: var(--codex-pane-surface-soft);
 }
-.team-mobile-role {
+.team-navigation-role {
   display: block;
   padding: 10px;
   font-size: 12px;
   color: var(--codex-pane-muted);
 }
-.team-mobile-menu :deep(.team-role-select) {
+.team-navigation-menu :deep(.team-role-select) {
   display: flex;
   max-width: none;
   width: 100%;
 }
-.team-mobile-menu p {
+.team-navigation-menu p {
   margin: 6px;
   color: var(--color-danger, #c65048);
   font-size: 12px;
+}
+.team-chat-navigation button:focus-visible,
+.team-chat-navigation select:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
+  outline-offset: -2px;
+}
+@container codex-window (max-width: 350px) {
+  .team-chat-navigation {
+    grid-template-columns: minmax(0, 1fr) 130px minmax(44px, 1fr);
+  }
 }
 </style>

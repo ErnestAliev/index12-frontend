@@ -356,7 +356,7 @@ const closedText = (status) =>
           setup-available
           @setup="setup?.open()"
           @logout="logout" /></template
-      ><TeamChatPane mobile setup-available @setup="setup?.open()" @logout="logout"
+      ><TeamChatPane mobile
     /></ChatWindowFrame>
     <TeamChatSetup
       v-if="valid && !booting && mode === 'auth'"

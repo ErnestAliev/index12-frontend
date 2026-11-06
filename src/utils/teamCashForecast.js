@@ -23,6 +23,9 @@ export function accountRequestForecast(account, requests, asOf) {
       .reduce((sum, r) => sum + r.amountCents, 0),
     dueRequestedCents = active
       .filter((r) => r.dueDate <= asOf)
+      .reduce((sum, r) => sum + r.amountCents, 0),
+    monthRequestedCents = active
+      .filter((r) => r.dueDate.slice(0, 7) <= asOf.slice(0, 7))
       .reduce((sum, r) => sum + r.amountCents, 0);
   return {
     ...account,
@@ -30,7 +33,9 @@ export function accountRequestForecast(account, requests, asOf) {
     approvedCents,
     pendingCents: requestedCents - approvedCents,
     dueRequestedCents,
+    monthRequestedCents,
     afterRequestsCents: account.balanceCents - requestedCents,
     afterDueRequestsCents: account.balanceCents - dueRequestedCents,
+    afterMonthRequestsCents: account.balanceCents - monthRequestedCents,
   };
 }

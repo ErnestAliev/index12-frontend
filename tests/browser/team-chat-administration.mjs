@@ -1,4 +1,8 @@
-import { selectSection } from "./team-chat-navigation.mjs";
+import {
+  selectSection,
+  openChatMenu,
+  closeChatMenu,
+} from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
 export async function verifyAdministrationBrowser({
   context,
@@ -31,6 +35,7 @@ export async function verifyAdministrationBrowser({
       .count(),
     0,
   );
+  await openChatMenu(frame);
   assert.equal(
     await frame
       .locator(".team-heading")
@@ -38,6 +43,7 @@ export async function verifyAdministrationBrowser({
       .count(),
     1,
   );
+  await closeChatMenu(frame);
   const inviteButton = frame.getByRole("button", {
     name: "Пригласить по ссылке",
     exact: true,

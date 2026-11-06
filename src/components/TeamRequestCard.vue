@@ -219,9 +219,17 @@ function drag(event) {
           <dd>{{ money(accountForecast.balanceCents - r.amountCents) }}</dd>
         </div>
         <div>
-          <dt>Все заявки на сегодня</dt>
+          <dt>На сегодняшний день</dt>
           <dd :class="{ negative: accountForecast.afterDueRequestsCents < 0 }">
             {{ money(accountForecast.afterDueRequestsCents) }}
+          </dd>
+        </div>
+        <div>
+          <dt>До конца месяца</dt>
+          <dd
+            :class="{ negative: accountForecast.afterMonthRequestsCents < 0 }"
+          >
+            {{ money(accountForecast.afterMonthRequestsCents) }}
           </dd>
         </div>
       </dl>

@@ -25,14 +25,15 @@ import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
-import TeamChatMobileBar from "./TeamChatMobileBar.vue";
-import { useChatCompact } from "@/composables/useChatCompact";
-defineProps({ mobile: Boolean, setupAvailable: Boolean });
-const emit = defineEmits(["setup", "logout"]),
-  compact = useChatCompact();
+defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
-  tab = ref(chat.tab || "messages"),
+  tab = computed({
+    get: () => chat.tab,
+    set: (value) => {
+      chat.tab = value;
+    },
+  }),
   message = ref(""),
   files = ref([]),
   input = ref(null),
@@ -359,8 +360,7 @@ const draft = ref({
   ),
   id: crypto.randomUUID(),
 });
-watch(tab, (value) => {
-  chat.tab = value;
+watch(tab, () => {
   chat.schedule();
 });
 watch(
@@ -866,55 +866,6 @@ async function copy(text) {
         >
       </div></TeamChatDialog
     >
-    <nav
-      v-if="!compact"
-      class="team-tabs"
-      role="tablist"
-      aria-label="Разделы чата"
-    >
-      <button
-        role="tab"
-        :aria-selected="tab === 'messages'"
-        :id="'team-tab-messages'"
-        aria-controls="team-panel"
-        @click="tab = 'messages'"
-      >
-        Сообщения</button
-      ><button
-        role="tab"
-        :aria-selected="tab === 'requests'"
-        :id="'team-tab-requests'"
-        aria-controls="team-panel"
-        @click="tab = 'requests'"
-      >
-        Заявки</button
-      ><button
-        role="tab"
-        :aria-selected="tab === 'tasks'"
-        id="team-tab-tasks"
-        aria-controls="team-panel"
-        @click="tab = 'tasks'"
-      >
-        Задачи
-        <small>{{
-          chat.state.requests.filter(
-            (r) => !["recorded", "rejected"].includes(r.state),
-          ).length
-        }}</small></button
-      ><button
-        v-if="chat.isOwner"
-        role="tab"
-        :aria-selected="tab === 'members'"
-        :id="'team-tab-members'"
-        aria-controls="team-panel"
-        @click="tab = 'members'"
-      >
-        Участники
-        <small v-if="chat.pending.length || chat.state.recoveryCount">{{
-          chat.pending.length + (chat.state.recoveryCount || 0)
-        }}</small>
-      </button>
-    </nav>
     <div v-if="chat.notice" class="team-notice" role="status">
       <span>{{ chat.notice }}</span
       ><button
@@ -939,8 +890,7 @@ async function copy(text) {
         ref="feed"
         class="team-feed"
         id="team-panel"
-        role="tabpanel"
-        :aria-labelledby="compact ? undefined : 'team-tab-messages'"
+        role="region"
         aria-label="Сообщения сотрудников"
         aria-live="polite"
         :aria-busy="chat.historyLoading || olderLoading"
@@ -1228,8 +1178,10 @@ async function copy(text) {
       v-else
       ref="scroll"
       id="team-panel"
-      role="tabpanel"
-      :aria-labelledby="compact ? undefined : `team-tab-${tab}`"
+      role="region"
+      :aria-label="
+        { requests: 'Заявки', tasks: 'Задачи', members: 'Участники' }[tab]
+      "
       class="team-scroll"
       @focusin="revealField"
     >
@@ -1308,9 +1260,15 @@ async function copy(text) {
                     <dd>−{{ money(a.approvedCents || 0) }}</dd>
                   </div>
                   <div>
-                    <dt>После заявок на сегодня</dt>
+                    <dt>На сегодняшний день</dt>
                     <dd :class="{ negative: a.afterDueRequestsCents < 0 }">
                       {{ money(a.afterDueRequestsCents) }}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>До конца месяца</dt>
+                    <dd :class="{ negative: a.afterMonthRequestsCents < 0 }">
+                      {{ money(a.afterMonthRequestsCents) }}
                     </dd>
                   </div>
                 </dl>
@@ -1345,13 +1303,6 @@ async function copy(text) {
         ><TeamChatMembers />
       </template>
     </div>
-    <TeamChatMobileBar
-      v-if="compact && chat.me?.status === 'active'"
-      v-model="tab"
-      :setup-available="setupAvailable"
-      @setup="emit('setup')"
-      @logout="emit('logout')"
-    />
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>

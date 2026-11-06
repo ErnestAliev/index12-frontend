@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 export async function verifyOnboardingBrowser({
   browser,
   base,
-  origin,
   token,
   output,
 }) {
@@ -141,7 +140,10 @@ export async function verifyOnboardingBrowser({
   await h.goto(base + "/team/" + token, { waitUntil: "domcontentloaded" });
   await h.getByText("Загружаем историю сообщений…", { exact: true }).waitFor();
   release();
-  const feed = h.locator(".team-feed[role=tabpanel]");
+  const feed = h.getByRole("region", {
+    name: "Сообщения сотрудников",
+    exact: true,
+  });
   await feed.locator(".team-message").first().waitFor();
   assert.equal(await feed.locator(".team-message").count(), 50);
   assert.equal(requested, 0);

@@ -1,4 +1,9 @@
-import { selectSection, hasSection } from "./team-chat-navigation.mjs";
+import {
+  selectSection,
+  hasSection,
+  openChatMenu,
+  closeChatMenu,
+} from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
@@ -120,6 +125,7 @@ export async function verifyTeamChat({
     assert.ok(generated.includes("/team/"));
     token = generated.split("/").at(-1);
     for (const role of ["director", "employee", "manager"]) {
+      await openChatMenu(chat);
       const saved = page.waitForResponse(
         (r) =>
           r.url().endsWith("/team-chat/settings") &&
@@ -137,10 +143,8 @@ export async function verifyTeamChat({
           !document.querySelector('[aria-label="Моя роль в чате"]').disabled,
         role,
       );
-      assert.equal(
-        await chat.getByRole("tab", { name: /^Участники/ }).count(),
-        1,
-      );
+      assert.equal(await hasSection(chat, "Участники"), 1);
+      await closeChatMenu(chat);
       assert.equal(
         await chat
           .getByRole("button", { name: "Пригласить по ссылке", exact: true })
@@ -162,10 +166,12 @@ export async function verifyTeamChat({
     await launcher.waitFor();
     await launcher.click();
     await selectSection(chat, "Участники");
+    await openChatMenu(chat);
     assert.equal(
       await chat.getByLabel("Моя роль в чате", { exact: true }).inputValue(),
       "manager",
     );
+    await closeChatMenu(chat);
     await selectSection(chat, "Сообщения");
     // A fresh invitee registers from a different browser context, with no INDEX12 access.
     const employee = await browser.newContext({
