@@ -102,7 +102,13 @@ async function createInvite() {
   }
   inviteOpen.value = true;
   if (loading.value) await load();
-  if (!currentInvite.value?.url) await newInvite();
+  if (!selectedInviteId.value) {
+    const employeeLink = invites.value.find(
+      (row) => row.url && row.role === "employee",
+    );
+    if (employeeLink) selectedInviteId.value = employeeLink._id;
+    else await newInvite();
+  } else if (!currentInvite.value?.url) await newInvite();
   await nextTick();
   invitePanel.value?.querySelector("input")?.focus();
 }

@@ -10,12 +10,14 @@ import {
 import UiIcon from "./UiIcon.vue";
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
-import TeamContractorSelect from "./TeamContractorSelect.vue";
+import TeamRequestForm from "./TeamRequestForm.vue";
+import TeamRejectDialog from "./TeamRejectDialog.vue";
+import TeamChatAddMenu from "./TeamChatAddMenu.vue";
+import TeamChatRequestMessage from "./TeamChatRequestMessage.vue";
+import { decisionStatus } from "@/utils/teamRequestStatus";
 import TeamRequestCard from "./TeamRequestCard.vue";
-import TeamExpenseTitle from "./TeamExpenseTitle.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
-import { formatAmountInputEvent } from "@/utils/amountInput";
 defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
@@ -23,6 +25,12 @@ const chat = useTeamChatStore(),
   message = ref(""),
   files = ref([]),
   input = ref(null),
+  composeArea = ref(null),
+  mentionQuery = ref(null),
+  mentionIndex = ref(0),
+  mentionRange = ref(null),
+  mentionedPeople = ref([]),
+  rejecting = ref(null),
   feed = ref(null),
   uploading = ref(false),
   olderLoading = ref(false),
@@ -51,7 +59,7 @@ function holdMessage(event, row) {
   if (
     event.button !== 0 ||
     selectedMessage.value ||
-    event.target.closest("input,textarea")
+    event.target.closest("input,textarea,button,select,a")
   )
     return;
   cancelHold();
@@ -93,11 +101,69 @@ async function reactToMessage(row, reaction) {
   );
 }
 const messageStatus = (row) =>
-  ({
-    director_review: "У руководителя",
-    approved: "Согласовано",
-    rejected: "Отклонено",
-  })[row.approval?.state] || "";
+  decisionStatus(row.approval?.history) ||
+  (row.readCount ? "Просмотрено" : "Доставлено");
+const mentionChoices = computed(() =>
+  (chat.state.people || []).filter(
+    (p) =>
+      p._id !== chat.me?.actorId &&
+      p.name
+        .toLocaleLowerCase("ru")
+        .includes((mentionQuery.value || "").toLocaleLowerCase("ru")),
+  ),
+);
+function mentionInput(event) {
+  if (!event.target.matches("textarea.codex-input")) return;
+  const field = event.target,
+    end = field.selectionStart,
+    match = field.value.slice(0, end).match(/(?:^|\s)@([^\s@]*)$/);
+  const query = match ? match[1] : null;
+  if (query !== mentionQuery.value) mentionIndex.value = 0;
+  mentionQuery.value = query;
+  mentionRange.value = match ? { start: end - match[1].length - 1, end } : null;
+}
+async function selectMention(person) {
+  const range = mentionRange.value;
+  if (!range) return;
+  const text = "@" + person.name + " ";
+  message.value =
+    message.value.slice(0, range.start) + text + message.value.slice(range.end);
+  if (!mentionedPeople.value.some((p) => p._id === person._id))
+    mentionedPeople.value.push(person);
+  mentionQuery.value = null;
+  mentionRange.value = null;
+  await nextTick();
+  const field = composeArea.value?.querySelector("textarea");
+  field?.focus();
+  field?.setSelectionRange(
+    range.start + text.length,
+    range.start + text.length,
+  );
+}
+function mentionKeys(event) {
+  if (mentionQuery.value === null) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    mentionQuery.value = null;
+  }
+  if (
+    ["ArrowDown", "ArrowUp"].includes(event.key) &&
+    mentionChoices.value.length
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    mentionIndex.value =
+      (mentionIndex.value +
+        (event.key === "ArrowDown" ? 1 : mentionChoices.value.length - 1)) %
+      mentionChoices.value.length;
+  }
+  if (event.key === "Enter" && mentionChoices.value.length) {
+    event.preventDefault();
+    event.stopPropagation();
+    void selectMention(mentionChoices.value[mentionIndex.value]);
+  }
+}
 watch(
   () => chat.state.messageUpdates,
   (updates) => {
@@ -108,7 +174,8 @@ watch(
   },
 );
 const scroll = ref(null);
-let noticeTimer, revealFrame;
+let noticeTimer, revealFrame, readTimer;
+const acknowledgedReads = new Set();
 function revealField() {
   cancelAnimationFrame(revealFrame);
   revealFrame = requestAnimationFrame(() => {
@@ -126,15 +193,12 @@ function revealField() {
       scroll.value.scrollTop -= area.top - box.top + 12;
   });
 }
-async function startRequest() {
+function startRequest() {
   creating.value = true;
+  localError.value = "";
   chat.notice = "";
-  await nextTick();
-  scroll.value.scrollTop = 0;
-  scroll.value
-    .querySelector('[aria-label="Что оплатить / купить"]')
-    ?.focus({ preventScroll: true });
 }
+
 watch(
   () => chat.notice,
   (value) => {
@@ -148,20 +212,25 @@ watch(
 );
 onMounted(async () => {
   window.visualViewport?.addEventListener("resize", revealField);
+  window.addEventListener("index12:chat-dialog-closed", scheduleReads);
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
 });
 onBeforeUnmount(() => {
   clearTimeout(noticeTimer);
+  clearTimeout(readTimer);
   clearTimeout(scrollTimer);
   cancelHold();
   cancelAnimationFrame(revealFrame);
   window.visualViewport?.removeEventListener("resize", revealField);
+  window.removeEventListener("index12:chat-dialog-closed", scheduleReads);
   chat.notice = "";
 });
 const draft = ref({
   title: "",
   categoryId: null,
+  projectId: null,
+  subcategoryId: null,
   amount: "",
   contractorId: null,
   contractorName: "",
@@ -180,7 +249,7 @@ watch(
   (id) => {
     if (id) {
       focusedRequest.value = id;
-      tab.value = "requests";
+      tab.value = "tasks";
     }
   },
 );
@@ -220,6 +289,9 @@ watch(
   () => chat.me?.workspaceId,
   () => {
     older.value = [];
+    acknowledgedReads.clear();
+    mentionedPeople.value = [];
+    mentionQuery.value = null;
     historyMore.value = false;
     gaps.value = [];
     loadingGap.value = null;
@@ -286,9 +358,15 @@ async function run(fn) {
 }
 async function send() {
   if (uploading.value || (!message.value.trim() && !files.value.length)) return;
-  const id = chat.send(message.value, files.value);
+  const id = chat.send(message.value, files.value, {
+    mentionIds: mentionedPeople.value
+      .filter((p) => message.value.includes("@" + p.name))
+      .map((p) => p._id),
+  });
   if (!id) return;
   message.value = "";
+  mentionedPeople.value = [];
+  mentionQuery.value = null;
   files.value = [];
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
@@ -330,7 +408,55 @@ async function download(file) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 }
+function scheduleReads() {
+  clearTimeout(readTimer);
+  if (
+    tab.value !== "messages" ||
+    document.visibilityState !== "visible" ||
+    !feed.value
+  )
+    return;
+  readTimer = setTimeout(async () => {
+    if (
+      !feed.value ||
+      document.visibilityState !== "visible" ||
+      creating.value ||
+      selectedMessage.value
+    )
+      return;
+    const box = feed.value.getBoundingClientRect(),
+      rows = [...feed.value.querySelectorAll("[data-message-id]")]
+        .filter((e) => {
+          const r = e.getBoundingClientRect();
+          return r.bottom > box.top && r.top < box.bottom;
+        })
+        .map((e) =>
+          shownMessages.value.find((m) => m._id === e.dataset.messageId),
+        )
+        .filter(
+          (m) =>
+            m &&
+            !m._delivery &&
+            m.authorId !== chat.me?.actorId &&
+            !acknowledgedReads.has(m._id + ":" + (m.contentVersion || 0)),
+        )
+        .slice(0, 100);
+    if (!rows.length) return;
+    const keys = rows.map((m) => m._id + ":" + (m.contentVersion || 0));
+    keys.forEach((k) => acknowledgedReads.add(k));
+    try {
+      await teamApi.post("/messages/read", { ids: rows.map((m) => m._id) });
+    } catch {
+      keys.forEach((k) => acknowledgedReads.delete(k));
+    }
+  }, 200);
+}
+watch([shownMessages, tab, creating, selectedMessageId], async () => {
+  await nextTick();
+  scheduleReads();
+});
 function trackVisibleHistory() {
+  scheduleReads();
   if (!feed.value) return;
   const box = feed.value.getBoundingClientRect();
   const ids = [...feed.value.querySelectorAll("[data-message-id]")]
@@ -437,7 +563,8 @@ async function loadGap(gap) {
     if (workspaceId === chat.me?.workspaceId) loadingGap.value = null;
   }
 }
-async function createRequest() {
+async function createRequest(value) {
+  draft.value = { ...value };
   const result = await run(() =>
     chat.action("/requests", {
       ...draft.value,
@@ -447,24 +574,34 @@ async function createRequest() {
   if (result) {
     creating.value = false;
     focusedRequest.value = result.request._id;
-    chat.requestedRequestId = result.request._id;
+    chat.requestedRequestId = null;
+    tab.value = "messages";
     draft.value = {
       ...draft.value,
       title: "",
       categoryId: null,
+      subcategoryId: null,
+      projectId: null,
       amount: "",
       comment: "",
       id: crypto.randomUUID(),
     };
   }
 }
-async function decide(row, action) {
-  await run(() =>
+async function decide(row, action, note = "") {
+  if (action === "reject" && !note) {
+    localError.value = "";
+    rejecting.value = row;
+    return;
+  }
+  const result = await run(() =>
     chat.action(`/requests/${row._id}/decision`, {
       action,
+      note,
       expectedVersion: row.version,
     }),
   );
+  if (result) rejecting.value = null;
 }
 function editRequest(row) {
   window.dispatchEvent(
@@ -496,7 +633,7 @@ async function processPdf(message, file) {
     );
     await chat.refresh();
     focusedRequest.value = data.request._id;
-    tab.value = "requests";
+    tab.value = "tasks";
   });
   processingPdf.value = null;
 }
@@ -525,6 +662,21 @@ async function copy(text) {
 </script>
 <template>
   <div class="team-pane">
+    <TeamRequestForm
+      v-if="creating"
+      v-model="draft"
+      :busy="chat.busy"
+      :error="localError || chat.error"
+      @close="creating = false"
+      @submit="createRequest"
+    />
+    <TeamRejectDialog
+      v-if="rejecting"
+      :busy="chat.busy"
+      :error="localError || chat.error"
+      @close="rejecting = null"
+      @submit="decide(rejecting, 'reject', $event)"
+    />
     <TeamMessageMenu
       v-if="selectedMessage"
       :message="selectedMessage"
@@ -547,7 +699,15 @@ async function copy(text) {
         aria-controls="team-panel"
         @click="tab = 'requests'"
       >
-        Заявки
+        Заявки</button
+      ><button
+        role="tab"
+        :aria-selected="tab === 'tasks'"
+        id="team-tab-tasks"
+        aria-controls="team-panel"
+        @click="tab = 'tasks'"
+      >
+        Задачи
         <small>{{
           chat.state.requests.filter(
             (r) => !["recorded", "rejected"].includes(r.state),
@@ -666,8 +826,24 @@ async function copy(text) {
               <span v-if="m.forwardedFrom" class="team-forwarded"
                 >Переслано · {{ m.forwardedFrom.authorName }}</span
               >
+              <div
+                v-if="m.kind === 'request'"
+                @pointerdown.stop
+                @contextmenu.stop
+              >
+                <TeamChatRequestMessage
+                  :request-id="m.requestId"
+                  @edit="editRequest"
+                  @decision="decide"
+                  @convert="convert"
+                  @recall="recall"
+                  @file="download"
+                  @copy="copy"
+                  @delete="removeRequest"
+                />
+              </div>
               <CodexMessageText
-                v-if="m.text"
+                v-if="m.text && m.kind !== 'request'"
                 :text="m.text"
                 class="team-message-content"
               />
@@ -750,21 +926,55 @@ async function copy(text) {
                   {{ reaction.emoji }} <span>{{ reaction.count }}</span>
                 </button>
               </div>
-              <div v-if="m.editedAt || m.approval" class="team-message-meta">
+              <div
+                v-if="!m._delivery && m.kind !== 'request'"
+                class="team-message-meta"
+              >
                 <span v-if="m.editedAt">изменено</span
                 ><span
-                  v-if="m.approval"
+                  v-if="m.approval || m.authorId === chat.me.actorId"
                   :class="{
-                    'message-rejected': m.approval.state === 'rejected',
+                    'message-rejected': m.approval?.state === 'rejected',
                   }"
                   >{{ messageStatus(m) }}</span
                 >
               </div>
+              <p
+                v-if="m.approval?.state === 'rejected'"
+                class="team-rejection-reason"
+              >
+                {{ m.approval.history?.at(-1)?.note }}
+              </p>
             </div>
           </article>
         </template>
       </div>
-      <div class="team-compose-area">
+      <div
+        ref="composeArea"
+        class="team-compose-area"
+        @input.capture="mentionInput"
+        @keyup.capture="mentionInput"
+        @keydown.capture="mentionKeys"
+      >
+        <div
+          v-if="mentionQuery !== null && mentionChoices.length"
+          class="team-mention-list"
+          role="listbox"
+          aria-label="Отметить сотрудника"
+        >
+          <button
+            v-for="(person, index) in mentionChoices"
+            :key="person._id"
+            type="button"
+            role="option"
+            :aria-selected="index === mentionIndex"
+            @pointerdown.prevent
+            @click="selectMention(person)"
+          >
+            <span>{{ person.name }}</span
+            ><small>{{ chat.me.roles[person.role] }}</small>
+          </button>
+        </div>
         <div v-if="files.length" class="team-staged">
           <span v-for="(f, i) in files" :key="f.fileId"
             >{{ f.name
@@ -791,8 +1001,12 @@ async function copy(text) {
           :has-attachments="!!files.length"
           placeholder="Сообщение сотрудникам"
           @send="send"
-          @attach="input.click()"
-        /><span v-if="uploading" role="status">Загрузка файла…</span>
+          ><template #leading
+            ><TeamChatAddMenu
+              :disabled="uploading"
+              @request="startRequest"
+              @file="input.click()" /></template></CodexComposer
+        ><span v-if="uploading" role="status">Загрузка файла…</span>
       </div>
     </template>
     <div
@@ -805,77 +1019,19 @@ async function copy(text) {
       @focusin="revealField"
     >
       <template v-if="tab === 'requests'">
-        <div v-if="!creating" class="team-request-toolbar">
+        <div class="team-request-create-tab">
           <button
             type="button"
             class="team-expense-primary team-request-new"
-            aria-label="Заявка на расход"
+            aria-label="Создать заявку"
             @click="startRequest"
           >
-            <UiIcon name="plus" />Заявка
+            <UiIcon name="plus" />Создать заявку
           </button>
         </div>
-        <form
-          v-if="creating"
-          class="team-form team-expense-form"
-          @submit.prevent="createRequest"
-        >
-          <div class="team-title-row">
-            <TeamExpenseTitle
-              v-model="draft.title"
-              @category="draft.categoryId = $event?._id || null"
-            />
-            <button
-              type="button"
-              class="team-small-icon"
-              title="Закрыть форму"
-              aria-label="Закрыть форму заявки"
-              @click="creating = false"
-            >
-              <UiIcon name="close" />
-            </button>
-          </div>
-          <div class="team-fields">
-            <div class="team-amount-field">
-              <input
-                :value="draft.amount"
-                @input="draft.amount = formatAmountInputEvent($event)"
-                aria-label="Сумма, ₸"
-                placeholder="Сумма"
-                inputmode="decimal"
-                required
-              /><span aria-hidden="true">₸</span>
-            </div>
-            <label class="team-payment-date" title="Дата оплаты"
-              ><UiIcon name="month" /><span aria-hidden="true">{{
-                draft.dueDate.split("-").reverse().join(".")
-              }}</span
-              ><input
-                v-model="draft.dueDate"
-                type="date"
-                aria-label="Дата оплаты"
-                required
-            /></label>
-          </div>
-          <TeamContractorSelect
-            v-model="draft.contractorId"
-            :fallback-name="draft.contractorName"
-            @selected="draft.contractorName = $event.name"
-          /><textarea
-            v-model="draft.comment"
-            aria-label="Комментарий к заявке"
-            placeholder="Комментарий"
-            rows="2"
-            maxlength="10000"
-          ></textarea
-          ><button
-            class="team-expense-primary team-request-submit"
-            :disabled="chat.busy || !draft.contractorId"
-          >
-            Отправить на согласование
-          </button>
-        </form>
-        <template v-if="!creating">
+      </template>
+      <template v-else-if="tab === 'tasks'">
+        <template v-if="tab === 'tasks'">
           <div v-if="isReviewer && chat.state.financial" class="team-forecast">
             <div
               v-if="chat.state.financial.unallocatedCents"

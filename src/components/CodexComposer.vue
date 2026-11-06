@@ -39,10 +39,10 @@ onBeforeUnmount(() => observer?.disconnect());
 <template>
   <form class="codex-input-container" :class="{ mobile }" @submit.prevent="emit('send')">
     <div class="codex-input-wrapper">
-      <button type="button" class="codex-attach-btn" :disabled="busy || !attachmentsEnabled"
+      <slot name="leading"><button type="button" class="codex-attach-btn" :disabled="busy || !attachmentsEnabled"
         :title="attachmentsEnabled ? 'Прикрепить файл' : 'Прикрепить файл (недоступно)'" aria-label="Прикрепить файл" @click="emit('attach')">
         <CodexGlyph name="attach" />
-      </button>
+      </button></slot>
       <textarea ref="input" :value="modelValue" class="codex-input" :placeholder="placeholder" :aria-label="placeholder"
         rows="1" maxlength="16000" @input="emit('update:modelValue', $event.target.value)" @keydown="keydown" />
       <div class="codex-input-buttons">

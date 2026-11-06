@@ -263,6 +263,15 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         if (index < 0) state.value.requests.unshift(data.request);
         else state.value.requests[index] = data.request;
       }
+      if (data.message)
+        state.value.messages = [
+          ...state.value.messages.filter((m) => m._id !== data.message._id),
+          data.message,
+        ].sort(
+          (a, b) =>
+            a.createdAt.localeCompare(b.createdAt) ||
+            a._id.localeCompare(b._id),
+        );
       if (data.deletedRequestId)
         state.value.requests = state.value.requests.filter(
           (r) => r._id !== data.deletedRequestId,
@@ -303,6 +312,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         id: row._id,
         text: row.text,
         fileIds: row.attachments.map((file) => file.fileId),
+        ...(row.mentionIds?.length ? { mentionIds: row.mentionIds } : {}),
       });
       if (g !== generation) return;
       ++ticket;
@@ -348,7 +358,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       .catch(() => {})
       .then(() => deliverMessage(row._id, g));
   }
-  function send(text, files = []) {
+  function send(text, files = [], options = {}) {
     if (me.value?.status !== "active" || (!text.trim() && !files.length))
       return null;
     const row = {
@@ -357,6 +367,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       authorId: me.value.actorId,
       authorName: me.value.displayName,
       text: text.trim(),
+      ...(options.mentionIds?.length ? { mentionIds: options.mentionIds } : {}),
       createdAt: new Date().toISOString(),
       attachments: files.map((file) =>
         typeof file === "string" ? { fileId: file } : { ...file },

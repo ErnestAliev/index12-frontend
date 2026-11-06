@@ -5,7 +5,15 @@ import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import process from "node:process";
 import { Buffer } from "node:buffer";
-export async function verifyTeamChat({ origin, cookie, token }) {
+import { randomUUID } from "node:crypto";
+export async function verifyTeamChat({
+  origin,
+  cookie,
+  token,
+  category,
+  subcategory,
+  project,
+}) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     output = root + "output/playwright";
   const server = await createServer({
@@ -438,7 +446,9 @@ export async function verifyTeamChat({ origin, cookie, token }) {
     await menu
       .getByRole("button", { name: "Согласовать → руководителю", exact: true })
       .click();
-    await ownerBubble().getByText("У руководителя", { exact: true }).waitFor();
+    await ownerBubble()
+      .getByText("Согласовано Управляющим (Calendar owner)", { exact: true })
+      .waitFor();
     const directorContext = await browser.newContext({
         viewport: { width: 390, height: 844 },
       }),
@@ -487,7 +497,9 @@ export async function verifyTeamChat({ origin, cookie, token }) {
         exact: true,
       })
       .click();
-    await directorBubble.getByText("Согласовано", { exact: true }).waitFor();
+    await directorBubble
+      .getByText("Согласовано Директором (Director)", { exact: true })
+      .waitFor();
     menu = await holdMessage(directorPhone, directorBubble);
     await menu
       .getByRole("button", { name: "История согласования", exact: true })
@@ -506,7 +518,9 @@ export async function verifyTeamChat({ origin, cookie, token }) {
     await directorContext.close();
     await phone.bringToFront();
     await phone.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await originalMobile().getByText("Согласовано", { exact: true }).waitFor();
+    await originalMobile()
+      .getByText("Согласовано Директором (Director)", { exact: true })
+      .waitFor();
     menu = await holdMessage(phone, originalMobile());
     await menu
       .getByRole("button", { name: "Редактировать", exact: true })
@@ -525,7 +539,9 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       .getByText("Mobile employee online — edited", { exact: true })
       .waitFor();
     assert.equal(
-      await originalMobile().getByText("Согласовано", { exact: true }).count(),
+      await originalMobile()
+        .getByText("Согласовано Директором (Director)", { exact: true })
+        .count(),
       0,
     );
     menu = await holdMessage(phone, originalMobile());
@@ -547,6 +563,26 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       .getByRole("button", { name: "Удалить для всех", exact: true })
       .click();
     await forwardedBubble.waitFor({ state: "hidden" });
+    const mentionText = mobile.getByLabel("Сообщение сотрудникам", {
+      exact: true,
+    });
+    await mentionText.fill("@Cal");
+    const mentionList = mobile.getByRole("listbox", {
+      name: "Отметить сотрудника",
+      exact: true,
+    });
+    await mentionList.getByRole("option", { name: /Calendar owner/ }).click();
+    assert.equal(await mentionText.inputValue(), "@Calendar owner ");
+    const mentionedSend = phone.waitForResponse(
+      (r) =>
+        r.url().endsWith("/team-chat/messages") &&
+        r.request().method() === "POST",
+    );
+    await mobile
+      .getByRole("button", { name: "Отправить", exact: true })
+      .click();
+    const mentionedMessage = (await (await mentionedSend).json()).message;
+    assert.equal(mentionedMessage.mentions[0].name, "Calendar owner");
     await phone.screenshot({ path: `${output}/team-chat-phone.png` });
     await mobile.locator(".team-compose-area input[type=file]").setInputFiles({
       name: "invoice-ui.pdf",
@@ -564,22 +600,77 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       .getByText("Это счёт на оплату?", { exact: true })
       .waitFor({ state: "hidden" });
     await mobile.getByRole("tab", { name: /^Заявки/ }).click();
+    assert.equal(await mobile.locator(".request-card").count(), 0);
+    const createOnly = mobile.getByRole("button", {
+      name: "Создать заявку",
+      exact: true,
+    });
+    const createPosition = await createOnly.boundingBox();
+    assert.ok(
+      createPosition.y > 700 &&
+        Math.abs(createPosition.x + createPosition.width / 2 - 195) < 2,
+    );
+    await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    const addButton = mobile.getByRole("button", {
+      name: "Добавить в чат",
+      exact: true,
+    });
+    await addButton.click();
+    assert.equal(await mobile.getByRole("menuitem").count(), 2);
+    await phone.screenshot({
+      path: `${output}/team-chat-add-menu.png`,
+      animations: "disabled",
+    });
     await mobile
-      .getByRole("button", { name: "Заявка на расход", exact: true })
+      .getByRole("menuitem", { name: "Создать заявку", exact: true })
       .click();
-    await mobile
-      .getByLabel("Что оплатить / купить", { exact: true })
-      .fill("обсл");
-    await mobile
-      .getByRole("option", { name: "Обслуживание", exact: true })
-      .click();
+    const requestForm = phone.getByRole("dialog", {
+      name: "Заявка на расход",
+      exact: true,
+    });
+    await requestForm.waitFor();
+    await requestForm.getByLabel("Сумма, ₸", { exact: true }).fill("12500.50");
     assert.equal(
-      await mobile
+      await requestForm.getByLabel("Сумма, ₸", { exact: true }).inputValue(),
+      "12 500.50",
+    );
+    await requestForm
+      .getByRole("combobox", { name: "Контрагент", exact: true })
+      .fill("ламп");
+    await requestForm
+      .getByRole("button", { name: "Поставщик лампочек", exact: true })
+      .click();
+    await requestForm
+      .getByLabel("Проект", { exact: true })
+      .selectOption(project);
+    await requestForm
+      .getByLabel("Категория", { exact: true })
+      .selectOption(category);
+    await requestForm
+      .getByLabel("Подкатегория", { exact: true })
+      .selectOption(subcategory);
+    assert.equal(
+      await requestForm
         .getByLabel("Что оплатить / купить", { exact: true })
         .inputValue(),
-      "Обслуживание",
+      "",
     );
-    // Emulate the visible area above an on-screen keyboard, without clearing any entered values.
+    assert.equal(
+      await requestForm.getByLabel("Компания", { exact: true }).count(),
+      0,
+    );
+    const fieldOrder = await requestForm
+      .locator("input:not([hidden]),select,textarea")
+      .evaluateAll((fields) => fields.map((f) => f.getAttribute("aria-label")));
+    assert.ok(
+      fieldOrder.indexOf("Сумма, ₸") < fieldOrder.indexOf("Контрагент"),
+    );
+    assert.ok(fieldOrder.indexOf("Проект") < fieldOrder.indexOf("Категория"));
+    assert.equal(fieldOrder.at(-1), "Дата оплаты");
+    await phone.screenshot({
+      path: `${output}/team-chat-request-form.png`,
+      animations: "disabled",
+    });
     await phone.evaluate(() => {
       Object.defineProperty(window.visualViewport, "height", {
         configurable: true,
@@ -587,118 +678,63 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       });
       window.visualViewport.dispatchEvent(new Event("resize"));
     });
-    await phone.waitForFunction(
-      () =>
-        Math.round(
-          document.querySelector("#team-chat-public").getBoundingClientRect()
-            .height,
-        ) === 360,
-    );
-    const headerGeometry = await mobile.evaluate((el) => ({
-      header: el.querySelector(".codex-window-header").getBoundingClientRect()
-        .height,
-      tabs: el.querySelector(".team-tabs").getBoundingClientRect().bottom,
-      duplicateIdentity: !!el.querySelector(".team-identity"),
-    }));
-    assert.ok(
-      headerGeometry.header <= 48 &&
-        headerGeometry.tabs <= 100 &&
-        !headerGeometry.duplicateIdentity,
-    );
-    const tabPositions = await mobile.getByRole("tab").evaluateAll((tabs) =>
-      tabs.map((t) => ({
-        x: t.getBoundingClientRect().x,
-        right: t.getBoundingClientRect().right,
-      })),
-    );
-    assert.ok(
-      tabPositions[1].x - tabPositions[0].right < 12,
-      "Tabs stay together at the left",
-    );
-    await mobile.getByLabel("Сумма, ₸", { exact: true }).fill("12500.50");
-    assert.equal(
-      await mobile.getByLabel("Сумма, ₸", { exact: true }).inputValue(),
-      "12 500.50",
-    );
-    assert.equal(
-      await mobile.getByLabel("Компания", { exact: true }).count(),
-      0,
-    );
-    await mobile
-      .getByRole("combobox", { name: "Контрагент", exact: true })
-      .fill("ламп");
-    await mobile
-      .getByRole("button", { name: "Поставщик лампочек", exact: true })
-      .click();
-    await mobile
+    await requestForm
       .getByLabel("Комментарий к заявке", { exact: true })
       .fill("Уборка после ремонта");
-    await phone.waitForFunction(() => {
-      const field = document.querySelector(
-          '[aria-label="Комментарий к заявке"]',
-        ),
-        area = document.querySelector("#team-chat-public .team-scroll");
-      return (
-        field &&
-        area &&
-        field.getBoundingClientRect().bottom <=
-          area.getBoundingClientRect().bottom &&
-        field.getBoundingClientRect().top >= area.getBoundingClientRect().top
-      );
-    });
-    const keyboardSend = await mobile
-      .getByRole("button", { name: "Отправить на согласование", exact: true })
-      .boundingBox();
-    assert.ok(
-      keyboardSend.y + keyboardSend.height <= 360 &&
-        keyboardSend.y > headerGeometry.tabs,
-      "The submit action stays above the keyboard",
-    );
-    for (const theme of ["dark", "light"]) {
-      await phone.evaluate(
-        (t) => document.documentElement.setAttribute("data-theme", t),
-        theme,
-      );
-      const selectedTab = await mobile
-        .getByRole("tab", { name: /^Заявки/ })
-        .evaluate((el) => ({
-          text: getComputedStyle(el).color,
-          bg: getComputedStyle(el).backgroundColor,
-        }));
-      assert.notEqual(selectedTab.text, selectedTab.bg);
-      if (theme === "light") assert.notEqual(selectedTab.bg, "rgb(26, 26, 26)");
-      await phone.screenshot({
-        path: `${output}/team-chat-mobile-keyboard-${theme}.png`,
-      });
-    }
-    assert.equal(
-      await mobile
-        .getByLabel("Сумма, ₸", { exact: true })
-        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize) >= 16),
-      true,
-    );
-    const dateBox = await mobile.locator(".team-payment-date").boundingBox(),
-      amountBox = await mobile.locator(".team-amount-field").boundingBox();
-    assert.ok(
-      Math.abs(dateBox.height - amountBox.height) < 1 &&
-        Math.abs(dateBox.y - amountBox.y) < 1,
-    );
-    await phone.setViewportSize({ width: 320, height: 568 });
-    await mobile.getByLabel("Комментарий к заявке", { exact: true }).focus();
-    await mobile
+    await requestForm
       .getByRole("button", { name: "Отправить на согласование", exact: true })
       .scrollIntoViewIfNeeded();
-    const sendBox = await mobile
-      .getByRole("button", { name: "Отправить на согласование", exact: true })
-      .boundingBox();
-    assert.ok(
-      sendBox.y >= 0 && sendBox.y + sendBox.height <= 360,
-      "Submission is reachable above the keyboard on a narrow phone",
-    );
+    for (const width of [390, 320])
+      for (const theme of ["dark", "light"]) {
+        await phone.setViewportSize({ width, height: 844 });
+        await phone.evaluate(
+          (t) => document.documentElement.setAttribute("data-theme", t),
+          theme,
+        );
+        await phone.waitForFunction(() => {
+          const r = document
+            .querySelector('dialog[aria-label="Заявка на расход"]')
+            .getBoundingClientRect();
+          return (
+            r.y >= 0 &&
+            r.bottom <= 360.5 &&
+            r.x >= 0 &&
+            r.right <= window.innerWidth + 0.5
+          );
+        });
+        const box = await requestForm.boundingBox(),
+          sendBox = await requestForm
+            .getByRole("button", {
+              name: "Отправить на согласование",
+              exact: true,
+            })
+            .boundingBox();
+        assert.ok(
+          box.y >= 0 &&
+            box.y + box.height <= 360 &&
+            box.x >= 0 &&
+            box.x + box.width <= width,
+        );
+        assert.ok(
+          sendBox.y >= 0 && sendBox.y + sendBox.height <= 360,
+          "Submit remains reachable above the keyboard",
+        );
+        assert.ok(
+          await requestForm
+            .getByLabel("Сумма, ₸", { exact: true })
+            .evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 16),
+        );
+        await phone.screenshot({
+          path: `${output}/team-chat-mobile-keyboard-${width}-${theme}.png`,
+          animations: "disabled",
+        });
+      }
     await phone.setViewportSize({ width: 390, height: 844 });
-    await mobile
+    await requestForm
       .getByRole("button", { name: "Отправить на согласование", exact: true })
       .click();
+    await requestForm.waitFor({ state: "hidden" });
+    await mobile.getByRole("tab", { name: /^Задачи/ }).click();
     await mobile.getByText("Обслуживание", { exact: true }).waitFor();
     await phone.evaluate(() => {
       delete window.visualViewport.height;
@@ -712,6 +748,12 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       await compactCard.getByText("Автор", { exact: true }).count(),
       0,
     );
+    if (
+      (await compactCard
+        .locator(".request-card-head")
+        .getAttribute("aria-expanded")) !== "true"
+    )
+      await compactCard.locator(".request-card-head").click();
     assert.equal(
       await compactCard
         .getByRole("button", { name: "Удалить заявку", exact: true })
@@ -726,7 +768,7 @@ export async function verifyTeamChat({ origin, cookie, token }) {
       .getByRole("button", { name: "Реквизиты и история заявки", exact: true })
       .click();
     await phone.screenshot({ path: `${output}/team-chat-request-mobile.png` });
-    await chat.getByRole("tab", { name: /^Заявки/ }).click();
+    await chat.getByRole("tab", { name: /^Задачи/ }).click();
     const requestCard = chat
       .locator(".request-card")
       .filter({ hasText: "Обслуживание" });
@@ -740,10 +782,31 @@ export async function verifyTeamChat({ origin, cookie, token }) {
           (Date.parse(date) - Date.parse(year + "-01-01")) / 86400000,
         ) + 1;
     const target = page.locator(
-      `.hour-cell[data-date-key="${year}-${doy}"][data-cell-index="0"]`,
+      `.hour-cell[data-date-key="${year}-${doy}"][data-cell-index="3"]`,
     );
     await page.bringToFront();
-    await requestCard.dragTo(target);
+    const sourceBox = await requestCard
+      .locator(".request-card-head")
+      .boundingBox();
+    const targetBox = await target.boundingBox();
+    await page.mouse.move(sourceBox.x + 30, sourceBox.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(sourceBox.x + 45, sourceBox.y + 10, { steps: 5 });
+    await page.waitForFunction(
+      () => document.body.dataset.teamRequestDragging === "true",
+    );
+    await page.mouse.move(
+      targetBox.x + targetBox.width / 2,
+      targetBox.y + targetBox.height / 2,
+      { steps: 15 },
+    );
+    await page.mouse.move(
+      targetBox.x + targetBox.width / 2 + 2,
+      targetBox.y + targetBox.height / 2,
+      { steps: 3 },
+    );
+    await target.locator(":scope.drag-over").waitFor();
+    await page.mouse.up();
     const popup = page.locator(".request-draft-popup");
     await popup.waitFor();
     await popup
@@ -887,7 +950,9 @@ export async function verifyTeamChat({ origin, cookie, token }) {
         button.click();
       });
     await popup.waitFor({ state: "hidden" });
-    await staged.getByText("У руководителя", { exact: true }).waitFor();
+    await staged
+      .getByText("Согласовано Управляющим (Calendar owner)", { exact: true })
+      .waitFor();
     await chat
       .getByRole("status")
       .getByText(/Передано руководителю/)
@@ -902,6 +967,57 @@ export async function verifyTeamChat({ origin, cookie, token }) {
     await context.unroute(
       `**/team-chat/requests/${pendingRequest._id}/placement`,
     );
+    const rejectedTitle = "Проверка отклонения в чате";
+    const rejectedResponse = await employee.request.post(
+      origin + "/api/team-chat/requests",
+      {
+        data: {
+          id: randomUUID(),
+          title: rejectedTitle,
+          amount: "3500",
+          dueDate: date,
+          contractorId: pendingRequest.contractorId,
+          categoryId: category,
+        },
+      },
+    );
+    assert.equal(rejectedResponse.status(), 201);
+    await chat.getByRole("tab", { name: /^Задачи/ }).click();
+    const rejectedCard = chat
+      .locator(".request-card")
+      .filter({ hasText: rejectedTitle });
+    await rejectedCard.waitFor();
+    await rejectedCard.locator(".request-card-head").click();
+    await rejectedCard
+      .getByRole("button", { name: "Отклонить", exact: true })
+      .click();
+    const rejectDialog = page.getByRole("dialog", {
+      name: "Причина отклонения",
+      exact: true,
+    });
+    assert.equal(
+      await rejectDialog
+        .getByRole("button", { name: "Отклонить", exact: true })
+        .isDisabled(),
+      true,
+    );
+    await rejectDialog
+      .getByLabel("Причина отклонения", { exact: true })
+      .fill("Перенести закупку на следующий месяц");
+    await rejectDialog
+      .getByRole("button", { name: "Отклонить", exact: true })
+      .click();
+    await rejectDialog.waitFor({ state: "hidden" });
+    await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
+    const authorRejection = mobile
+      .locator(".request-card")
+      .filter({ hasText: rejectedTitle });
+    await authorRejection
+      .getByText("Перенести закупку на следующий месяц", { exact: true })
+      .waitFor();
+    await authorRejection
+      .getByText("Отклонено Управляющим (Calendar owner)", { exact: true })
+      .waitFor();
     // The sender can delete their own message; all viewers lose it.
     await mobile.getByRole("tab", { name: "Сообщения", exact: true }).click();
     menu = await holdMessage(phone, originalMobile());
@@ -914,7 +1030,7 @@ export async function verifyTeamChat({ origin, cookie, token }) {
     await chat
       .getByText("Mobile employee online — edited", { exact: true })
       .waitFor({ state: "hidden" });
-    await chat.getByRole("tab", { name: /^Заявки/ }).click();
+    await chat.getByRole("tab", { name: /^Задачи/ }).click();
     await staged
       .getByRole("button", { name: "Удалить заявку", exact: true })
       .waitFor();

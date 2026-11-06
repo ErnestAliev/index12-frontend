@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import UiIcon from "./UiIcon.vue";
-import { useTeamChatStore } from "@/stores/teamChatStore";
+import { useTeamChatStore, teamApi } from "@/stores/teamChatStore";
+import { decisionStatus, reviewerLabel } from "@/utils/teamRequestStatus";
 const props = defineProps({
     request: { type: Object, required: true },
     defaultOpen: Boolean,
@@ -16,6 +17,7 @@ const props = defineProps({
     "copy",
   ]);
 const chat = useTeamChatStore(),
+  element = ref(null),
   expanded = ref(props.defaultOpen),
   metaOpen = ref(false),
   r = computed(() => props.request);
@@ -26,13 +28,74 @@ watch(
   },
 );
 const dateLabel = (value) => value?.split("-").reverse().join(".") || "—";
-const labels = {
-  manager_review: "У управляющего",
-  director_review: "У руководителя",
-  ready: "Согласовано руководителем",
-  recorded: "Расход создан",
-  rejected: "Отклонено",
-};
+const status = computed(() =>
+  r.value.state === "recorded"
+    ? "Расход создан"
+    : decisionStatus(r.value.history) ||
+      (r.value.viewedAt ? "Просмотрено" : "Доставлено"),
+);
+const assignee = computed(() =>
+  ["manager_review", "director_review"].includes(r.value.state)
+    ? reviewerLabel(
+        r.value.state === "director_review" ? "director" : "manager",
+        chat.state.people,
+      )
+    : "",
+);
+const rejection = computed(
+  () =>
+    r.value.rejectionReason ||
+    [...(r.value.history || [])].reverse().find((h) => h.action === "reject")
+      ?.note,
+);
+const today = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty" }).format(
+    new Date(),
+  );
+let observer,
+  visible = false,
+  reading = false,
+  acknowledged = false;
+async function markRead() {
+  if (
+    !visible ||
+    reading ||
+    acknowledged ||
+    r.value.authorId === chat.me?.actorId ||
+    r.value.viewedAt ||
+    document.visibilityState !== "visible" ||
+    document.querySelector("dialog[open]")
+  )
+    return;
+  reading = true;
+  try {
+    await teamApi.post(`/requests/${r.value._id}/read`, {});
+    acknowledged = true;
+  } catch {
+    /* Retry on focus or another visibility change. */
+  } finally {
+    reading = false;
+  }
+}
+onMounted(() => {
+  observer = new IntersectionObserver(
+    (entries) => {
+      visible = entries[0].isIntersecting;
+      if (visible) void markRead();
+    },
+    { threshold: 0.25 },
+  );
+  observer.observe(element.value);
+  window.addEventListener("focus", markRead);
+  window.addEventListener("index12:chat-dialog-closed", markRead);
+  document.addEventListener("visibilitychange", markRead);
+});
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  window.removeEventListener("focus", markRead);
+  window.removeEventListener("index12:chat-dialog-closed", markRead);
+  document.removeEventListener("visibilitychange", markRead);
+});
 const accountForecast = computed(() =>
   chat.state.financial?.accounts?.find(
     (a) => a._id === r.value.placement?.accountId,
@@ -72,6 +135,7 @@ function drag(event) {
 </script>
 <template>
   <article
+    ref="element"
     class="request-card"
     :data-state="r.state"
     :draggable="manager && r.state === 'manager_review'"
@@ -87,23 +151,36 @@ function drag(event) {
       >
         <span class="request-title">{{ r.title }}</span
         ><span class="request-money">{{ money(r.amountCents) }}</span>
-        <span class="request-status">{{ labels[r.state] }}</span>
-      </button>
-      <div class="request-tools">
-        <button
-          v-if="canDelete"
-          type="button"
-          class="request-icon request-delete"
-          aria-label="Удалить заявку"
-          title="Удалить заявку"
-          :disabled="chat.busy"
-          @click="emit('delete', r)"
+        <span class="request-status">{{ status }}</span>
+        <span v-if="assignee" class="request-assignee">{{ assignee }}</span>
+        <span v-if="r.authorName" class="request-author"
+          >{{ chat.me?.roles?.[r.authorRole || "employee"] || "Сотрудник" }} ({{
+            r.authorName
+          }})</span
         >
-          <UiIcon name="trash" />
-        </button>
-      </div>
+        <span v-if="r.dueDate > today()" class="request-planned"
+          >План · {{ dateLabel(r.dueDate) }}</span
+        >
+      </button>
     </div>
+    <p v-if="r.state === 'rejected' && rejection" class="request-rejection">
+      {{ rejection }}
+    </p>
     <div v-if="expanded" class="request-details">
+      <p
+        v-if="r.projectNames?.length || r.categoryNames?.length"
+        class="request-classification"
+      >
+        {{
+          [
+            ...(r.projectNames || []),
+            ...(r.categoryNames || []),
+            r.subcategoryName,
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        }}
+      </p>
       <p
         v-if="r.placement?.description && r.placement.description !== r.title"
         class="request-comment"
@@ -129,6 +206,18 @@ function drag(event) {
         </div>
       </dl>
       <div class="request-actions">
+        <button
+          v-if="canDelete"
+          type="button"
+          class="request-icon request-delete"
+          aria-label="Удалить заявку"
+          title="Удалить заявку"
+          :disabled="chat.busy"
+          @click="emit('delete', r)"
+        >
+          <UiIcon name="trash" />
+        </button>
+
         <template v-if="manager && r.state === 'manager_review'">
           <button
             type="button"
@@ -494,5 +583,34 @@ function drag(event) {
     width: 40px;
     height: 40px;
   }
+}
+
+.request-assignee,
+.request-author,
+.request-planned {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--codex-pane-muted);
+}
+.request-assignee,
+.request-author,
+.request-planned {
+  grid-column: 1 / -1;
+}
+.request-planned {
+  color: var(--codex-pane-accent);
+}
+.request-rejection {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-left: 2px solid var(--color-danger, #c65048);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+.request-classification {
+  font-size: 12px;
+  color: var(--codex-pane-muted);
+  margin: 0 0 8px;
 }
 </style>

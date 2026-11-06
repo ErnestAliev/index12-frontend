@@ -29,7 +29,7 @@ async function editRequest(event) {
   editConflict.value = false;
   delete document.body.dataset.teamRequestDragging;
   if (row.state !== "manager_review") {
-    chat.tab = "requests";
+    chat.tab = "tasks";
     chat.requestedRequestId = row._id;
     chat.show();
     return;
@@ -74,6 +74,8 @@ async function editRequest(event) {
     contractorId: row.contractorId,
     categoryId: row.categoryId,
     subcategoryId: row.subcategoryId,
+    projectId: row.projectId || row.placement?.projectId,
+    projectIds: row.placement?.projectIds || (row.projectId ? [row.projectId] : []),
     description: row.placement?.description || row.title,
     comment: row.comment || "",
   };
@@ -84,14 +86,14 @@ async function editRequest(event) {
         operation,
         mutationId: crypto.randomUUID(),
       });
-      chat.tab = "requests";
+      chat.tab = "tasks";
       return;
     } catch (e) {
       editError.value = teamError(e);
     }
   }
   chat.open = false;
-  chat.tab = "requests";
+  chat.tab = "tasks";
   edit.value = { row, date, cell, operation, key: crypto.randomUUID() };
 }
 async function savePlacement(payload) {
@@ -118,7 +120,7 @@ async function savePlacement(payload) {
     chat.notice = `${payload.submit ? "Передано руководителю" : "Заявка размещена"} · ${row.dueDate.split("-").reverse().join(".")} · ${row.placement.accountName}`;
     edit.value = null;
     editError.value = "";
-    chat.tab = "requests";
+    chat.tab = "tasks";
     chat.show();
   } catch (e) {
     if (chat.me?.workspaceId !== workspace || edit.value !== current) return;
@@ -155,7 +157,7 @@ function closeEditor() {
   edit.value = null;
   editError.value = "";
   editConflict.value = false;
-  chat.tab = "requests";
+  chat.tab = "tasks";
   chat.show();
 }
 window.addEventListener("index12:edit-team-request", editRequest);

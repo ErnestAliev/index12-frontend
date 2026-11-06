@@ -10,6 +10,7 @@ const chat = useTeamChatStore(),
   busy = ref(false),
   error = ref(""),
   text = ref(props.message.text || ""),
+  reason = ref(""),
   editVersion = ref(props.message.version || 0),
   targets = ref([]);
 const emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -18,6 +19,7 @@ const stage = computed(() =>
 );
 const canReview = computed(
   () =>
+    props.message.kind !== "request" &&
     !["approved", "rejected"].includes(props.message.approval?.state) &&
     (chat.isOwner || chat.me?.role === stage.value),
 );
@@ -28,6 +30,7 @@ const title = computed(
     ({
       actions: "Сообщение",
       edit: "Редактировать",
+      reject: "Причина отклонения",
       forward: "Переслать",
       delete: "Удалить сообщение?",
       history: "Согласование",
@@ -91,10 +94,15 @@ function sendForward(target) {
     }),
   );
 }
-function decide(action) {
+function decide(action, note = "") {
+  if (action === "reject" && !note) {
+    mode.value = "reject";
+    return;
+  }
   return run(() =>
     chat.action(`/messages/${props.message._id}/decision`, {
       action,
+      note,
       expectedVersion: props.message.version || 0,
     }),
   );
@@ -208,7 +216,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <button
-            v-if="own"
+            v-if="own && message.kind !== 'request'"
             type="button"
             class="menu-action"
             :disabled="busy"
@@ -273,6 +281,26 @@ onBeforeUnmount(() => {
             <UiIcon name="trash" />Удалить
           </button>
         </template>
+        <form
+          v-else-if="mode === 'reject'"
+          @submit.prevent="decide('reject', reason.trim())"
+        >
+          <textarea
+            v-model="reason"
+            aria-label="Причина отклонения"
+            placeholder="Почему отклонено"
+            maxlength="1000"
+            rows="4"
+            required
+            autofocus
+          ></textarea>
+          <button
+            class="menu-action menu-danger"
+            :disabled="busy || !reason.trim()"
+          >
+            Отклонить
+          </button>
+        </form>
         <form v-else-if="mode === 'edit'" @submit.prevent="save">
           <textarea
             v-model="text"
@@ -330,6 +358,7 @@ onBeforeUnmount(() => {
                 timeZone: "Asia/Almaty",
               })
             }}</time>
+            <p v-if="entry.note">{{ entry.note }}</p>
           </li>
         </ol>
       </section>
