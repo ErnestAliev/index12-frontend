@@ -120,28 +120,34 @@ export async function verifyReplies({
     await mobile.locator(".team-heading-role,.team-heading-exit").count(),
     0,
   );
-  const nav = mobile.getByRole("combobox", {
-      name: "Раздел чата",
+  const nav = mobile.getByRole("button", {
+      name: "Меню чата",
       exact: true,
     }),
     navBox = await nav.boundingBox();
-  assert.ok(Math.abs(navBox.x + navBox.width / 2 - 195) < 2);
+  assert.ok(navBox.width <= 138, "Section dropdown must fit its text");
   assert.ok(navBox.y < 70, "Section picker must remain in the header");
   await mobile.getByRole("button", { name: "Меню чата", exact: true }).click();
   const account = mobile.getByRole("dialog", {
     name: "Меню чата",
     exact: true,
   });
-  await account.getByText("Сотрудник", { exact: true }).waitFor();
   const menuBox = await account.boundingBox();
   assert.ok(
     menuBox.y >= navBox.y + navBox.height,
     "Menu must open below the header",
   );
   await account
+    .getByRole("button", { name: "Настройки чата", exact: true })
+    .click();
+  await account.getByText("Сотрудник", { exact: true }).waitFor();
+  await account
     .getByRole("button", { name: "Уведомления", exact: true })
     .waitFor();
   await account.getByRole("button", { name: "Выйти", exact: true }).waitFor();
+  await account
+    .getByRole("button", { name: "Назад к разделам чата", exact: true })
+    .click();
   await account
     .getByRole("button", { name: "Тёмная тема", exact: true })
     .click();
@@ -154,7 +160,7 @@ export async function verifyReplies({
     .getByRole("button", { name: "Светлая тема", exact: true })
     .click();
   await selectSection(mobile, "Задачи");
-  assert.equal(await nav.inputValue(), "tasks");
+  assert.equal(await nav.getAttribute("data-section"), "tasks");
   await selectSection(mobile, "Сообщения");
   await verifyTopNavigation(phone, mobile, output);
   console.log(

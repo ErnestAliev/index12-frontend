@@ -1,6 +1,6 @@
 import {
   selectSection,
-  openChatMenu,
+  openChatSettings,
   closeChatMenu,
 } from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
@@ -35,7 +35,7 @@ export async function verifyAdministrationBrowser({
       .count(),
     0,
   );
-  await openChatMenu(frame);
+  await openChatSettings(frame);
   assert.equal(
     await frame
       .locator(".team-heading")

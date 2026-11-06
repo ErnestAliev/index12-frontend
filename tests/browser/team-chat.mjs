@@ -1,7 +1,7 @@
 import {
   selectSection,
   hasSection,
-  openChatMenu,
+  openChatSettings,
   closeChatMenu,
 } from "./team-chat-navigation.mjs";
 import assert from "node:assert/strict";
@@ -125,7 +125,7 @@ export async function verifyTeamChat({
     assert.ok(generated.includes("/team/"));
     token = generated.split("/").at(-1);
     for (const role of ["director", "employee", "manager"]) {
-      await openChatMenu(chat);
+      await openChatSettings(chat);
       const saved = page.waitForResponse(
         (r) =>
           r.url().endsWith("/team-chat/settings") &&
@@ -166,7 +166,7 @@ export async function verifyTeamChat({
     await launcher.waitFor();
     await launcher.click();
     await selectSection(chat, "Участники");
-    await openChatMenu(chat);
+    await openChatSettings(chat);
     assert.equal(
       await chat.getByLabel("Моя роль в чате", { exact: true }).inputValue(),
       "manager",
@@ -311,7 +311,7 @@ export async function verifyTeamChat({
       await mobile
         .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
         .count(),
-      0,
+      1,
     );
     const manifestUrl = await phone
       .locator('link[rel="manifest"]')

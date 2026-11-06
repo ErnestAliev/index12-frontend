@@ -1,38 +1,54 @@
-export async function selectSection(frame, label) {
-  const select = frame.getByRole("combobox", {
-    name: "Раздел чата",
-    exact: true,
-  });
-  if (await select.count()) await select.selectOption({ label });
-  else await frame.getByRole("tab", { name: new RegExp("^" + label) }).click();
-}
-export async function hasSection(frame, label) {
-  const select = frame.getByRole("combobox", {
-    name: "Раздел чата",
-    exact: true,
-  });
-  if (await select.count())
-    return select.locator("option").filter({ hasText: label }).count();
-  return frame.getByRole("tab", { name: new RegExp("^" + label) }).count();
-}
+import assert from "node:assert/strict";
 export async function openChatMenu(frame) {
   const trigger = frame.getByRole("button", { name: "Меню чата", exact: true });
   if ((await trigger.getAttribute("aria-expanded")) !== "true")
     await trigger.click();
-  return frame.getByRole("dialog", { name: "Меню чата", exact: true });
+  const menu = frame.getByRole("dialog", { name: "Меню чата", exact: true });
+  const back = menu.getByRole("button", {
+    name: "Назад к разделам чата",
+    exact: true,
+  });
+  if (await back.count()) await back.click();
+  return menu;
+}
+export async function openChatSettings(frame) {
+  const menu = await openChatMenu(frame);
+  await menu
+    .getByRole("button", { name: "Настройки чата", exact: true })
+    .click();
+  return menu;
 }
 export async function closeChatMenu(frame) {
   const trigger = frame.getByRole("button", { name: "Меню чата", exact: true });
   if ((await trigger.getAttribute("aria-expanded")) === "true")
     await trigger.click();
 }
-import assert from "node:assert/strict";
+export async function selectSection(frame, label) {
+  const menu = await openChatMenu(frame);
+  await menu
+    .getByRole("button", {
+      name: label === "Участники" ? "Роли и участники" : label,
+      exact: true,
+    })
+    .click();
+}
+export async function hasSection(frame, label) {
+  const wasOpen =
+    (await frame
+      .getByRole("button", { name: "Меню чата", exact: true })
+      .getAttribute("aria-expanded")) === "true";
+  const menu = await openChatMenu(frame);
+  const count = await menu
+    .getByRole("button", {
+      name: label === "Участники" ? "Роли и участники" : label,
+      exact: true,
+    })
+    .count();
+  if (!wasOpen) await closeChatMenu(frame);
+  return count;
+}
 export async function verifyTopNavigation(page, frame, output) {
   const originalViewport = page.viewportSize();
-  const section = frame.getByRole("combobox", {
-    name: "Раздел чата",
-    exact: true,
-  });
   const trigger = frame.getByRole("button", { name: "Меню чата", exact: true });
   for (const viewport of [
     { width: 320, height: 568 },
@@ -43,29 +59,17 @@ export async function verifyTopNavigation(page, frame, output) {
     await page.setViewportSize(viewport);
     await page.waitForFunction(
       ({ id, width, height }) => {
-        const bounds = document.getElementById(id)?.getBoundingClientRect();
+        const b = document.getElementById(id)?.getBoundingClientRect();
         return (
-          bounds &&
-          Math.abs(bounds.width - width) < 2 &&
-          Math.abs(bounds.height - height) < 2
+          b && Math.abs(b.width - width) < 2 && Math.abs(b.height - height) < 2
         );
       },
       { id: await frame.getAttribute("id"), ...viewport },
     );
-    const picker = await section.boundingBox();
     const button = await trigger.boundingBox();
-    const header = await frame.locator(".team-heading").boundingBox();
     assert.ok(
-      Math.abs(picker.x + picker.width / 2 - header.x - header.width / 2) < 2,
-      "Section picker stays centered in the header",
-    );
-    assert.ok(
-      picker.y < 70 && button.y < 70,
-      "Navigation must stay at the top on every device",
-    );
-    assert.ok(
-      button.width >= 44 && button.height >= 44,
-      "Menu needs a full touch target",
+      button.y < 70 && button.width <= 138 && button.height >= 44,
+      "One compact dropdown remains at the top on every device",
     );
     assert.ok(
       await trigger.evaluate((el) => {
@@ -74,27 +78,56 @@ export async function verifyTopNavigation(page, frame, output) {
           document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2),
         );
       }),
-      "Menu must remain clickable above the chat",
     );
     assert.equal(await frame.getByRole("tab").count(), 0);
-    const menu = await openChatMenu(frame);
-    const bounds = await menu.boundingBox();
+    assert.equal(
+      await frame.locator(".codex-window-header button").count(),
+      2,
+      "Only section dropdown and icon-only close remain beside the name",
+    );
+    const close = frame.getByRole("button", {
+      name: "Закрыть чат Сотрудники",
+      exact: true,
+    });
+    assert.equal(await close.textContent(), "");
+    const menu = await openChatMenu(frame),
+      bounds = await menu.boundingBox();
     assert.ok(
-      bounds.y >= picker.y + picker.height &&
+      bounds.y >= button.y + button.height &&
         bounds.y + bounds.height <= viewport.height,
-      "Menu opens downwards and stays inside the viewport",
+      "Dropdown remains inside available screen space",
     );
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width);
+    await menu
+      .getByRole("button", { name: "Настройки чата", exact: true })
+      .waitFor();
     if (output)
       await page.screenshot({
         path: `${output}/team-chat-header-${viewport.width}.png`,
         animations: "disabled",
       });
-    await closeChatMenu(frame);
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    assert.equal(await frame.isVisible(), true);
     await selectSection(frame, "Задачи");
-    assert.equal(await section.inputValue(), "tasks");
+    assert.equal(await trigger.getAttribute("data-section"), "tasks");
     await selectSection(frame, "Сообщения");
-    assert.equal(await section.inputValue(), "messages");
+    assert.equal(await trigger.getAttribute("data-section"), "messages");
   }
   await page.setViewportSize(originalViewport);
+  const url = page.url();
+  await frame
+    .getByRole("button", { name: "Закрыть чат Сотрудники", exact: true })
+    .click();
+  await frame.waitFor({ state: "hidden" });
+  assert.equal(page.url(), url);
+  await page.getByRole("button", { name: "Открыть чат", exact: true }).click();
+  await frame.waitFor();
+  await frame
+    .getByRole("region", { name: "Сообщения сотрудников", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByRole("button", { name: "Войти", exact: true }).count(),
+    0,
+  );
 }

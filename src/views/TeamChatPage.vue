@@ -6,6 +6,7 @@ import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "@/components/TeamChatPane.vue";
 import TeamChatSetup from "@/components/TeamChatSetup.vue";
+import UiIcon from "@/components/UiIcon.vue";
 import { nationalPhone, phoneInput, phoneBeforeInput } from "@/utils/teamPhone";
 import {
   chatPushEndpoint,
@@ -24,6 +25,7 @@ const name = ref(""),
   booting = ref(true),
   invitation = ref(null),
   setup = ref(null),
+  chatClosed = ref(false),
   error = ref(""),
   success = ref(""),
   busy = ref(false),
@@ -52,6 +54,7 @@ function clearCredentials() {
 watch(
   () => chat.me?.actorId,
   (id, previous) => {
+    if (id !== previous) chatClosed.value = false;
     if (previous && !id) {
       clearCredentials();
       register.value = invitation.value?.joinable !== false;
@@ -343,14 +346,19 @@ const closedText = (status) =>
         Установка и уведомления</button
       ><button @click="logout">Выйти</button>
     </section>
+    <section v-else-if="chatClosed" class="team-wait">
+      <button class="team-reopen" type="button" @click="chatClosed = false">
+        <UiIcon name="chat" />Открыть чат
+      </button>
+    </section>
     <ChatWindowFrame
       v-else
       :open="true"
-      :closable="false"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
+      @close="chatClosed = true"
       ><template #heading
         ><TeamChatHeader
           setup-available
@@ -372,6 +380,12 @@ const closedText = (status) =>
   </main>
 </template>
 <style scoped>
+.team-reopen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 .team-login {
   min-height: 0;
   display: grid;

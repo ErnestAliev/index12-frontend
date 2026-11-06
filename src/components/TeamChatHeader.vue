@@ -1,6 +1,5 @@
 <script setup>
 import { useTeamChatStore } from "@/stores/teamChatStore";
-import UiIcon from "./UiIcon.vue";
 import TeamChatNavigation from "./TeamChatNavigation.vue";
 defineProps({ setupAvailable: Boolean });
 const emit = defineEmits(["logout", "setup"]);
@@ -15,7 +14,6 @@ const chat = useTeamChatStore();
     @logout="emit('logout')"
   >
     <span class="team-heading-identity">
-      <UiIcon name="chat" />
       <span class="team-heading-name" :title="chat.me?.displayName">{{
         chat.me?.displayName || "Чат"
       }}</span>
@@ -23,6 +21,14 @@ const chat = useTeamChatStore();
   </TeamChatNavigation>
 </template>
 <style scoped>
+:global(#team-chat-public .codex-close),
+:global(#team-chat-window .codex-close) {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+}
 .team-heading-identity {
   display: flex;
   align-items: center;
