@@ -5,11 +5,7 @@ import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import process from "node:process";
 import { Buffer } from "node:buffer";
-export async function verifyTeamChat({
-  origin,
-  cookie,
-  token,
-}) {
+export async function verifyTeamChat({ origin, cookie, token }) {
   const root = fileURLToPath(new URL("../../", import.meta.url)),
     output = root + "output/playwright";
   const server = await createServer({
@@ -101,24 +97,17 @@ export async function verifyTeamChat({
       });
     }
     await chat.getByRole("tab", { name: /^Участники/ }).click();
-    const invitationCreated = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/team-chat/invite") &&
-        r.request().method() === "POST",
-    );
     await chat
       .getByRole("button", { name: "Пригласить по ссылке", exact: true })
       .click();
-    const generated = (await (await invitationCreated).json()).url;
-    await page.waitForFunction(
-      (url) =>
-        [
-          ...document.querySelectorAll(
-            '[aria-label="Ссылка приглашения в чат"]',
-          ),
-        ].some((field) => field.value === url),
-      generated,
-    );
+    const inviteField = chat.getByLabel("Ссылка приглашения в чат", {
+      exact: true,
+    });
+    await inviteField.waitFor();
+    const generated = await inviteField.inputValue();
+    await chat
+      .getByRole("button", { name: "Закрыть приглашение", exact: true })
+      .click();
     assert.ok(generated.includes("/team/"));
     token = generated.split("/").at(-1);
     for (const role of ["director", "employee", "manager"]) {
@@ -150,6 +139,16 @@ export async function verifyTeamChat({
         true,
       );
     }
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate(
+        (t) => document.documentElement.setAttribute("data-theme", t),
+        theme,
+      );
+      await chat.screenshot({
+        path: `${output}/team-chat-members-panel-${theme}.png`,
+        animations: "disabled",
+      });
+    }
     await page.reload({ waitUntil: "domcontentloaded" });
     await launcher.waitFor();
     await launcher.click();
@@ -171,7 +170,9 @@ export async function verifyTeamChat({
     // Read the original server response, not the DOM after JS has swapped links.
     // The former implementation passed start_url checks but exposed the root
     // INDEX12 manifest to the installer while it was parsing the page.
-    const initial = await employee.request.get("http://127.0.0.1:5173/team/" + token);
+    const initial = await employee.request.get(
+      "http://127.0.0.1:5173/team/" + token,
+    );
     const initialHtml = await initial.text();
     assert.match(initialHtml, new RegExp(`href="/team-manifest/${token}"`));
     assert.doesNotMatch(initialHtml, /href="\/manifest\.webmanifest"/);
@@ -319,16 +320,25 @@ export async function verifyTeamChat({
     await session.detach();
     // iOS may create an isolated app storage context. Even without cookies or
     // localStorage, the captured launch URL must still open this chat's login.
-    const isolated = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const isolated = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+    });
     await isolated.addInitScript(() => {
       Object.defineProperty(navigator, "standalone", { get: () => true });
     });
     const isolatedPage = await isolated.newPage();
-    await isolatedPage.goto(new URL(JSON.parse(discovered.data).start_url, phone.url()).href);
+    await isolatedPage.goto(
+      new URL(JSON.parse(discovered.data).start_url, phone.url()).href,
+    );
     await isolatedPage.getByLabel("Номер телефона", { exact: true }).waitFor();
     assert.equal(new URL(isolatedPage.url()).pathname, "/team/" + token);
     assert.equal(await isolatedPage.title(), "Chat");
-    assert.equal(await isolatedPage.getByRole("heading", { name: "Chat", exact: true }).count(), 1);
+    assert.equal(
+      await isolatedPage
+        .getByRole("heading", { name: "Chat", exact: true })
+        .count(),
+      1,
+    );
     await isolated.close();
     assert.equal(
       await mobile

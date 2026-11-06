@@ -1,7 +1,9 @@
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
+import TeamChatRoleSelect from "./TeamChatRoleSelect.vue";
+import { formatPhone } from "@/utils/teamPhone";
 const chat = useTeamChatStore(),
   invites = ref([]),
   recoveries = ref([]),
@@ -9,13 +11,35 @@ const chat = useTeamChatStore(),
   loading = ref(true),
   pending = ref(new Set()),
   copied = ref(null),
-  verified = ref({});
+  verified = ref({}),
+  expanded = ref(null),
+  inviteOpen = ref(false),
+  invitePanel = ref(null),
+  inviteButton = ref(null),
+  selectedInviteId = ref(null);
+const currentInvite = computed(
+  () =>
+    invites.value.find((r) => r._id === selectedInviteId.value) ||
+    invites.value.find((r) => r.url) ||
+    invites.value[0],
+);
+function closeInvite(event) {
+  if (
+    event &&
+    (invitePanel.value?.contains(event.target) ||
+      inviteButton.value?.contains(event.target))
+  )
+    return;
+  inviteOpen.value = false;
+}
+onMounted(() => document.addEventListener("pointerdown", closeInvite));
 let generation = 0,
   copyTimer;
 import { onBeforeUnmount } from "vue";
 onBeforeUnmount(() => {
   generation++;
   clearTimeout(copyTimer);
+  document.removeEventListener("pointerdown", closeInvite);
 });
 async function load() {
   const g = ++generation;
@@ -61,14 +85,26 @@ async function run(id, fn) {
     pending.value.delete(id);
   }
 }
-async function createInvite() {
+async function newInvite() {
   await run("new", async () => {
     const data = await chat.action("/invite", { role: "employee" });
     invites.value = [
       data.invite,
       ...invites.value.filter((i) => i._id !== data.invite._id),
     ];
+    selectedInviteId.value = data.invite._id;
   });
+}
+async function createInvite() {
+  if (inviteOpen.value) {
+    inviteOpen.value = false;
+    return;
+  }
+  inviteOpen.value = true;
+  if (loading.value) await load();
+  if (!currentInvite.value?.url) await newInvite();
+  await nextTick();
+  invitePanel.value?.querySelector("input")?.focus();
 }
 async function rotate(row, role, event) {
   const result = await run(row._id, async () => {
@@ -99,6 +135,8 @@ async function deleteInvite(row) {
       "delete",
     );
     invites.value = invites.value.filter((i) => i._id !== row._id);
+    inviteOpen.value = false;
+    selectedInviteId.value = null;
   });
 }
 async function setMember(member, status, role = member.role, event) {
@@ -177,6 +215,11 @@ async function copy(row, event) {
   copied.value = row._id;
   clearTimeout(copyTimer);
   copyTimer = setTimeout(() => (copied.value = null), 2000);
+  if (invites.value.some((i) => i._id === row._id)) {
+    inviteOpen.value = false;
+    await nextTick();
+    inviteButton.value?.focus();
+  }
 }
 const statusLabel = (s) =>
   ({
@@ -189,349 +232,358 @@ const statusLabel = (s) =>
 <template>
   <div class="member-admin">
     <div v-if="error" class="member-error" role="alert">{{ error }}</div>
-    <div class="member-own-role">
-      <label for="chat-own-role">Моя роль</label
-      ><select
-        id="chat-own-role"
-        :value="chat.me.role"
-        aria-label="Моя роль в чате"
-        :disabled="pending.has('owner')"
-        @change="
-          run('owner', () =>
-            chat.action(
-              '/settings',
-              { ownerRole: $event.target.value },
-              'patch',
-            ),
-          )
-        "
+    <div class="member-toolbar">
+      <button
+        ref="inviteButton"
+        class="member-create"
+        aria-label="Пригласить по ссылке"
+        :aria-expanded="inviteOpen"
+        aria-controls="chat-invite-panel"
+        :disabled="pending.has('new')"
+        @click="createInvite"
       >
-        <option
-          v-for="(label, role) in chat.me.roles"
-          :key="role"
-          :value="role"
-        >
-          {{ label }}
-        </option></select
-      ><span>Администратор</span>
+        <UiIcon
+          :name="
+            copied && invites.some((i) => i._id === copied) ? 'check' : 'plus'
+          "
+        />
+        {{
+          copied && invites.some((i) => i._id === copied)
+            ? "Ссылка скопирована"
+            : "Пригласить по ссылке"
+        }}
+      </button>
     </div>
-    <section class="member-section" aria-label="Приглашения в чат">
-      <header>
-        <h3>Приглашения</h3>
-        <button
-          class="member-create"
-          :disabled="pending.has('new')"
-          @click="createInvite"
-        >
-          <UiIcon name="plus" />{{
-            pending.has("new") ? "Создаём…" : "Пригласить по ссылке"
-          }}
-        </button>
-      </header>
-      <p v-if="loading" role="status">Загружаем приглашения…</p>
+    <section
+      v-if="inviteOpen"
+      id="chat-invite-panel"
+      ref="invitePanel"
+      class="member-invite-panel"
+      aria-label="Приглашения в чат"
+      @keydown.esc.stop="
+        inviteOpen = false;
+        inviteButton?.focus();
+      "
+    >
+      <p v-if="loading || pending.has('new')" role="status">Загружаем…</p>
       <article
-        v-for="row in invites"
-        :key="row._id"
+        v-if="currentInvite"
         class="member-invite"
-        :aria-label="`Приглашение ${chat.me.roles[row.role]}`"
+        :data-invite-id="currentInvite._id"
       >
         <div class="member-invite-top">
-          <label :for="`invite-${row._id}`">Роль по ссылке</label
-          ><select
-            :id="`invite-${row._id}`"
-            :value="row.role"
-            :aria-label="`Роль по ссылке ${row._id}`"
-            :disabled="pending.has(row._id)"
-            @change="rotate(row, $event.target.value, $event)"
+          <TeamChatRoleSelect
+            :value="currentInvite.role"
+            :roles="chat.me.roles"
+            :label="`Роль по ссылке ${currentInvite._id}`"
+            :disabled="pending.has(currentInvite._id)"
+            @change="rotate(currentInvite, $event.target.value, $event)"
+          />
+          <button
+            class="member-icon"
+            aria-label="Закрыть приглашение"
+            title="Закрыть"
+            @click="
+              inviteOpen = false;
+              inviteButton?.focus();
+            "
           >
-            <option
-              v-for="(label, role) in chat.me.roles"
-              :key="role"
-              :value="role"
-            >
-              {{ label }}
-            </option></select
-          ><span v-if="pending.has(row._id)" role="status">Обновляем…</span>
+            <UiIcon name="close" />
+          </button>
         </div>
         <div class="member-link">
           <input
-            v-if="row.url"
-            :value="row.url"
+            v-if="currentInvite.url"
+            :value="currentInvite.url"
             readonly
             aria-label="Ссылка приглашения в чат"
             @focus="selectLink"
             @click="selectLink"
             @pointerup.prevent="selectLink"
-          /><span v-else class="member-legacy">{{
-            row.revokedAt ? "Ссылка закрыта" : "Обновите ссылку для копирования"
-          }}</span
-          ><button
-            v-if="row.url"
+          />
+          <span v-else class="member-meta">Ссылка закрыта</span>
+          <button
+            v-if="currentInvite.url"
             class="member-icon"
-            :disabled="pending.has(row._id)"
-            :aria-label="
-              copied === row._id ? 'Ссылка скопирована' : 'Скопировать ссылку'
-            "
-            :title="copied === row._id ? 'Скопировано' : 'Скопировать ссылку'"
-            @click="copy(row, $event)"
+            :disabled="pending.has(currentInvite._id)"
+            aria-label="Скопировать ссылку"
+            title="Скопировать ссылку"
+            @click="copy(currentInvite, $event)"
           >
-            <UiIcon :name="copied === row._id ? 'check' : 'copy'" /></button
-          ><button
-            class="member-icon"
-            :disabled="pending.has(row._id)"
-            aria-label="Обновить ссылку"
-            title="Обновить ссылку"
-            @click="rotate(row, row.role)"
-          >
-            <UiIcon name="refresh" /></button
-          ><button
-            class="member-icon member-danger"
-            :disabled="pending.has(row._id)"
-            aria-label="Удалить ссылку"
-            title="Удалить ссылку"
-            @click="deleteInvite(row)"
-          >
-            <UiIcon name="trash" />
+            <UiIcon name="copy" />
           </button>
         </div>
+        <details class="member-link-settings">
+          <summary>Действия со ссылкой<UiIcon name="chevron-down" /></summary>
+          <div class="member-actions">
+            <button
+              :disabled="pending.has(currentInvite._id)"
+              @click="rotate(currentInvite, currentInvite.role)"
+            >
+              <UiIcon name="refresh" />Обновить ссылку
+            </button>
+            <button
+              class="member-danger"
+              :disabled="pending.has(currentInvite._id)"
+              aria-label="Удалить ссылку"
+              @click="deleteInvite(currentInvite)"
+            >
+              <UiIcon name="trash" />Удалить
+            </button>
+          </div>
+        </details>
       </article>
+      <details class="member-link-settings">
+        <summary>Другие ссылки<UiIcon name="chevron-down" /></summary>
+        <div class="member-previous-links">
+          <button
+            v-for="row in invites.filter((i) => i._id !== currentInvite?._id)"
+            :key="row._id"
+            @click="selectedInviteId = row._id"
+          >
+            {{ chat.me.roles[row.role]
+            }}<span>{{
+              new Date(row.createdAt).toLocaleDateString("ru-RU")
+            }}</span>
+          </button>
+          <button :disabled="pending.has('new')" @click="newInvite">
+            <UiIcon name="plus" />Создать другую ссылку
+          </button>
+        </div>
+      </details>
     </section>
     <section
       v-if="recoveries.length"
       class="member-section"
       aria-label="Восстановление доступа"
     >
-      <header>
-        <h3>Восстановление пароля</h3>
-        <span>{{ recoveries.length }}</span>
-      </header>
-      <article v-for="row in recoveries" :key="row._id" class="member-card">
-        <div class="member-person">
+      <details
+        v-for="row in recoveries"
+        :key="row._id"
+        class="member-recovery"
+        open
+      >
+        <summary>
           <strong>{{ row.name }}</strong
-          ><span>{{ row.phone }}</span>
+          ><span>Восстановление</span><UiIcon name="chevron-down" />
+        </summary>
+        <div class="member-expanded">
+          <span class="member-meta">+7 {{ formatPhone(row.phone) }}</span>
+          <template v-if="!row.url">
+            <label class="member-verify"
+              ><input v-model="verified[row._id]" type="checkbox" />Запрос
+              подтверждён через известный контакт</label
+            >
+            <div class="member-actions">
+              <button
+                :disabled="!verified[row._id] || pending.has(row._id)"
+                @click="approveRecovery(row)"
+              >
+                Выдать одноразовую ссылку
+              </button>
+              <button
+                class="member-icon member-danger"
+                :disabled="pending.has(row._id)"
+                aria-label="Отклонить восстановление"
+                title="Отклонить восстановление"
+                @click="rejectRecovery(row)"
+              >
+                <UiIcon name="close" />
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <span class="member-meta"
+              >Ссылка действует 15 минут. Передайте её через известный контакт
+              сотрудника</span
+            >
+            <div class="member-link">
+              <input
+                :value="row.url"
+                readonly
+                aria-label="Ссылка восстановления пароля"
+                @focus="selectLink"
+                @click="selectLink"
+                @pointerup.prevent="selectLink"
+              />
+              <button
+                class="member-icon"
+                :aria-label="
+                  copied === row._id
+                    ? 'Ссылка скопирована'
+                    : 'Скопировать ссылку восстановления'
+                "
+                title="Скопировать"
+                @click="copy(row, $event)"
+              >
+                <UiIcon :name="copied === row._id ? 'check' : 'copy'" />
+              </button>
+            </div>
+          </template>
         </div>
-        <template v-if="!row.url"
-          ><label class="member-verify"
-            ><input v-model="verified[row._id]" type="checkbox" />Запрос
-            подтверждён через известный контакт</label
-          >
-          <div class="member-actions">
-            <button
-              :disabled="!verified[row._id] || pending.has(row._id)"
-              @click="approveRecovery(row)"
-            >
-              Выдать одноразовую ссылку</button
-            ><button
-              class="member-icon member-danger"
-              :disabled="pending.has(row._id)"
-              aria-label="Отклонить восстановление"
-              title="Отклонить восстановление"
-              @click="rejectRecovery(row)"
-            >
-              <UiIcon name="close" />
-            </button></div
-        ></template>
-        <template v-else
-          ><span class="member-meta"
-            >Ссылка действует 15 минут. Передайте её через известный контакт
-            сотрудника</span
-          >
-          <div class="member-link">
-            <input
-              :value="row.url"
-              :disabled="pending.has(row._id)"
-              readonly
-              aria-label="Ссылка восстановления пароля"
-              @focus="selectLink"
-              @click="selectLink"
-              @pointerup.prevent="selectLink"
-            /><button
-              class="member-icon"
-              :aria-label="
-                copied === row._id
-                  ? 'Ссылка скопирована'
-                  : 'Скопировать ссылку восстановления'
-              "
-              title="Скопировать"
-              @click="copy(row, $event)"
-            >
-              <UiIcon :name="copied === row._id ? 'check' : 'copy'" />
-            </button></div
-        ></template>
-      </article>
+      </details>
     </section>
-    <section class="member-section" aria-label="Сотрудники чата">
-      <header>
-        <h3>Сотрудники</h3>
-        <span>{{ chat.state.members.length }}</span>
-      </header>
+    <section class="member-section member-list" aria-label="Сотрудники чата">
+      <p v-if="!chat.state.members.length && !loading" class="member-meta">
+        Нет участников
+      </p>
       <article
         v-for="member in chat.state.members"
         :key="member._id"
         class="member-card"
         :aria-label="`Участник ${member.name}`"
       >
-        <div class="member-person">
-          <strong>{{ member.name }}</strong
-          ><span>{{ member.phone }}</span>
-        </div>
-        <div class="member-access">
-          <span
-            :class="{ closed: ['revoked', 'rejected'].includes(member.status) }"
-            >{{ statusLabel(member.status) }}</span
-          ><select
+        <div class="member-row">
+          <button
+            class="member-person"
+            :aria-expanded="expanded === member._id"
+            :aria-controls="`member-settings-${member._id}`"
+            @click="expanded = expanded === member._id ? null : member._id"
+          >
+            <span
+              class="member-status"
+              :class="member.status"
+              :title="statusLabel(member.status)"
+              :aria-label="statusLabel(member.status)"
+            ></span>
+            <strong>{{ member.name }}</strong>
+          </button>
+          <TeamChatRoleSelect
             :value="draftRoles[member._id] || member.role"
-            :aria-label="`Роль ${member.name}`"
+            :roles="chat.me.roles"
+            :label="`Роль ${member.name}`"
             :disabled="pending.has(member._id)"
             @change="roleChanged(member, $event)"
-          >
-            <option
-              v-for="(label, role) in chat.me.roles"
-              :key="role"
-              :value="role"
-            >
-              {{ label }}
-            </option>
-          </select>
-        </div>
-        <div class="member-actions">
+          />
           <button
-            v-if="member.status === 'pending'"
-            :disabled="pending.has(member._id)"
-            @click="
-              setMember(member, 'active', draftRoles[member._id] || member.role)
-            "
+            class="member-icon member-toggle"
+            :aria-label="`Настройки ${member.name}`"
+            :aria-expanded="expanded === member._id"
+            :aria-controls="`member-settings-${member._id}`"
+            @click="expanded = expanded === member._id ? null : member._id"
           >
-            Одобрить</button
-          ><button
-            v-else-if="member.status === 'active'"
-            :disabled="pending.has(member._id)"
-            @click="setMember(member, 'revoked')"
-          >
-            Закрыть доступ</button
-          ><button
-            v-else
-            :disabled="pending.has(member._id)"
-            @click="setMember(member, 'active')"
-          >
-            Вернуть доступ</button
-          ><button
-            v-if="member.status === 'pending'"
-            class="member-icon"
-            :disabled="pending.has(member._id)"
-            aria-label="Отклонить запрос"
-            title="Отклонить запрос"
-            @click="setMember(member, 'rejected')"
-          >
-            <UiIcon name="close" /></button
-          ><button
-            class="member-icon member-danger"
-            :disabled="pending.has(member._id)"
-            :aria-label="`Удалить сотрудника ${member.name}`"
-            title="Удалить сотрудника"
-            @click="deleteMember(member)"
-          >
-            <UiIcon name="trash" />
+            <UiIcon name="chevron-down" />
           </button>
+        </div>
+        <div
+          v-if="expanded === member._id"
+          :id="`member-settings-${member._id}`"
+          class="member-expanded"
+        >
+          <div class="member-person-details">
+            <span>+7 {{ formatPhone(member.phone) }}</span
+            ><span>{{ statusLabel(member.status) }}</span>
+          </div>
+          <div class="member-actions">
+            <button
+              v-if="member.status === 'pending'"
+              :disabled="pending.has(member._id)"
+              @click="
+                setMember(
+                  member,
+                  'active',
+                  draftRoles[member._id] || member.role,
+                )
+              "
+            >
+              <UiIcon name="check" />Одобрить
+            </button>
+            <button
+              v-else-if="member.status === 'active'"
+              :disabled="pending.has(member._id)"
+              @click="setMember(member, 'revoked')"
+            >
+              Закрыть доступ
+            </button>
+            <button
+              v-else
+              :disabled="pending.has(member._id)"
+              @click="setMember(member, 'active')"
+            >
+              Вернуть доступ
+            </button>
+            <button
+              v-if="member.status === 'pending'"
+              :disabled="pending.has(member._id)"
+              @click="setMember(member, 'rejected')"
+            >
+              Отклонить
+            </button>
+            <button
+              class="member-danger"
+              :disabled="pending.has(member._id)"
+              :aria-label="`Удалить сотрудника ${member.name}`"
+              @click="deleteMember(member)"
+            >
+              <UiIcon name="trash" />Удалить
+            </button>
+          </div>
         </div>
       </article>
     </section>
   </div>
 </template>
 <style scoped>
-.member-admin :is(input, select, button) {
-  font: inherit;
-  color: var(--codex-pane-text);
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 8px;
-  background-color: var(--codex-pane-surface);
+.member-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  max-width: 640px;
+}
+.member-admin :is(input, button) {
+  box-sizing: border-box;
   min-width: 0;
   margin: 0;
-}
-.member-admin :is(input, select) {
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 14px;
-}
-.member-admin select {
-  height: 40px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 6px;
+  background: var(--codex-pane-surface);
+  color: var(--codex-pane-text);
+  font: inherit;
 }
 .member-admin button {
-  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 .member-admin button:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.member-admin :is(input, select, button):focus-visible {
+.member-admin :is(input, button, summary):focus-visible {
   outline: 2px solid var(--codex-pane-focus);
   outline-offset: 2px;
 }
-.member-admin {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  min-width: 0;
-}
-.member-own-role {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px 12px;
-}
-.member-own-role > span {
-  grid-column: 2;
-  font-size: 11px;
-  color: var(--codex-pane-muted);
-}
-.member-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-}
-.member-section > header {
+.member-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
-.member-section h3 {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0;
+.member-admin .member-create {
+  background: transparent;
+  border-color: transparent;
 }
-.member-section > header > span {
-  color: var(--codex-pane-muted);
-  font-size: 12px;
-}
-.member-invite,
-.member-card {
-  padding: 14px;
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 10px;
+.member-admin .member-create:hover {
   background: var(--codex-pane-surface);
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  border-color: var(--codex-pane-border);
+}
+.member-invite-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 8px;
+  background: var(--codex-pane-surface);
 }
 .member-invite-top {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-}
-.member-invite-top label {
-  font-size: 12px;
-}
-.member-invite-top select {
-  flex: 1;
-}
-.member-invite-top > span {
-  font-size: 12px;
-  color: var(--codex-pane-muted);
+  justify-content: space-between;
+  margin-bottom: 4px;
 }
 .member-link {
   display: flex;
@@ -542,115 +594,203 @@ const statusLabel = (s) =>
 .member-link input {
   flex: 1;
   width: 0;
+  height: 40px;
+  padding: 0 10px;
   font-size: 12px;
-  text-overflow: ellipsis;
   user-select: all;
   -webkit-user-select: all;
+  text-overflow: ellipsis;
 }
-.member-legacy {
+.member-link .member-meta {
   flex: 1;
-  font-size: 12px;
-  color: var(--codex-pane-muted);
 }
 .member-admin .member-icon {
-  flex: none;
   display: grid;
   place-items: center;
+  flex: none;
   width: 36px;
   height: 40px;
   padding: 0;
   border-color: transparent;
   background: transparent;
-  line-height: 1;
 }
-.member-person {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.member-person strong {
-  font-size: 14px;
-  font-weight: 500;
-}
-.member-person span,
-.member-meta {
-  color: var(--codex-pane-muted);
-  font-size: 12px;
-}
-.member-access {
+.member-link-settings summary,
+.member-recovery summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.member-access > span {
+  gap: 8px;
+  min-height: 40px;
+  list-style: none;
+  cursor: pointer;
   font-size: 12px;
   color: var(--codex-pane-muted);
 }
-.member-access > select {
-  flex: none;
-  width: auto;
-  max-width: 60%;
+summary::-webkit-details-marker {
+  display: none;
 }
-.member-access .closed {
-  color: var(--color-danger, #c65048);
+summary > .ui-icon {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+}
+details[open] > summary > .ui-icon {
+  transform: rotate(180deg);
+}
+.member-link-settings .member-actions {
+  justify-content: flex-start;
+}
+.member-previous-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.member-previous-links button {
+  justify-content: space-between;
+  background: transparent;
+}
+.member-previous-links button > span {
+  color: var(--codex-pane-muted);
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.member-card {
+  min-width: 0;
+  border-bottom: 1px solid var(--codex-pane-border);
+}
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+}
+.member-admin .member-person {
+  flex: 1;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.member-person strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 500;
+}
+.member-status {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--codex-pane-muted);
+}
+.member-status.active {
+  background: #379877;
+}
+.member-status.pending {
+  background: #bb8e33;
+}
+.member-status.revoked,
+.member-status.rejected {
+  background: #c65048;
+}
+.member-toggle .ui-icon {
+  width: 14px;
+  height: 14px;
+}
+.member-toggle[aria-expanded="true"] .ui-icon {
+  transform: rotate(180deg);
+}
+.member-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 4px 10px;
+}
+.member-person-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--codex-pane-muted);
+  font-size: 12px;
 }
 .member-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
-.member-admin .member-danger {
+.member-admin .member-actions button {
+  border-color: transparent;
+  background: transparent;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+.member-admin .member-actions button:hover {
+  border-color: var(--codex-pane-border);
+  background: var(--codex-pane-surface);
+}
+.member-admin .member-danger,
+.member-error {
   color: var(--color-danger, #c65048);
+}
+.member-meta {
+  margin: 0;
+  color: var(--codex-pane-muted);
+  font-size: 12px;
+}
+.member-error {
+  font-size: 12px;
+}
+.member-recovery {
+  border-bottom: 1px solid var(--codex-pane-border);
+}
+.member-recovery summary strong {
+  flex: 1;
+  font-weight: 500;
+  color: var(--codex-pane-text);
 }
 .member-admin .member-verify {
   display: flex;
-  flex-direction: row;
   align-items: center;
   gap: 8px;
+  font-size: 12px;
 }
 .member-admin .member-verify input {
+  flex: none;
   width: 16px;
   height: 16px;
   margin: 0;
-  padding: 0;
-}
-.member-create {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.member-admin button {
-  min-height: 40px;
-}
-.member-error {
-  color: var(--color-danger, #c65048);
-  font-size: 13px;
 }
 @media (max-width: 480px) {
-  .member-invite,
-  .member-card {
-    padding: 12px;
+  .member-admin button,
+  .member-admin .member-icon {
+    min-height: 44px;
   }
-  .member-section > header {
-    gap: 8px;
+  .member-row {
+    min-height: 56px;
   }
-  .member-create {
-    font-size: 12px;
+  .member-expanded {
+    padding-right: 0;
+    padding-left: 0;
   }
-  .member-invite-top label {
-    width: 100%;
+  .member-actions {
+    gap: 2px;
   }
-  .member-access {
-    align-items: flex-start;
+  .member-admin .member-actions button {
+    padding: 0 6px;
   }
-  .member-access > select {
-    max-width: 65%;
+  .member-row :deep(.team-role-select) {
+    max-width: 134px;
   }
-  .member-link {
-    gap: 0;
+  .member-toolbar {
+    justify-content: flex-start;
   }
 }
 </style>

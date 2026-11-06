@@ -23,23 +23,35 @@ export async function verifyAdministrationBrowser({
       .getByRole("button", { name: "Закрыть настройку чата", exact: true })
       .click();
   await frame.getByRole("tab", { name: /^Участники/ }).click();
-  await frame
-    .getByRole("region", { name: "Приглашения в чат", exact: true })
-    .waitFor();
-  const created = admin.waitForResponse(
-    (r) =>
-      r.url().endsWith("/team-chat/invite") && r.request().method() === "POST",
+  assert.equal(await frame.locator(".member-own-role").count(), 0);
+  assert.equal(
+    await frame
+      .getByRole("region", { name: "Приглашения в чат", exact: true })
+      .count(),
+    0,
   );
-  await frame
-    .getByRole("button", { name: "Пригласить по ссылке", exact: true })
-    .click();
-  const first = (await (await created).json()).invite;
-  const row = frame
-    .locator(".member-invite")
-    .filter({ has: admin.locator(`select[id="invite-${first._id}"]`) });
-  const field = row.getByLabel("Ссылка приглашения в чат", { exact: true });
+  assert.equal(
+    await frame
+      .locator(".team-heading")
+      .getByLabel("Моя роль в чате", { exact: true })
+      .count(),
+    1,
+  );
+  const inviteButton = frame.getByRole("button", {
+    name: "Пригласить по ссылке",
+    exact: true,
+  });
+  await inviteButton.click();
+  const activeRow = frame.locator(".member-invite");
+  const field = activeRow.getByLabel("Ссылка приглашения в чат", {
+    exact: true,
+  });
   await field.waitFor();
-  assert.equal(await field.inputValue(), first.url);
+  const first = {
+    _id: await activeRow.getAttribute("data-invite-id"),
+    url: await field.inputValue(),
+  };
+  const row = frame.locator(`.member-invite[data-invite-id="${first._id}"]`);
   for (let i = 0; i < 3; i++) {
     await field.click();
     const selection = await field.evaluate((e) => ({
@@ -53,9 +65,14 @@ export async function verifyAdministrationBrowser({
   await row
     .getByRole("button", { name: "Скопировать ссылку", exact: true })
     .click();
-  await row
-    .getByRole("button", { name: "Ссылка скопирована", exact: true })
-    .waitFor();
+  await row.waitFor({ state: "hidden" });
+  await inviteButton.click();
+  await field.waitFor();
+  assert.equal(
+    await field.inputValue(),
+    first.url,
+    "Opening the invitation again reuses its link",
+  );
   const changed = admin.waitForResponse(
     (r) =>
       r.url().endsWith("/team-chat/invites/" + first._id) &&
@@ -65,10 +82,7 @@ export async function verifyAdministrationBrowser({
   const update = await (await changed).json();
   await admin.waitForFunction(
     ({ id, url }) =>
-      document
-        .getElementById("invite-" + id)
-        ?.closest("article")
-        .querySelector("input")?.value === url,
+      document.querySelector(`[data-invite-id="${id}"] input`)?.value === url,
     { id: first._id, url: update.url },
   );
   assert.notEqual(update.url, first.url);
@@ -82,17 +96,37 @@ export async function verifyAdministrationBrowser({
     ).joinable,
     false,
   );
-  // Desktop/phone, both themes: no field spills out, all action icons share their button center.
-  for (const width of [1440, 390])
+  await frame
+    .getByRole("button", { name: "Закрыть приглашение", exact: true })
+    .click();
+  const person = frame.getByRole("article", {
+    name: "Участник Browser employee",
+    exact: true,
+  });
+  const expand = person.getByRole("button", {
+    name: "Настройки Browser employee",
+    exact: true,
+  });
+  assert.equal(
+    await person
+      .getByRole("button", { name: "Закрыть доступ", exact: true })
+      .count(),
+    0,
+  );
+  // All widths and themes: compact rows, aligned text/controls, no duplicate select arrows.
+  for (const width of [1440, 390, 320])
     for (const theme of ["dark", "light"]) {
       await admin.setViewportSize({ width, height: 844 });
       await admin.evaluate(
         (t) => document.documentElement.setAttribute("data-theme", t),
         theme,
       );
-      await row.scrollIntoViewIfNeeded();
+      await person.scrollIntoViewIfNeeded();
       const metrics = await frame.locator(".member-admin").evaluate((e) => ({
         overflow: e.scrollWidth - e.clientWidth,
+        rows: [...e.querySelectorAll(".member-row")].map(
+          (r) => r.getBoundingClientRect().height,
+        ),
         icons: [...e.querySelectorAll("button:has(svg)")]
           .filter((b) => b.getClientRects().length)
           .map((b) => {
@@ -100,27 +134,52 @@ export async function verifyAdministrationBrowser({
               s = b.querySelector("svg").getBoundingClientRect();
             return Math.abs(r.y + r.height / 2 - s.y - s.height / 2);
           }),
-        arrows: [...e.querySelectorAll("select")].map(
-          (s) => getComputedStyle(s).backgroundPosition,
-        ),
+        arrows: [...e.querySelectorAll(".team-role-select")].map((s) => {
+          const r = s.querySelector("select").getBoundingClientRect(),
+            a = s.querySelector("svg").getBoundingClientRect();
+          return {
+            center: Math.abs(r.y + r.height / 2 - a.y - a.height / 2),
+            height: r.height,
+            background: getComputedStyle(s.querySelector("select"))
+              .backgroundImage,
+          };
+        }),
       }));
       assert.ok(metrics.overflow <= 1);
+      assert.ok(metrics.rows.every((h) => h <= 56));
       assert.ok(metrics.icons.every((v) => v < 1));
-      assert.ok(metrics.arrows.every((v) => v.includes("50%")));
+      assert.ok(
+        metrics.arrows.every((v) => v.center < 1 && v.background === "none"),
+      );
+      assert.ok(
+        metrics.arrows.every((v) => v.height >= (width <= 480 ? 44 : 36)),
+      );
       await admin.screenshot({
         path: `${output}/team-chat-members-${width}-${theme}.png`,
+        animations: "disabled",
       });
+      await expand.click();
+      const actions = await person
+        .locator(".member-actions button")
+        .evaluateAll((buttons) =>
+          buttons.map((b) => b.getBoundingClientRect().y),
+        );
+      assert.ok(actions.every((y) => Math.abs(y - actions[0]) < 1));
+      await admin.screenshot({
+        path: `${output}/team-chat-member-expanded-${width}-${theme}.png`,
+        animations: "disabled",
+      });
+      await expand.click();
     }
+  await inviteButton.click();
+  await row.locator(".member-link-settings summary").click();
   admin.once("dialog", (d) => d.accept());
   await row
     .getByRole("button", { name: "Удалить ссылку", exact: true })
     .click();
   await row.waitFor({ state: "hidden" });
-
-  const person = frame.getByRole("article", {
-    name: "Участник Browser employee",
-    exact: true,
-  });
+  // Member settings stay collapsed until explicitly opened.
+  await expand.click();
   await person
     .getByRole("button", { name: "Закрыть доступ", exact: true })
     .click();
