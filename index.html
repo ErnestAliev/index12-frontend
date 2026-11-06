@@ -11,7 +11,16 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <script>
     const teamInvite = location.pathname.match(/^\/team\/([A-Za-z0-9_-]{20,100})$/);
-    if (teamInvite) document.querySelector('link[rel="manifest"]').href = '/team-manifest/' + teamInvite[1];
+    if (teamInvite) {
+      document.querySelector('link[rel="manifest"]').href = '/team-manifest/' + teamInvite[1];
+      document.querySelector('link[rel="apple-touch-icon"]').href = '/chat-180.png';
+      const title = document.createElement('meta');
+      title.name = 'apple-mobile-web-app-title'; title.content = 'Chat'; document.head.appendChild(title);
+      window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        window.index12InstallPrompt = event;
+      });
+    }
   </script>
 
   <!-- 🟢 FIX: Жесткая фиксация viewport для предотвращения зума на мобильных -->
@@ -20,6 +29,7 @@
 
   <!-- 🟢 FIXED: Updated to modern mobile-web-app-capable -->
   <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="theme-color" content="#1a1a1a" />
 

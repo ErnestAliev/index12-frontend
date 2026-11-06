@@ -189,7 +189,7 @@ const pending = computed(() =>
 watch(
   () => pending.value?._id,
   async (id) => {
-    role.value = "employee";
+    role.value = pending.value?.role || "employee";
     approvalError.value = "";
     if (id) {
       approvalFocus = document.activeElement;

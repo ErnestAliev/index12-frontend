@@ -288,3 +288,41 @@ test("a workspace switch clears outgoing messages and ignores an old send acknow
   assert.equal(s.me.workspaceId, "new");
   s.stop();
 });
+
+test("initial history has a retryable loader, and refresh watches current-page deletion IDs with bounded older IDs", async () => {
+  const s = fixture();
+  let release;
+  const first = new Promise((r) => (release = r));
+  const messages = Array.from({ length: 50 }, (_, i) => ({
+    _id: `current-${i}`,
+  }));
+  let reads = 0,
+    params;
+  teamApi.defaults.adapter = async (config) => {
+    if (config.url === "/me")
+      return {
+        status: 200,
+        data: { workspaceId: "history", status: "active" },
+      };
+    if (++reads === 1) await first;
+    params = config.params;
+    return { status: 200, data: { ...empty(), messages } };
+  };
+  const started = s.start("history");
+  await tick();
+  assert.equal(s.historyLoading, true);
+  assert.equal(s.historyReady, false);
+  release();
+  await started;
+  assert.equal(s.historyLoading, false);
+  assert.equal(s.historyReady, true);
+  s.olderMessageIds = Array.from({ length: 1000 }, (_, i) => `older-${i}`);
+  await s.refresh();
+  assert.equal(params.messageIds.split(",").length, 150);
+  assert.ok(
+    messages.every((m) => params.messageIds.split(",").includes(m._id)),
+  );
+  s.stop();
+  assert.equal(s.historyReady, false);
+  assert.equal(s.historyLoading, false);
+});

@@ -162,13 +162,42 @@ export async function verifyTeamChat({
     await phone.goto("http://127.0.0.1:5173/team/" + token, {
       waitUntil: "domcontentloaded",
     });
-    await phone
-      .getByRole("button", { name: "Зарегистрироваться", exact: true })
+    const setupDialog = phone.getByRole("dialog", {
+      name: "Chat",
+      exact: true,
+    });
+    await setupDialog.waitFor();
+    await phone.evaluate(() => {
+      const event = new Event("beforeinstallprompt");
+      event.prompt = async () => {
+        window.installPromptCount = (window.installPromptCount || 0) + 1;
+      };
+      event.userChoice = Promise.resolve({ outcome: "accepted" });
+      window.dispatchEvent(event);
+    });
+    await setupDialog
+      .getByRole("button", { name: "Да, добавить", exact: true })
       .click();
+    assert.equal(await phone.evaluate(() => window.installPromptCount), 1);
+    await phone.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
+    await setupDialog
+      .getByText("Chat добавлен на главный экран", { exact: true })
+      .waitFor();
+    await phone.screenshot({ path: `${output}/team-chat-install.png` });
+    await setupDialog
+      .getByRole("button", { name: "Продолжить", exact: true })
+      .click();
+    await phone
+      .getByText("Приглашает Calendar owner", { exact: false })
+      .waitFor();
     await phone.getByLabel("Имя", { exact: true }).fill("Browser employee");
     await phone
       .getByLabel("Номер телефона", { exact: true })
-      .fill("+77010000003");
+      .fill("7010000003");
+    assert.equal(
+      await phone.getByLabel("Номер телефона", { exact: true }).inputValue(),
+      "701 000 00 03",
+    );
     await phone
       .getByLabel("Пароль", { exact: true })
       .fill("browser-test-passphrase");
@@ -178,6 +207,9 @@ export async function verifyTeamChat({
     await phone
       .getByText("Ожидается одобрение владельца", { exact: true })
       .waitFor();
+    await setupDialog
+      .getByRole("button", { name: "Закрыть настройку чата", exact: true })
+      .click();
     const approval = page.getByRole("dialog", {
       name: "Запрос на добавление в чат",
       exact: true,
@@ -255,6 +287,9 @@ export async function verifyTeamChat({
     );
     const manifestData = await manifestResponse.json();
     assert.equal(manifestData.start_url, "/team/" + token);
+    assert.equal(manifestData.name, "Chat");
+    assert.equal(manifestData.short_name, "Chat");
+    assert.equal(manifestData.icons[0].src, "/chat-192.png");
     assert.equal(
       await mobile
         .getByLabel("Сообщение сотрудникам", { exact: true })
@@ -363,6 +398,13 @@ export async function verifyTeamChat({
       waitUntil: "domcontentloaded",
     });
     await directorPhone
+      .getByRole("dialog", { name: "Chat", exact: true })
+      .getByRole("button", { name: "Позже", exact: true })
+      .click();
+    await directorPhone
+      .getByRole("button", { name: "Уже зарегистрирован", exact: true })
+      .click();
+    await directorPhone
       .getByLabel("Номер телефона", { exact: true })
       .fill("+77010000002");
     await directorPhone
@@ -376,6 +418,10 @@ export async function verifyTeamChat({
       exact: true,
     });
     await directorChat.waitFor();
+    await directorPhone
+      .getByRole("dialog", { name: "Chat", exact: true })
+      .getByRole("button", { name: "Позже", exact: true })
+      .click();
     assert.equal(
       await directorChat.getByRole("tab", { name: /Участники/ }).count(),
       0,
@@ -844,6 +890,16 @@ export async function verifyTeamChat({
       .waitFor();
     await page.screenshot({
       path: `${output}/team-chat-mobile-navigation.png`,
+    });
+    const { verifyOnboardingBrowser } = await import(
+      "./team-chat-onboarding.mjs"
+    );
+    await verifyOnboardingBrowser({
+      browser,
+      base: "http://127.0.0.1:5173",
+      origin,
+      token,
+      output,
     });
     assert.deepEqual(errors, []);
     console.log(

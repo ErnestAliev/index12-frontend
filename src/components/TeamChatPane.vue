@@ -25,9 +25,15 @@ const chat = useTeamChatStore(),
   feed = ref(null),
   uploading = ref(false),
   invite = ref(""),
+  inviteRole = ref("employee"),
+  olderLoading = ref(false),
+  historyMore = ref(!!chat.state.hasMore),
+  historyError = ref(""),
   localError = ref(""),
   creating = ref(false),
-  older = ref([]);
+  older = ref([]),
+  gaps = ref([]),
+  loadingGap = ref(null);
 const selectedMessageId = ref(null);
 const selectedMessage = computed(() =>
   shownMessages.value.find((m) => m._id === selectedMessageId.value),
@@ -141,9 +147,14 @@ watch(
   },
   { immediate: true },
 );
-onMounted(() => window.visualViewport?.addEventListener("resize", revealField));
+onMounted(async () => {
+  window.visualViewport?.addEventListener("resize", revealField);
+  await nextTick();
+  if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
+});
 onBeforeUnmount(() => {
   clearTimeout(noticeTimer);
+  clearTimeout(scrollTimer);
   cancelHold();
   cancelAnimationFrame(revealFrame);
   window.visualViewport?.removeEventListener("resize", revealField);
@@ -207,9 +218,14 @@ const shownMessages = computed(() =>
     ...chat.outbox.filter(
       (row) => !chat.state.messages.some((message) => message._id === row._id),
     ),
-  ].filter(
-    (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
-  ),
+  ]
+    .filter(
+      (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
+    )
+    .sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
+    ),
 );
 watch(selectedMessage, (value) => {
   if (!value) selectedMessageId.value = null;
@@ -218,9 +234,49 @@ watch(
   () => chat.me?.workspaceId,
   () => {
     older.value = [];
+    historyMore.value = false;
+    gaps.value = [];
+    loadingGap.value = null;
+    olderLoading.value = false;
+    historyError.value = "";
     invite.value = "";
     files.value = [];
     message.value = "";
+  },
+);
+watch(
+  () => chat.state.messages,
+  (rows, previous) => {
+    if (!chat.historyReady) return;
+    if (!older.value.length && !previous?.length)
+      historyMore.value = !!chat.state.hasMore;
+    // After a long disconnection the latest page can jump past messages we have never loaded.
+    if (
+      previous?.length &&
+      rows.length &&
+      !rows.some((m) => previous.some((p) => p._id === m._id))
+    ) {
+      const last = previous.at(-1),
+        first = rows[0];
+      if (
+        first.createdAt > last.createdAt ||
+        (first.createdAt === last.createdAt && first._id > last._id)
+      ) {
+        if (!gaps.value.some((gap) => gap.before === first._id))
+          gaps.value.push({
+            before: first._id,
+            after: last._id,
+            afterAt: last.createdAt,
+          });
+      }
+    }
+    const merged = new Map(older.value.map((row) => [row._id, row]));
+    for (const row of previous || [])
+      if (!rows.some((m) => m._id === row._id)) merged.set(row._id, row);
+    older.value = [...merged.values()].filter(
+      (row) => !chat.state.deletedMessageIds?.includes(row._id),
+    );
+    nextTick(trackVisibleHistory);
   },
 );
 watch(
@@ -289,17 +345,112 @@ async function download(file) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 }
+function trackVisibleHistory() {
+  if (!feed.value) return;
+  const box = feed.value.getBoundingClientRect();
+  const ids = [...feed.value.querySelectorAll("[data-message-id]")]
+    .filter((element) => {
+      const r = element.getBoundingClientRect();
+      return r.bottom > box.top - 300 && r.top < box.bottom + 300;
+    })
+    .map((element) => element.dataset.messageId);
+  chat.olderMessageIds = [
+    ...new Set([...ids, ...older.value.slice(-40).map((m) => m._id)]),
+  ].slice(0, 120);
+}
+let scrollTimer;
+function scrollFeed() {
+  cancelHold();
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(() => {
+    const previous = chat.olderMessageIds.join();
+    trackVisibleHistory();
+    if (previous !== chat.olderMessageIds.join()) chat.schedule();
+    if (feed.value?.scrollTop < 100 && !historyError.value) void loadOlder();
+    const box = feed.value?.getBoundingClientRect();
+    const visibleGap = [
+      ...(feed.value?.querySelectorAll("[data-gap-before]") || []),
+    ].find((e) => {
+      const r = e.getBoundingClientRect();
+      return box && r.bottom > box.top && r.top < box.bottom;
+    });
+    if (visibleGap && !historyError.value)
+      void loadGap(
+        gaps.value.find((g) => g.before === visibleGap.dataset.gapBefore),
+      );
+  }, 80);
+}
 async function loadOlder() {
-  await run(async () => {
-    const first = shownMessages.value[0];
-    if (!first) return;
-    const { data } = await teamApi.get("/state", {
+  if (olderLoading.value || !historyMore.value || !chat.historyReady) return;
+  const first = shownMessages.value.find((m) => !m._delivery);
+  if (!first) return;
+  const workspaceId = chat.me?.workspaceId;
+  olderLoading.value = true;
+  historyError.value = "";
+  try {
+    const { data } = await teamApi.get("/messages", {
       params: { before: first._id },
     });
-    older.value = [...data.messages, ...older.value].slice(-1000);
-    chat.olderMessageIds = older.value.map((m) => m._id);
-    chat.state.hasMore = data.hasMore;
-  });
+    if (workspaceId !== chat.me?.workspaceId) return;
+    const height = feed.value?.scrollHeight || 0,
+      top = feed.value?.scrollTop || 0;
+    const merged = new Map(
+      [...data.messages, ...older.value].map((m) => [m._id, m]),
+    );
+    older.value = [...merged.values()].sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
+    );
+    historyMore.value = !!data.hasMore;
+    await nextTick();
+    if (feed.value)
+      feed.value.scrollTop = top + feed.value.scrollHeight - height;
+    trackVisibleHistory();
+  } catch (e) {
+    if (workspaceId === chat.me?.workspaceId) historyError.value = teamError(e);
+  } finally {
+    if (workspaceId === chat.me?.workspaceId) olderLoading.value = false;
+  }
+}
+async function loadGap(gap) {
+  if (!gap || loadingGap.value) return;
+  const workspaceId = chat.me?.workspaceId;
+  loadingGap.value = gap.before;
+  historyError.value = "";
+  try {
+    const { data } = await teamApi.get("/messages", {
+      params: { before: gap.before },
+    });
+    if (workspaceId !== chat.me?.workspaceId) return;
+    const box = feed.value?.getBoundingClientRect();
+    const anchor = [
+      ...(feed.value?.querySelectorAll("[data-message-id]") || []),
+    ].find((e) => e.getBoundingClientRect().bottom > box.top);
+    const offset = anchor?.getBoundingClientRect().top;
+    older.value = [
+      ...new Map(
+        [...data.messages, ...older.value].map((m) => [m._id, m]),
+      ).values(),
+    ];
+    const reached =
+      !data.hasMore ||
+      data.messages.some(
+        (m) =>
+          m._id === gap.after ||
+          m.createdAt < gap.afterAt ||
+          (m.createdAt === gap.afterAt && m._id < gap.after),
+      );
+    if (reached) gaps.value = gaps.value.filter((g) => g !== gap);
+    else gap.before = data.messages[0]._id;
+    await nextTick();
+    if (anchor?.isConnected && feed.value)
+      feed.value.scrollTop += anchor.getBoundingClientRect().top - offset;
+    trackVisibleHistory();
+  } catch (e) {
+    if (workspaceId === chat.me?.workspaceId) historyError.value = teamError(e);
+  } finally {
+    if (workspaceId === chat.me?.workspaceId) loadingGap.value = null;
+  }
 }
 async function createRequest() {
   const result = await run(() =>
@@ -385,7 +536,7 @@ async function removeRequest(row) {
 }
 async function invitePeople() {
   await run(async () => {
-    const data = await chat.action("/invite", {});
+    const data = await chat.action("/invite", { role: inviteRole.value });
     invite.value = data.url;
     await navigator.clipboard?.writeText(data.url).catch(() => {});
   });
@@ -464,140 +615,174 @@ async function copy(text) {
         aria-labelledby="team-tab-messages"
         aria-label="Сообщения сотрудников"
         aria-live="polite"
-        @scroll="cancelHold"
+        :aria-busy="chat.historyLoading || olderLoading"
+        @scroll="scrollFeed"
       >
         <button
-          v-if="chat.state.hasMore"
+          v-if="historyMore && !chat.historyLoading"
           class="team-history"
+          :disabled="olderLoading"
           @click="loadOlder"
         >
-          Ранее
+          {{ olderLoading ? "Загружаем сообщения…" : "Ранее" }}
         </button>
-        <div v-if="!shownMessages.length" class="team-empty">
+        <div
+          v-if="chat.historyLoading"
+          class="team-empty team-history-loading"
+          role="status"
+        >
+          <span class="team-history-spinner" aria-hidden="true"></span>Загружаем
+          историю сообщений…
+        </div>
+        <div v-else-if="historyError" class="team-empty" role="alert">
+          {{ historyError }}<button @click="loadOlder">Повторить</button>
+        </div>
+        <div v-else-if="!chat.historyReady" class="team-empty">
+          <button @click="chat.refresh">Загрузить историю</button>
+        </div>
+        <div v-else-if="!shownMessages.length" class="team-empty">
           Сообщения сотрудников появятся здесь
         </div>
-        <article
-          v-for="m in shownMessages"
-          :key="m._id"
-          class="team-message"
-          :class="{ self: m.authorId === chat.me.actorId }"
-        >
-          <div
-            class="team-bubble"
-            tabindex="0"
-            :aria-label="`Сообщение ${m.authorName}`"
-            @pointerdown="holdMessage($event, m)"
-            @pointermove="moveMessage"
-            @pointerup="cancelHold"
-            @pointercancel="cancelHold"
-            @click.capture="messageClick($event, m)"
-            @contextmenu.prevent="openMessageMenu(m)"
-            @keydown="messageKeys($event, m)"
+        <template v-for="m in shownMessages" :key="m._id">
+          <button
+            v-if="gaps.some((gap) => gap.before === m._id)"
+            class="team-history"
+            :data-gap-before="m._id"
+            :disabled="!!loadingGap"
+            @click="loadGap(gaps.find((gap) => gap.before === m._id))"
           >
-            <header>
-              <strong>{{ m.authorName }}</strong
-              ><time>{{
-                new Date(m.createdAt).toLocaleTimeString("ru-RU", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              }}</time>
-            </header>
-            <span v-if="m.forwardedFrom" class="team-forwarded"
-              >Переслано · {{ m.forwardedFrom.authorName }}</span
-            >
-            <CodexMessageText
-              v-if="m.text"
-              :text="m.text"
-              class="team-message-content"
-            />
-            <button
-              v-for="file in m.attachments"
-              :key="file.fileId"
-              class="team-file"
-              :disabled="!!m._delivery"
-              @click="download(file)"
-            >
-              <UiIcon name="attach" />{{ file.name }}
-            </button>
-            <template
-              v-for="file in m.attachments.filter(
-                (f) =>
-                  !m._delivery &&
-                  f.isPdf &&
-                  !f.invoiceRequestId &&
-                  !f.invoiceDismissed &&
-                  !chat.state.requests.some((r) => r.sourceFileId === f.fileId),
-              )"
-              :key="'pdf-' + file.fileId"
-              ><div
-                v-if="m.authorId === chat.me.actorId"
-                class="team-pdf-question"
-              >
-                <span>Это счёт на оплату?</span>
-                <div>
-                  <button
-                    type="button"
-                    :disabled="!!processingPdf"
-                    @click="processPdf(m, file)"
-                  >
-                    {{
-                      processingPdf === file.fileId
-                        ? "Распознавание…"
-                        : "Да, создать заявку"
-                    }}</button
-                  ><button
-                    type="button"
-                    :disabled="!!processingPdf"
-                    @click="dismissPdf(m, file)"
-                  >
-                    Не обрабатывать
-                  </button>
-                </div>
-              </div></template
-            >
+            {{
+              loadingGap === m._id
+                ? "Загружаем сообщения…"
+                : "Загрузить пропущенные сообщения"
+            }}
+          </button>
+          <article
+            :data-message-id="m._id"
+            class="team-message"
+            :class="{ self: m.authorId === chat.me.actorId }"
+          >
             <div
-              v-if="m._delivery"
-              class="team-delivery"
-              :class="{ failed: m._delivery === 'failed' }"
-              role="status"
+              class="team-bubble"
+              tabindex="0"
+              :aria-label="`Сообщение ${m.authorName}`"
+              @pointerdown="holdMessage($event, m)"
+              @pointermove="moveMessage"
+              @pointerup="cancelHold"
+              @pointercancel="cancelHold"
+              @click.capture="messageClick($event, m)"
+              @contextmenu.prevent="openMessageMenu(m)"
+              @keydown="messageKeys($event, m)"
             >
-              <span :title="m._sendError">{{
-                m._delivery === "sending" ? "Отправляется…" : "Не отправлено"
-              }}</span>
+              <header>
+                <strong>{{ m.authorName }}</strong
+                ><time>{{
+                  new Date(m.createdAt).toLocaleTimeString("ru-RU", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                }}</time>
+              </header>
+              <span v-if="m.forwardedFrom" class="team-forwarded"
+                >Переслано · {{ m.forwardedFrom.authorName }}</span
+              >
+              <CodexMessageText
+                v-if="m.text"
+                :text="m.text"
+                class="team-message-content"
+              />
               <button
-                v-if="m._delivery === 'failed'"
-                type="button"
-                @pointerdown.stop
-                @click.stop="chat.retryMessage(m._id)"
+                v-for="file in m.attachments"
+                :key="file.fileId"
+                class="team-file"
+                :disabled="!!m._delivery"
+                @click="download(file)"
               >
-                Повторить отправку
+                <UiIcon name="attach" />{{ file.name }}
               </button>
-            </div>
-            <div v-if="m.reactions?.length" class="team-reactions">
-              <button
-                v-for="reaction in m.reactions"
-                :key="reaction.emoji"
-                type="button"
-                :aria-label="`Реакция ${reaction.emoji}: ${reaction.count}`"
-                :aria-pressed="reaction.mine"
-                :disabled="chat.busy"
-                @pointerdown.stop
-                @click="reactToMessage(m, reaction)"
+              <template
+                v-for="file in m.attachments.filter(
+                  (f) =>
+                    !m._delivery &&
+                    f.isPdf &&
+                    !f.invoiceRequestId &&
+                    !f.invoiceDismissed &&
+                    !chat.state.requests.some(
+                      (r) => r.sourceFileId === f.fileId,
+                    ),
+                )"
+                :key="'pdf-' + file.fileId"
+                ><div
+                  v-if="m.authorId === chat.me.actorId"
+                  class="team-pdf-question"
+                >
+                  <span>Это счёт на оплату?</span>
+                  <div>
+                    <button
+                      type="button"
+                      :disabled="!!processingPdf"
+                      @click="processPdf(m, file)"
+                    >
+                      {{
+                        processingPdf === file.fileId
+                          ? "Распознавание…"
+                          : "Да, создать заявку"
+                      }}</button
+                    ><button
+                      type="button"
+                      :disabled="!!processingPdf"
+                      @click="dismissPdf(m, file)"
+                    >
+                      Не обрабатывать
+                    </button>
+                  </div>
+                </div></template
               >
-                {{ reaction.emoji }} <span>{{ reaction.count }}</span>
-              </button>
-            </div>
-            <div v-if="m.editedAt || m.approval" class="team-message-meta">
-              <span v-if="m.editedAt">изменено</span
-              ><span
-                v-if="m.approval"
-                :class="{ 'message-rejected': m.approval.state === 'rejected' }"
-                >{{ messageStatus(m) }}</span
+              <div
+                v-if="m._delivery"
+                class="team-delivery"
+                :class="{ failed: m._delivery === 'failed' }"
+                role="status"
               >
+                <span :title="m._sendError">{{
+                  m._delivery === "sending" ? "Отправляется…" : "Не отправлено"
+                }}</span>
+                <button
+                  v-if="m._delivery === 'failed'"
+                  type="button"
+                  @pointerdown.stop
+                  @click.stop="chat.retryMessage(m._id)"
+                >
+                  Повторить отправку
+                </button>
+              </div>
+              <div v-if="m.reactions?.length" class="team-reactions">
+                <button
+                  v-for="reaction in m.reactions"
+                  :key="reaction.emoji"
+                  type="button"
+                  :aria-label="`Реакция ${reaction.emoji}: ${reaction.count}`"
+                  :aria-pressed="reaction.mine"
+                  :disabled="chat.busy"
+                  @pointerdown.stop
+                  @click="reactToMessage(m, reaction)"
+                >
+                  {{ reaction.emoji }} <span>{{ reaction.count }}</span>
+                </button>
+              </div>
+              <div v-if="m.editedAt || m.approval" class="team-message-meta">
+                <span v-if="m.editedAt">изменено</span
+                ><span
+                  v-if="m.approval"
+                  :class="{
+                    'message-rejected': m.approval.state === 'rejected',
+                  }"
+                  >{{ messageStatus(m) }}</span
+                >
+              </div>
             </div>
-          </div>
-        </article>
+          </article>
+        </template>
       </div>
       <div class="team-compose-area">
         <div v-if="files.length" class="team-staged">
@@ -828,6 +1013,11 @@ async function copy(text) {
             <option value="employee">Сотрудник</option>
             <option value="manager">Управляющий</option>
             <option value="director">Руководитель компании</option>
+          </select>
+          <select v-model="inviteRole" aria-label="Роль приглашённого">
+            <option v-for="(name, id) in chat.me.roles" :key="id" :value="id">
+              {{ name }}
+            </option>
           </select>
           <button @click="invitePeople">Пригласить по ссылке</button
           ><input

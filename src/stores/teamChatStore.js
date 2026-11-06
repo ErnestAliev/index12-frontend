@@ -15,6 +15,8 @@ export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
   const outbox = ref([]);
+  const historyLoading = ref(false),
+    historyReady = ref(false);
   const notice = ref(""),
     olderMessageIds = ref([]);
   const tab = ref("messages"),
@@ -72,6 +74,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     busy.value = false;
     error.value = "";
     loaded = false;
+    historyLoading.value = false;
+    historyReady.value = false;
     lastMessage = "";
     outbox.value = [];
     messageQueue = Promise.resolve();
@@ -85,20 +89,23 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   async function refresh() {
     const g = generation,
       t = ++ticket;
+    if (!historyReady.value) historyLoading.value = true;
     try {
+      const watchedIds = [
+        ...new Set([
+          ...state.value.messages.map((m) => m._id),
+          ...olderMessageIds.value,
+        ]),
+      ].slice(0, 150);
       const { data } = await teamApi.get("/state", {
-        params: olderMessageIds.value.length
-          ? {
-              messageIds: olderMessageIds.value.join(","),
-              updatedSince: state.value.checkedAt,
-            }
-          : {},
+        params: watchedIds.length ? { messageIds: watchedIds.join(",") } : {},
       });
       if (g !== generation || t !== ticket) return;
       const newest = data.messages.at(-1)?._id || "";
       if (loaded && !open.value && newest !== lastMessage) unread.value++;
       lastMessage = newest;
       loaded = true;
+      historyReady.value = true;
       state.value = data;
       const confirmed = new Set(data.messages.map((row) => row._id));
       outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
@@ -119,6 +126,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
           if (me.value) me.value = { ...me.value, status: "revoked" };
         }
       }
+    } finally {
+      if (g === generation && t === ticket) historyLoading.value = false;
     }
   }
   function schedule() {
@@ -331,6 +340,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    historyLoading,
+    historyReady,
     outbox,
     retryMessage,
     isOwner,

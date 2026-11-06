@@ -2,7 +2,8 @@
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
 const chat = useTeamChatStore();
-const emit = defineEmits(["logout"]);
+defineProps({ setupAvailable: Boolean });
+const emit = defineEmits(["logout", "setup"]);
 </script>
 <template>
   <div class="team-heading">
@@ -18,6 +19,16 @@ const emit = defineEmits(["logout"]);
           : chat.me.roles?.[chat.me.role]
       }}</span
     >
+    <button
+      v-if="setupAvailable"
+      type="button"
+      class="team-heading-exit"
+      aria-label="Установка и уведомления чата"
+      title="Установка и уведомления чата"
+      @click="emit('setup')"
+    >
+      <UiIcon name="bell" />
+    </button>
     <button
       v-if="chat.me && !chat.me.owner"
       type="button"

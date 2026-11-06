@@ -5,32 +5,56 @@ import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "@/components/TeamChatPane.vue";
+import TeamChatSetup from "@/components/TeamChatSetup.vue";
+import { nationalPhone, phoneInput, phoneBeforeInput } from "@/utils/teamPhone";
+import {
+  chatPushEndpoint,
+  unsubscribeChatPush,
+  chatWorker,
+} from "@/utils/teamPush";
 const route = useRoute(),
   chat = useTeamChatStore(),
   name = ref(""),
   phone = ref(""),
   password = ref(""),
   visible = ref(false),
-  register = ref(false),
+  register = ref(true),
+  booting = ref(true),
+  invitation = ref(null),
+  setup = ref(null),
   error = ref(""),
   workspaceName = ref(""),
   busy = ref(false),
   valid = ref(false);
 const originalTitle = document.title;
+const viewportHeight = ref(window.visualViewport?.height || window.innerHeight);
+function resizeEntry() {
+  viewportHeight.value = window.visualViewport?.height || window.innerHeight;
+  requestAnimationFrame(() => {
+    if (document.activeElement?.closest(".team-login form"))
+      document.activeElement.scrollIntoView({ block: "nearest" });
+  });
+}
 onMounted(async () => {
-  document.title = "INDEX12 Чат";
+  document.title = "Chat";
+  window.visualViewport?.addEventListener("resize", resizeEntry);
   chat.stop();
   try {
     const { data } = await teamApi.get(`/invite/${route.params.token}`);
     workspaceName.value = data.name;
+    invitation.value = data;
     valid.value = true;
-    await chat.start();
+    if ("serviceWorker" in navigator) void chatWorker().catch(() => {});
+    await chat.start(data.workspaceId);
   } catch (e) {
     error.value = teamError(e);
+  } finally {
+    booting.value = false;
   }
 });
 onBeforeUnmount(() => {
   document.title = originalTitle;
+  window.visualViewport?.removeEventListener("resize", resizeEntry);
   chat.stop();
 });
 async function submit() {
@@ -39,13 +63,13 @@ async function submit() {
   try {
     await teamApi.post("/auth", {
       token: route.params.token,
-      phone: phone.value,
+      phone: "+7" + nationalPhone(phone.value),
       password: password.value,
       name: name.value,
       register: register.value,
     });
     password.value = "";
-    await chat.start();
+    await chat.start(invitation.value.workspaceId);
   } catch (e) {
     error.value = teamError(e);
   } finally {
@@ -53,15 +77,40 @@ async function submit() {
   }
 }
 async function logout() {
-  await teamApi.post("/logout");
+  let endpoint;
+  try {
+    endpoint = await chatPushEndpoint();
+  } catch {
+    /* Logout still works without service workers. */
+  }
+  await teamApi.post("/logout", { endpoint });
   chat.stop();
+  try {
+    await unsubscribeChatPush();
+  } catch {
+    /* Server binding was already removed. */
+  }
 }
 </script>
 <template>
-  <main class="team-login">
-    <form v-if="!chat.me" @submit.prevent="submit">
-      <h1>Чат сотрудников</h1>
-      <p>{{ workspaceName }}</p>
+  <main class="team-login" :style="{ height: `${viewportHeight}px` }">
+    <section v-if="booting" class="team-wait" role="status">
+      <span class="team-loader" aria-hidden="true"></span
+      >{{
+        chat.historyLoading
+          ? "Загружаем историю сообщений…"
+          : "Подключаемся к чату…"
+      }}
+    </section>
+    <form v-else-if="!chat.me" @submit.prevent="submit">
+      <h1>Chat</h1>
+      <div class="team-invite-context">
+        <strong>{{ workspaceName }}</strong>
+        <p v-if="invitation">
+          Приглашает {{ invitation.inviterName }}<br />Роль:
+          {{ invitation.roleName }} · после одобрения
+        </p>
+      </div>
       <p v-if="error" role="alert">{{ error }}</p>
       <template v-if="valid"
         ><label v-if="register"
@@ -71,12 +120,21 @@ async function logout() {
             required
             maxlength="100" /></label
         ><label
-          >Номер телефона<input
-            v-model="phone"
-            type="tel"
-            autocomplete="tel"
-            placeholder="+7"
-            required /></label
+          >Номер телефона
+          <div class="team-phone">
+            <span aria-hidden="true">+7</span
+            ><input
+              :value="phone"
+              @input="phone = phoneInput($event)"
+              @beforeinput="phoneBeforeInput"
+              type="tel"
+              inputmode="tel"
+              autocomplete="tel-national"
+              aria-label="Номер телефона"
+              placeholder="705 488 66 98"
+              pattern="[0-9]{3} [0-9]{3} [0-9]{2} [0-9]{2}"
+              required
+            /></div></label
         ><label
           >Пароль
           <div class="team-password">
@@ -123,6 +181,10 @@ async function logout() {
         }}
       </h1>
       <p>{{ chat.error || "Ожидается одобрение владельца" }}</p>
+      <p v-if="chat.me">
+        {{ chat.me.name }} · {{ chat.me.roles?.[chat.me.role] }}
+      </p>
+      <button @click="setup?.open()">Установка и уведомления</button>
       <button @click="logout">Выйти</button>
     </section>
     <ChatWindowFrame
@@ -133,14 +195,25 @@ async function logout() {
       title="Сотрудники"
       window-id="team-chat-public"
       storage-key="index12-team-chat-window-size"
-      ><template #heading><TeamChatHeader @logout="logout" /></template
+      ><template #heading
+        ><TeamChatHeader
+          setup-available
+          @setup="setup?.open()"
+          @logout="logout" /></template
       ><TeamChatPane mobile
     /></ChatWindowFrame>
+    <TeamChatSetup
+      v-if="valid && !booting"
+      ref="setup"
+      :token="String(route.params.token)"
+      :workspace-id="invitation?.workspaceId"
+      :identity="chat.me"
+    />
   </main>
 </template>
 <style scoped>
 .team-login {
-  min-height: 100dvh;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 24px;
@@ -176,6 +249,7 @@ async function logout() {
   width: 100%;
   padding: 12px;
   font: inherit;
+  font-size: 16px;
   color: inherit;
   background: var(--color-background-soft);
   border: 1px solid var(--color-border);
@@ -189,6 +263,45 @@ async function logout() {
   background: var(--color-primary);
   color: #fff;
   border-color: transparent;
+}
+.team-invite-context {
+  font-size: 13px;
+}
+.team-invite-context p {
+  margin-top: 6px;
+  opacity: 0.75;
+}
+.team-phone {
+  display: flex;
+  align-items: center;
+  background: var(--color-background-soft);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding-left: 12px;
+  gap: 8px;
+  font-size: 16px;
+}
+.team-phone input {
+  border: 0;
+  background: transparent;
+}
+.team-loader {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: team-spin 0.8s linear infinite;
+}
+@keyframes team-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-loader {
+    animation: none;
+  }
 }
 .team-password {
   display: flex;
@@ -220,5 +333,19 @@ async function logout() {
 .team-login button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+</style>
+
+<style scoped>
+.team-phone:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.team-phone input:focus-visible {
+  outline: none;
+}
+.team-login {
+  height: 100dvh;
+  overflow-y: auto;
 }
 </style>
