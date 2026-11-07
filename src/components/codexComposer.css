@@ -1,25 +1,179 @@
-.codex-input-container { box-sizing: border-box; flex: none; width: 100%; min-width: 0; margin: 0; padding: 12px; background: var(--codex-pane-bg); }
-.codex-input-wrapper { box-sizing: border-box; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: end; gap: 6px; min-width: 0; padding: 6px; border: 1px solid var(--codex-pane-border); border-radius: 14px; background: var(--codex-pane-surface); transition: border-color .15s, box-shadow .15s; }
-.codex-input-wrapper:focus-within { border-color: var(--codex-pane-focus); box-shadow: 0 0 0 2px var(--codex-pane-focus-soft); }
-.codex-input { box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 36px; height: 36px; margin: 0; padding: 7px 2px; border: 0; border-radius: 0; outline: 0; resize: none; background: transparent; color: var(--codex-pane-text); font: inherit; font-size: 14px; line-height: 22px; overflow-y: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
-.codex-input:focus, .codex-input:focus-visible { outline: none !important; box-shadow: none; }
-.codex-input::placeholder { color: var(--codex-pane-muted); opacity: 1; }
-.codex-input-buttons { display: flex; align-items: center; gap: 4px; margin: 0; }
-.codex-attach-btn, .codex-mic-btn, .codex-send-btn { box-sizing: border-box; display: grid; place-items: center; width: 36px; height: 36px; min-width: 36px; margin: 0; padding: 0; border: 0; border-radius: 9px; color: var(--codex-pane-muted); background: transparent; cursor: pointer; transition: background-color .15s, color .15s; }
-.codex-attach-btn :deep(svg), .codex-mic-btn :deep(svg), .codex-send-btn :deep(svg) { width: 20px; height: 20px; }
-.codex-attach-btn:hover:not(:disabled), .codex-mic-btn:hover:not(:disabled) { background: var(--codex-pane-hover); color: var(--codex-pane-text); }
-.codex-send-btn { color: var(--codex-pane-send-text); background: var(--codex-pane-accent); }
-.codex-send-btn:hover:not(:disabled) { filter: brightness(1.08); background: var(--codex-pane-accent); }
-.codex-send-btn:active:not(:disabled) { transform: scale(.96); }
-.codex-attach-btn:disabled, .codex-mic-btn:disabled { cursor: not-allowed; opacity: .4; }
-.codex-send-btn:disabled { color: var(--codex-pane-muted); background: var(--codex-pane-hover); cursor: not-allowed; filter: none; }
-.codex-mic-btn.recording, .codex-mic-btn.recording:hover:not(:disabled) { color: var(--codex-pane-danger); background: var(--codex-pane-danger-soft); }
-.codex-attach-btn:focus-visible, .codex-mic-btn:focus-visible, .codex-send-btn:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 2px; }
-.mobile .codex-input { font-size: 16px; }
-.mobile .codex-input { grid-column: 1 / -1; grid-row: 1; }
-.mobile .codex-attach-btn { grid-column: 1; grid-row: 2; }
-.mobile .codex-input-buttons { grid-column: 3; grid-row: 2; }
-@media (pointer: coarse) { .codex-input-wrapper { grid-template-columns: 40px minmax(0, 1fr) auto; } .codex-attach-btn, .codex-mic-btn, .codex-send-btn { width: 40px; height: 40px; min-width: 40px; } .codex-input { min-height: 40px; padding-top: 9px; padding-bottom: 9px; } }
-@media (prefers-reduced-motion: reduce) { .codex-input-wrapper, .codex-attach-btn, .codex-mic-btn, .codex-send-btn { transition: none; } }
-
-@container codex-window (max-height: 420px) { .codex-input-container { padding: 8px; } .codex-input-wrapper { padding: 4px; } .mobile .codex-input { grid-column: 2; grid-row: 1; } .mobile .codex-attach-btn { grid-row: 1; } .mobile .codex-input-buttons { grid-row: 1; } }
+.codex-input-container {
+  box-sizing: border-box;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px var(--chat-composer-bottom-space, 12px);
+  background: var(--codex-pane-bg);
+}
+.codex-input-wrapper {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 22px;
+  background: var(--codex-pane-surface);
+}
+.codex-input-leading {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.codex-input-wrapper .codex-input {
+  grid-column: 2;
+  grid-row: 1;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 7px 2px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0;
+  resize: none;
+  background: transparent !important;
+  color: var(--codex-pane-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.codex-input-wrapper .codex-input:focus,
+.codex-input-wrapper .codex-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.codex-input::placeholder {
+  color: var(--codex-pane-muted);
+  opacity: 1;
+}
+.codex-input-buttons {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.codex-input-wrapper :is(.codex-attach-btn, .codex-mic-btn, .codex-send-btn) {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  margin: 0;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50%;
+  color: var(--codex-pane-text);
+  background: transparent;
+  cursor: pointer;
+}
+.codex-attach-btn :deep(svg),
+.codex-mic-btn :deep(svg),
+.codex-send-btn :deep(svg) {
+  width: 22px;
+  height: 22px;
+}
+.codex-attach-btn:hover:not(:disabled),
+.codex-mic-btn:hover:not(:disabled) {
+  background: var(--codex-pane-hover);
+}
+.codex-input-wrapper .codex-send-btn,
+.codex-input-wrapper .codex-live-voice-btn {
+  color: var(--codex-pane-send-text);
+  background: var(--codex-pane-accent);
+}
+.codex-send-btn:hover:not(:disabled),
+.codex-live-voice-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--codex-pane-accent);
+}
+.codex-input-wrapper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.codex-input-wrapper .codex-mic-btn.recording {
+  color: var(--codex-pane-danger);
+  background: var(--codex-pane-danger-soft);
+}
+.codex-input-wrapper button:focus-visible {
+  outline: 1px solid var(--codex-pane-focus);
+  outline-offset: -1px;
+}
+.touch .codex-input-wrapper {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 6px;
+  border: 0;
+  border-radius: 28px;
+}
+.touch .codex-input-wrapper .codex-input {
+  min-height: 44px;
+  height: 44px;
+  padding: 11px 2px;
+  font-size: 16px;
+}
+.touch
+  .codex-input-wrapper
+  :is(.codex-attach-btn, .codex-mic-btn, .codex-send-btn),
+.touch .codex-input-leading :deep(.team-add-trigger) {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 50%;
+}
+.touch .codex-input-leading :deep(.team-add-trigger > svg) {
+  width: 22px;
+  height: 22px;
+}
+.touch.expanded .codex-input-wrapper {
+  border-radius: 24px;
+}
+.touch:not(.expanded) .codex-input-wrapper .codex-input {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.touch.expanded .codex-input-wrapper .codex-input {
+  grid-column: 1/-1;
+  grid-row: 1;
+  padding: 8px 8px 4px;
+}
+.touch.expanded .codex-input-leading {
+  grid-column: 1;
+  grid-row: 2;
+}
+.touch.expanded .codex-input-buttons {
+  grid-column: 3;
+  grid-row: 2;
+}
+.codex-composer-media {
+  grid-column: 1/-1;
+  grid-row: 1;
+  min-width: 0;
+  max-height: 100px;
+  overflow: auto;
+}
+.with-files .codex-input-wrapper .codex-input,
+.with-files .codex-input-leading,
+.with-files .codex-input-buttons {
+  grid-row: 2;
+}
+.touch.expanded.with-files .codex-input-leading,
+.touch.expanded.with-files .codex-input-buttons {
+  grid-row: 3;
+}
+.touch.expanded.with-files .codex-input-wrapper .codex-input {
+  grid-row: 2;
+}

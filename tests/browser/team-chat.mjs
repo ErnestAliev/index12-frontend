@@ -1113,6 +1113,16 @@ export async function verifyTeamChat({
       token,
       output,
     });
+    const { verifyStaffComposer } = await import("./team-chat-composer.mjs");
+    await verifyStaffComposer({
+      browser,
+      employeePage: phone,
+      ownerContext: context,
+      base: "http://127.0.0.1:5173",
+      origin,
+      token,
+      output,
+    });
     const { verifyNotificationMenu } = await import(
       "./team-chat-notifications.mjs"
     );

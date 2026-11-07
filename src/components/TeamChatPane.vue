@@ -25,6 +25,7 @@ import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
+import { useChatDictation } from "@/composables/useChatDictation";
 defineProps({ mobile: Boolean });
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
@@ -58,6 +59,16 @@ const chat = useTeamChatStore(),
   older = ref([]),
   gaps = ref([]),
   loadingGap = ref(null);
+const dictation = useChatDictation({
+  getText: () => message.value,
+  setText: (text) => {
+    message.value = text;
+  },
+  onError: (error) => {
+    localError.value = error;
+  },
+});
+const { recording: dictating, supported: dictationSupported } = dictation;
 const selectedMessageId = ref(null);
 const suppressOpeningTouch = ref(false);
 const selectedMessage = computed(() =>
@@ -364,7 +375,8 @@ const draft = ref({
   ),
   id: crypto.randomUUID(),
 });
-watch(tab, () => {
+watch(tab, (value) => {
+  if (value !== "messages") dictation.stop();
   chat.schedule();
 });
 watch(
@@ -434,6 +446,7 @@ watch(selectedMessage, (value) => {
 watch(
   () => chat.me?.workspaceId,
   () => {
+    dictation.stop();
     older.value = [];
     replyDraft.value = null;
     quoteView.value = null;
@@ -512,6 +525,7 @@ async function send() {
       "Исходное сообщение удалено. Отмените ответ или выберите другое сообщение";
     return;
   }
+  dictation.stop();
   const id = chat.send(message.value, files.value, {
     replyTo: replyDraft.value,
     mentionIds: mentionedPeople.value
@@ -1142,17 +1156,6 @@ async function copy(text) {
           composing
           @cancel="replyDraft = null"
         />
-        <div v-if="files.length" class="team-staged">
-          <span v-for="(f, i) in files" :key="f.fileId"
-            >{{ f.name
-            }}<button
-              type="button"
-              :aria-label="`Убрать файл ${f.name}`"
-              @click="files.splice(i, 1)"
-            >
-              <UiIcon name="close" /></button
-          ></span>
-        </div>
         <input
           ref="input"
           type="file"
@@ -1164,10 +1167,27 @@ async function copy(text) {
           :busy="uploading"
           :mobile="mobile"
           attachments-enabled
-          hide-microphone
+          :recording="dictating"
+          :speech-supported="dictationSupported"
+          @microphone="
+            localError = '';
+            dictation.toggle();
+          "
           :has-attachments="!!files.length"
           placeholder="Сообщение сотрудникам"
           @send="send"
+          ><template #attachments>
+            <div v-if="files.length" class="team-staged">
+              <span v-for="(f, i) in files" :key="f.fileId"
+                >{{ f.name
+                }}<button
+                  type="button"
+                  :aria-label="`Убрать файл ${f.name}`"
+                  @click="files.splice(i, 1)"
+                >
+                  <UiIcon name="close" /></button
+              ></span>
+            </div> </template
           ><template #leading
             ><TeamChatAddMenu
               :disabled="uploading"

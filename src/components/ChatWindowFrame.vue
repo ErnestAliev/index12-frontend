@@ -32,12 +32,15 @@ const readViewport = () => ({
   height: window.visualViewport?.height || window.innerHeight,
   top: window.visualViewport?.offsetTop || 0,
   left: window.visualViewport?.offsetLeft || 0,
+  keyboard:
+    window.innerHeight - (window.visualViewport?.height || window.innerHeight) >
+    120,
 });
 const viewport = ref(readViewport());
 const isCompact = computed(() => props.mobile || viewport.value.width < 600);
 const limits = computed(() => ({
   width: Math.max(280, viewport.value.width - 88),
-  height: Math.max(280, viewport.value.height - 32),
+  height: Math.max(160, viewport.value.height - 32),
 }));
 const dimensions = computed(() =>
   isCompact.value
@@ -50,6 +53,12 @@ const dimensions = computed(() =>
     : {
         width: `${Math.min(size.value.width, limits.value.width)}px`,
         height: `${Math.min(size.value.height, limits.value.height)}px`,
+        ...(viewport.value.keyboard
+          ? {
+              top: `${viewport.value.top + Math.max(0, viewport.value.height - Math.min(size.value.height, limits.value.height) - 16)}px`,
+              bottom: "auto",
+            }
+          : {}),
       },
 );
 let resize = null,
@@ -201,7 +210,11 @@ onBeforeUnmount(() => {
       :id="windowId"
       ref="panel"
       class="codex-chat-window"
-      :class="{ compact: isCompact, 'on-left': side === 'left' }"
+      :class="{
+        compact: isCompact,
+        'on-left': side === 'left',
+        'keyboard-open': viewport.keyboard,
+      }"
       :style="dimensions"
       role="dialog"
       :aria-label="`Чат ${title}`"
@@ -393,6 +406,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--codex-pane-muted);
 }
 .compact {
+  --chat-composer-bottom-space: max(12px, env(safe-area-inset-bottom, 0px));
   right: auto;
   bottom: auto;
   margin: 0;
@@ -414,8 +428,8 @@ onBeforeUnmount(() => {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
-.compact :deep(.codex-input-container) {
-  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+.keyboard-open {
+  --chat-composer-bottom-space: 10px;
 }
 :global(html[data-theme="light"] .codex-chat-window) {
   --codex-pane-bg: var(--light-canvas, #f4f6f5);

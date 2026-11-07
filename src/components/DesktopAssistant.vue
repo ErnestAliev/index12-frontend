@@ -9,6 +9,7 @@ import CodexMessageText from './CodexMessageText.vue';
 import CodexRequestCard from './CodexRequestCard.vue';
 import CodexVoicePanel from './CodexVoicePanel.vue';
 import { useCodexVoice } from '@/composables/useCodexVoice';
+import { useChatDictation } from '@/composables/useChatDictation';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -17,12 +18,12 @@ const scopeKey = computed(() => `${store.user?._id || store.user?.id || ''}:${st
 const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref(''), attachments = ref([]);
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const provider = ref('desktop');
-const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-const recording = ref(false);
+const dictation = useChatDictation({ getText: () => input.value, setText: text => { input.value = text; }, onError: message => { error.value = message; } });
+const { recording, supported: speechSupported, stop: stopRecording } = dictation;
 const voiceAvailable = ref(false);
 const downloadingFiles = ref(new Set());
 const pendingRequests = ref([]), activeJobId = ref(null), submittingAnswers = ref(new Set()), answerErrors = ref({});
-let controller = new AbortController(), timer, refreshing = false, recognition, voiceBase = '';
+let controller = new AbortController(), timer, refreshing = false;
 const visibleMessages = computed(() => [...messages.value, ...delivery.rows.filter(row => (!row.chatId || row.chatId === selectedId.value) && !messages.value.some(message => message.id === row.id))]);
 const codexBase = () => `${props.apiBaseUrl.replace(/\/$/, '')}/codex`;
 const isImage = file => /^image\/(png|jpeg|webp|gif)$/.test(file.mimeType || '');
@@ -146,7 +147,6 @@ async function newChat() {
   try { await createChat(session); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
-function stopRecording() { recording.value = false; try { recognition?.stop(); } catch { /* Already stopped. */ } }
 async function send(forced, existing = null) {
   const text = existing ? existing.text : (typeof forced === 'string' ? forced : input.value).trim();
   if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || voiceActive.value) return;
@@ -243,22 +243,8 @@ async function downloadFile(file) {
   } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { downloadingFiles.value.delete(file.fileId); }
 }
-function toggleRecording() {
-  if (recording.value) { stopRecording(); return; }
-  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Speech || busy.value) return;
-  recognition ||= new Speech(); recognition.lang = 'ru-RU'; recognition.continuous = true; recognition.interimResults = true;
-  voiceBase = input.value;
-  recognition.onresult = event => {
-    if (!recording.value) return;
-    const words = Array.from(event.results).map(row => row[0].transcript).join(' ');
-    input.value = `${voiceBase} ${words}`.trim();
-  };
-  recognition.onend = () => { recording.value = false; };
-  recognition.onerror = () => { recording.value = false; error.value = 'Не удалось включить голосовой ввод. Проверьте доступ к микрофону.'; };
-  recording.value = true;
-  try { recognition.start(); } catch { recording.value = false; }
-}
+function toggleRecording() { if (!busy.value) { error.value = ''; dictation.toggle(); } }
+
 async function copy(message) {
   try { await navigator.clipboard.writeText(message.text); message.copied = true; } catch { error.value = 'Не удалось скопировать сообщение.'; }
 }
@@ -305,15 +291,18 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
       <div v-if="busy && !pendingRequests.length && !delivery.rows.some(row => row.delivery === 'sending')" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
     </div>
     <div v-if="error" class="desktop-error" role="alert"><CodexGlyph name="alert" /><span>{{ error }}</span></div>
-    <div v-if="attachments.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы" tabindex="0">
-      <CodexFileCard v-for="(file, i) in attachments" :key="i" :file="file" removable :disabled="busy" :loading="file.uploading" @remove="removeAttachment(i)" />
-    </div>
     <input ref="files" type="file" hidden multiple @change="addFiles" />
     <CodexVoicePanel v-if="voiceActive" :status="voiceStatus" :phase="voicePhase" :muted="voiceMuted" :caption="assistantCaption || userCaption" :playback-blocked="voicePlaybackBlocked"
       @stop="stopVoice" @mute="voice.toggleMute" @play="voice.play" />
     <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
       live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length"
-      @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()" />
+      @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()">
+      <template #attachments>
+        <div v-if="attachments.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы" tabindex="0">
+          <CodexFileCard v-for="(file, i) in attachments" :key="i" :file="file" removable :disabled="busy" :loading="file.uploading" @remove="removeAttachment(i)" />
+        </div>
+      </template>
+    </CodexComposer>
   </section>
 </template>
 
