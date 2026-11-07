@@ -18,6 +18,7 @@ const props = defineProps({
   open: Boolean,
   closable: { type: Boolean, default: true },
   headingOwnsClose: Boolean,
+  hideHeading: Boolean,
   mobile: Boolean,
   title: { type: String, default: "Codex" },
   windowId: { type: String, default: "codex-chat-window" },
@@ -222,7 +223,7 @@ onBeforeUnmount(() => {
       tabindex="-1"
       @keydown="escape"
     >
-      <header class="codex-window-header">
+      <header v-if="!hideHeading" class="codex-window-header">
         <slot name="heading" :close="() => emit('close')"
           ><slot name="icon"><CodexIcon /></slot><span>{{ title }}</span></slot
         >
@@ -273,8 +274,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-
-
 .codex-chat-window {
   --codex-pane-bg: var(--bg-main, #1a1a1a);
   --codex-pane-surface: var(--bg-soft, #282828);
@@ -403,6 +402,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--codex-pane-muted);
 }
 .compact {
+  --task-header-safe-top: var(--safe-area-top);
   --chat-composer-bottom-space: var(--safe-bottom-controls);
   right: auto;
   bottom: auto;

@@ -136,7 +136,9 @@ export async function verifyNotificationMenu({
       t.trim(),
     );
     assert.deepEqual(labels.slice(0, 2), ["Чат", "Задачи"]);
-    assert.equal(labels.at(-1), "Выйти");
+    assert.equal(labels.length, 4);
+    assert.match(labels[2], /^(Тёмная|Светлая) тема$/);
+    assert.match(labels[3], /^(Включить|Выключить) уведомления$/);
     assert.equal(
       await menu
         .getByRole("button", { name: "Настройки чата", exact: true })
@@ -205,11 +207,8 @@ export async function verifyNotificationMenu({
         animations: "disabled",
       });
     }
-    await menu.getByRole("button", { name: "Выйти", exact: true }).click();
-    await frame.waitFor({ state: "hidden" });
-    await page.getByLabel("Номер телефона", { exact: true }).waitFor();
     console.log(
-      "PASS: compact Chat/Requests/Tasks menu, one theme action, scoped device push on/off across reload, no installation/status clutter and direct logout",
+      "PASS: compact Chat/Tasks menu, one theme action and scoped device push on/off across reload",
     );
   } finally {
     await context.close();

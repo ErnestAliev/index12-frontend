@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  "chevron-up":"m6 15 6-6 6 6",
   back: "m15 6-6 6 6 6",
   calendar: "M4 5h16v16H4zM8 3v4m8-4v4M4 10h16",
   clock: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2",

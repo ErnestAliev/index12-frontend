@@ -4,7 +4,7 @@
   width: 100%;
   min-width: 0;
   margin: 0;
-  padding: 10px 12px var(--chat-composer-bottom-space, 12px);
+  padding: 10px var(--chat-composer-inline-end,12px) var(--chat-composer-bottom-space, 12px) var(--chat-composer-inline-start,12px);
   background: var(--codex-pane-bg);
 }
 .codex-input-wrapper {

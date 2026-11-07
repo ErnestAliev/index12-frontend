@@ -659,3 +659,7 @@
 
 .team-message.task-message { width:100%;max-width:100%;align-self:stretch; }
 .team-message.task-message > .team-bubble { width:100%;max-width:100%;padding:0;border:0;background:transparent;box-shadow:none; }
+
+.team-image-preview{display:block;max-width:100%;max-height:70dvh;object-fit:contain;margin:auto}.team-pdf-preview{display:block;width:100%;height:65dvh;border:0}
+
+.team-chat-conversation{--chat-composer-inline-start:max(12px,var(--safe-area-left,0px));--chat-composer-inline-end:max(12px,var(--safe-area-right,0px))}

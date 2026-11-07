@@ -1,5 +1,12 @@
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+} from "vue";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import { useChatDictation } from "@/composables/useChatDictation";
 import {
@@ -9,11 +16,14 @@ import {
   filterTasks,
 } from "@/utils/teamTasks";
 import UiIcon from "./UiIcon.vue";
-import CodexMessageText from "./CodexMessageText.vue";
+import TeamChatConversation from "./TeamChatConversation.vue";
+import TeamTaskMenu from "./TeamTaskMenu.vue";
+import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
   creating: Boolean,
   taskId: String,
   notifications: Boolean,
+  mobile: Boolean,
 });
 const emit = defineEmits(["close", "created", "new"]);
 const chat = useTeamChatStore();
@@ -32,17 +42,11 @@ const draft = ref(blank()),
   editing = ref(""),
   query = ref(""),
   text = ref(""),
-  attachments = ref([]),
-  mentions = ref([]),
   error = ref(""),
   busy = ref(false),
   uploading = ref(false),
-  feed = ref(null),
   field = ref(null),
   fileInput = ref(null),
-  messages = ref([]),
-  hasMore = ref(false),
-  loading = ref(false),
   filterOpen = ref(false);
 const filters = ref({
   status: "all",
@@ -129,25 +133,6 @@ const voice = useChatDictation({
   },
   onError: (value) => (error.value = value),
 });
-const mentionSearch = computed(
-  () => text.value.match(/@([^@\n]*)$/)?.[1] ?? null,
-);
-const mentionPeople = computed(() =>
-  mentionSearch.value === null
-    ? []
-    : directory.value
-        .filter((p) =>
-          p.name
-            .toLocaleLowerCase()
-            .includes(mentionSearch.value.toLocaleLowerCase()),
-        )
-        .slice(0, 8),
-);
-function mention(p) {
-  text.value = text.value.replace(/@[^@\n]*$/, "@" + p.name + " ");
-  mentions.value.push(p._id);
-  field.value?.focus();
-}
 function go(value) {
   voice.stop();
   step.value = value;
@@ -277,92 +262,7 @@ async function create() {
     busy.value = false;
   }
 }
-let generation = 0,
-  refreshTimer;
-async function loadMessages(older = false) {
-  if (!props.taskId || loading.value) return;
-  const id = props.taskId,
-    g = generation;
-  loading.value = true;
-  const atBottom =
-    !feed.value ||
-    feed.value.scrollHeight - feed.value.scrollTop - feed.value.clientHeight <
-      70;
-  const height = feed.value?.scrollHeight || 0,
-    top = feed.value?.scrollTop || 0;
-  try {
-    const { data } = await teamApi.get("/messages", {
-      params: {
-        taskId: id,
-        ...(older && messages.value.length
-          ? { before: messages.value[0]._id }
-          : {}),
-      },
-    });
-    if (g !== generation || id !== props.taskId) return;
-    const fetched = new Map(data.messages.map((m) => [m._id, m]));
-    if (older)
-      messages.value = [
-        ...data.messages,
-        ...messages.value.filter((m) => !fetched.has(m._id)),
-      ];
-    else {
-      const earliest = data.messages[0]?.createdAt;
-      messages.value = [
-        ...messages.value.filter((m) => earliest && m.createdAt < earliest),
-        ...data.messages,
-      ];
-    }
-    if (older || messages.value.length <= 50) hasMore.value = data.hasMore;
-    await nextTick();
-    if (feed.value)
-      feed.value.scrollTop = older
-        ? top + feed.value.scrollHeight - height
-        : atBottom
-          ? feed.value.scrollHeight
-          : top;
-    scheduleReads();
-  } catch (e) {
-    if (g === generation) error.value = teamError(e);
-  } finally {
-    if (g === generation) loading.value = false;
-  }
-}
-const acknowledged = new Set();
-let readTimer;
-function scheduleReads() {
-  clearTimeout(readTimer);
-  readTimer = setTimeout(readVisible, 250);
-}
-async function readVisible() {
-  if (!feed.value || document.visibilityState === "hidden") return;
-  const bounds = feed.value.getBoundingClientRect();
-  const ids = [...feed.value.querySelectorAll("[data-comment-id]")]
-    .filter((el) => {
-      const r = el.getBoundingClientRect();
-      return r.bottom > bounds.top && r.top < bounds.bottom;
-    })
-    .map((el) => el.dataset.commentId)
-    .filter((id) => {
-      const m = messages.value.find((m) => m._id === id);
-      return (
-        m &&
-        m.authorId !== chat.me.actorId &&
-        !acknowledged.has(id + ":" + (m.contentVersion || 0))
-      );
-    });
-  if (!ids.length) return;
-  try {
-    await teamApi.post("/messages/read", { ids });
-    for (const id of ids) {
-      const m = messages.value.find((m) => m._id === id);
-      if (m) acknowledged.add(id + ":" + (m.contentVersion || 0));
-    }
-    chat.schedule();
-  } catch (e) {
-    error.value = teamError(e);
-  }
-}
+let generation = 0;
 async function toggleList(t) {
   if (
     !chat.me.owner &&
@@ -390,57 +290,11 @@ function closePreview() {
   if (preview.value) URL.revokeObjectURL(preview.value.url);
   preview.value = null;
 }
-const sendingId = ref(null);
-async function send() {
-  if (
-    busy.value ||
-    uploading.value ||
-    (!text.value.trim() && !attachments.value.length)
-  )
-    return;
-  busy.value = true;
-  error.value = "";
-  voice.stop();
-  const body = {
-    id: sendingId.value || crypto.randomUUID(),
-    taskId: props.taskId,
-    text: text.value.trim(),
-    fileIds: attachments.value.map((f) => f.fileId),
-    mentionIds: [...new Set(mentions.value)].filter((id) =>
-      text.value.includes(
-        "@" + directory.value.find((p) => p._id === id)?.name,
-      ),
-    ),
-  };
-  sendingId.value = body.id;
-  try {
-    await teamApi.post("/messages", body);
-    text.value = "";
-    attachments.value = [];
-    mentions.value = [];
-    sendingId.value = null;
-    await loadMessages();
-    await chat.refresh();
-    await nextTick();
-    if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
-  } catch (e) {
-    error.value = teamError(e);
-  } finally {
-    busy.value = false;
-  }
-}
-watch(
-  [text, attachments],
-  () => {
-    if (!busy.value) sendingId.value = null;
-  },
-  { deep: true },
-);
 async function upload(event) {
   const files = [...event.target.files];
   event.target.value = "";
   if (!files.length) return;
-  const target = props.creating ? draft.value.attachments : attachments.value;
+  const target = draft.value.attachments;
   if (
     target.length + files.length > 5 ||
     [...files].reduce(
@@ -521,69 +375,82 @@ function close() {
   }
   emit("close");
 }
+const menuTask = ref(null),
+  confirmDelete = ref(false),
+  touchMenu = ref(false);
+const canDelete = computed(
+  () =>
+    task.value && (chat.me?.owner || task.value.creatorId === chat.me?.actorId),
+);
+function showTaskMenu(task, touch = false) {
+  menuTask.value = task;
+  confirmDelete.value = false;
+  touchMenu.value = touch;
+}
+const hold = useTaskHold(showTaskMenu);
+const keyboardOpen = ref(false),
+  detailsOpen = ref(true);
+const detailsCollapsed = computed(() => !detailsOpen.value && !editing.value);
+function viewport() {
+  const open =
+    innerHeight - (window.visualViewport?.height || innerHeight) > 120;
+  if (open !== keyboardOpen.value) {
+    keyboardOpen.value = open;
+    detailsOpen.value = !open;
+  }
+}
+function composerFocus() {
+  if (props.mobile || matchMedia("(max-width:1024px),(pointer:coarse)").matches)
+    detailsOpen.value = false;
+}
 watch(
   () => [props.taskId, props.creating],
   async () => {
-    generation++;
-    acknowledged.clear();
-    loading.value = false;
-    messages.value = [];
+    const g = ++generation;
     error.value = "";
     editing.value = "";
     picker.value = "";
     text.value = "";
-    attachments.value = [];
     voice.stop();
+    detailsOpen.value = !keyboardOpen.value;
     if (props.creating) {
       draft.value = blank();
       go("who");
     }
-    if (props.taskId) {
-      if (!task.value) {
-        try {
-          const { data } = await teamApi.get("/tasks/" + props.taskId);
-          chat.state.tasks.push(data.task);
-        } catch (e) {
-          error.value = teamError(e);
-          return;
-        }
-      }
-      await loadMessages();
-      const target =
-        chat.requestedTaskMessageId || task.value?.mentionMessageId;
-      if (target) {
-        while (hasMore.value && !messages.value.some((m) => m._id === target)) {
-          await loadMessages(true);
-          if (error.value) break;
-        }
-        await nextTick();
-        feed.value
-          ?.querySelector(`[data-comment-id="${target}"]`)
-          ?.scrollIntoView({ block: "center" });
-        scheduleReads();
+    if (props.taskId && !task.value) {
+      try {
+        const { data } = await teamApi.get("/tasks/" + props.taskId);
+        if (g === generation) chat.state.tasks.push(data.task);
+      } catch (e) {
+        if (g === generation) error.value = teamError(e);
       }
     }
   },
   { immediate: true },
 );
-watch(
-  () => chat.state.checkedAt,
-  () => {
-    clearTimeout(refreshTimer);
-    if (props.taskId) refreshTimer = setTimeout(() => loadMessages(), 80);
-  },
-);
+watch(task, (value, previous) => {
+  if (previous && !value && props.taskId) emit("close");
+});
+onMounted(() => {
+  viewport();
+  window.visualViewport?.addEventListener("resize", viewport);
+  window.addEventListener("resize", viewport);
+});
 onBeforeUnmount(() => {
   generation++;
   closePreview();
-  clearTimeout(refreshTimer);
-  clearTimeout(readTimer);
+  window.visualViewport?.removeEventListener("resize", viewport);
+  window.removeEventListener("resize", viewport);
 });
 </script>
 <template>
   <section
     class="task-panel"
-    :class="{ wizard: creating }"
+    :class="{
+      wizard: creating,
+      'task-details-collapsed': detailsCollapsed,
+      'task-is-editing': !!editing,
+    }"
     @keydown.esc.stop.prevent="close"
   >
     <div
@@ -607,19 +474,50 @@ onBeforeUnmount(() => {
       /><iframe v-else :src="preview.url" :title="preview.name" />
     </div>
     <input ref="fileInput" type="file" multiple hidden @change="upload" />
+    <TeamTaskMenu
+      v-if="menuTask"
+      :task="menuTask"
+      :confirm-only="confirmDelete"
+      :suppress-opening-touch="touchMenu"
+      @close="menuTask = null"
+      @open="chat.requestedTaskId = menuTask._id"
+    />
     <header v-if="creating || taskId" class="task-header">
       <button aria-label="Назад" :disabled="busy || uploading" @click="close">
-        <UiIcon name="back" /></button
-      ><span :class="{ 'creation-title': creating }">{{
-        creating ? "Новая задача" : "Задача"
-      }}</span
-      ><button
+        <UiIcon name="back" />
+      </button>
+      <span v-if="creating" class="creation-title">Новая задача</span>
+      <button
+        v-else
+        class="task-heading-title"
+        :aria-expanded="!detailsCollapsed"
+        aria-label="Параметры задачи"
+        @pointerdown.prevent
+        @click="detailsOpen = !detailsOpen"
+      >
+        <span>{{
+          detailsCollapsed ? task?.description || "Задача" : "Задача"
+        }}</span
+        ><UiIcon :name="detailsCollapsed ? 'chevron-down' : 'chevron-up'" />
+      </button>
+      <button
+        v-if="creating"
         aria-label="Закрыть"
         :disabled="busy || uploading"
         @click="emit('close')"
       >
         <UiIcon name="close" />
       </button>
+      <button
+        v-else-if="canDelete"
+        aria-label="Удалить задачу"
+        @click="
+          menuTask = task;
+          confirmDelete = true;
+        "
+      >
+        <UiIcon name="trash" /></button
+      ><span v-else />
     </header>
     <p v-if="error" class="task-error" role="alert">{{ error }}</p>
     <div v-if="picker" class="picker-backdrop" @click.self="picker = ''">
@@ -842,7 +740,7 @@ onBeforeUnmount(() => {
     <template v-else-if="taskId">
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
-        <div class="task-overview">
+        <div v-show="!detailsCollapsed" class="task-overview">
           <div v-if="editing === 'description'" class="edit-description">
             <textarea
               ref="field"
@@ -961,101 +859,19 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
-        <div ref="feed" class="task-conversation" @scroll="scheduleReads">
-          <button
-            v-if="hasMore"
-            :disabled="loading"
-            @click="loadMessages(true)"
-          >
-            Загрузить ещё
-          </button>
-          <article
-            v-for="m in messages"
-            :key="m._id"
-            :data-comment-id="m._id"
-            :class="{ own: m.authorId === chat.me.actorId }"
-          >
-            <header>
-              <span>{{ m.authorName }}</span
-              ><time>{{
-                new Date(m.createdAt).toLocaleString("ru-RU", {
-                  day: "numeric",
-                  month: "short",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              }}</time>
-            </header>
-            <CodexMessageText :text="m.text" /><button
-              v-for="f in m.attachments"
-              :key="f.fileId"
-              @click="download(f)"
-            >
-              <UiIcon name="attach" />{{ f.name }}
-            </button>
-          </article>
-        </div>
-        <form
-          v-if="editing !== 'description'"
-          class="task-composer"
-          @submit.prevent="send"
-        >
-          <div v-if="mentionPeople.length" class="mention-options">
-            <button
-              v-for="p in mentionPeople"
-              :key="p._id"
-              type="button"
-              @click="mention(p)"
-            >
-              {{ p.name }}
-            </button>
-          </div>
-          <div v-if="attachments.length" class="task-files">
-            <span v-for="(f, i) in attachments" :key="f.fileId"
-              ><button type="button" @click="download(f)">{{ f.name }}</button
-              ><button
-                type="button"
-                :aria-label="`Убрать ${f.name}`"
-                @click="attachments.splice(i, 1)"
-              >
-                ×
-              </button></span
-            >
-          </div>
-          <div class="task-compose-row">
-            <button
-              type="button"
-              aria-label="Прикрепить файл"
-              :disabled="uploading"
-              @click="fileInput.click()"
-            >
-              <UiIcon name="attach" /></button
-            ><textarea
-              ref="field"
-              v-model="text"
-              placeholder="Сообщение"
-              aria-label="Сообщение"
-              maxlength="10000"
-              @keydown.enter.exact.prevent="send"
-            /><button
-              v-if="voice.supported"
-              type="button"
-              aria-label="Диктовка"
-              :aria-pressed="voice.recording.value"
-              @click="voice.toggle"
-            >
-              <UiIcon name="mic" /></button
-            ><button
-              type="submit"
-              aria-label="Отправить"
-              :disabled="
-                busy || uploading || (!text.trim() && !attachments.length)
-              "
-            >
-              <UiIcon name="send" />
-            </button>
-          </div>
-        </form>
+        <TeamChatConversation
+          v-show="editing !== 'description'"
+          :active="editing !== 'description'"
+          :key="taskId"
+          :task-id="taskId"
+          :target-message-id="
+            chat.requestedTaskMessageId || task.mentionMessageId
+          "
+          :mobile="mobile"
+          class="task-discussion"
+          @composer-focus="composerFocus"
+          @new="emit('new')"
+        />
       </template>
     </template>
     <template v-else-if="notifications">
@@ -1155,6 +971,13 @@ onBeforeUnmount(() => {
           v-for="t in shownTasks"
           :key="t._id"
           class="task-list-row"
+          @pointerdown="hold.down($event, t)"
+          @pointermove="hold.move"
+          @pointerup="hold.cancel"
+          @pointercancel="hold.cancel"
+          @click.capture="hold.click"
+          @contextmenu="hold.context($event, t)"
+          @keydown="hold.keys($event, t)"
           :class="{ done: t.status === 'done' }"
         >
           <button

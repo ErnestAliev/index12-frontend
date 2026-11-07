@@ -91,7 +91,7 @@ export async function verifyTopNavigation(page, frame, output) {
       "Dropdown remains inside available screen space",
     );
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width);
-    await menu.getByText("Настройки чата", { exact: true }).waitFor();
+    assert.equal(await menu.getByText("Настройки чата", { exact: true }).count(), 0);
     assert.equal(
       await menu
         .getByRole("button", { name: "Настройки чата", exact: true })
@@ -103,7 +103,9 @@ export async function verifyTopNavigation(page, frame, output) {
       labels.slice(0, 2).map((t) => t.trim()),
       ["Чат", "Задачи"],
     );
-    assert.equal(labels.at(-1).trim(), "Выйти");
+    assert.equal(labels.length, 4);
+    assert.match(labels[2].trim(), /^(Тёмная|Светлая) тема$/);
+    assert.match(labels[3].trim(), /^(Включить|Выключить) уведомления$/);
     const focus = await trigger.evaluate((el) => ({
       outline: getComputedStyle(el).outlineStyle,
       shadow: getComputedStyle(el).boxShadow,

@@ -381,3 +381,31 @@ test("task mutations merge immediately, preserve identity and discard session st
  assert.deepEqual(s.state.tasks,[]);
  assert.equal(s.requestedTaskId,null);
 });
+
+test('task comments use the shared outbox with task identity and never appear in the main feed', async()=>{
+ const s=fixture();let posted;
+ teamApi.defaults.adapter=async config=>{
+  if(config.url==='/me')return {status:200,data:{workspaceId:'task-workspace',actorId:'actor',status:'active'}};
+  if(config.url==='/messages'&&config.method==='post'){
+   posted=JSON.parse(config.data);
+   return {status:201,data:{message:{_id:posted.id,taskId:posted.taskId,authorId:'actor',text:posted.text,createdAt:new Date().toISOString(),attachments:[],version:0}}};
+  }
+  return {status:200,data:config.url==='/messages'?{messages:[],hasMore:false}:empty()};
+ };
+ await s.start('task-workspace');
+ const id=s.send('Ответ внутри задачи',[],{taskId:'task'});
+ await settle();
+ assert.equal(posted.taskId,'task');assert.equal(posted.id,id);
+ assert.equal(s.state.messages.length,0);assert.equal(s.threads.task.messages[0].text,'Ответ внутри задачи');assert.equal(s.outbox.length,0);
+ s.stop();assert.deepEqual(s.threads,{});
+});
+
+test('task deletion removes its cover, cached discussion and pending comments without touching the main conversation',async()=>{
+ const s=fixture();
+ teamApi.defaults.adapter=async config=>({status:200,data:config.url==='/me'?{workspaceId:'tasks',actorId:'actor',status:'active'}:config.method==='delete'?{deletedTaskId:'task'}:empty()});
+ await s.start('tasks');
+ s.state.tasks=[{_id:'task'}];s.state.messages=[{_id:'cover',kind:'task',taskId:'task'},{_id:'normal',text:'Общий чат'}];
+ s.threads.task={messages:[{_id:'comment',taskId:'task'}]};s.requestedTaskId='task';
+ await s.action('/tasks/task',{expectedVersion:0},'delete');
+ assert.deepEqual(s.state.tasks,[]);assert.equal(s.state.messages[0]._id,'normal');assert.equal(s.state.messages.length,1);assert.equal(s.threads.task,undefined);assert.equal(s.requestedTaskId,null);s.stop();
+});

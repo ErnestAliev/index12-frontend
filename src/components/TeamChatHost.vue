@@ -117,6 +117,7 @@ async function decide(status) {
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
     heading-owns-close
+    :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
     :mobile="route.name === 'mobile-home'"
     title="Сотрудники"
     window-id="team-chat-window"

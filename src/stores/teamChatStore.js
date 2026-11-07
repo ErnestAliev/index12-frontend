@@ -15,11 +15,14 @@ export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
   const outbox = ref([]);
+  const threads = ref({});
+  const threadTickets = new Map();
   const historyLoading = ref(false),
     historyReady = ref(false);
   const notice = ref(""),
     olderMessageIds = ref([]);
   const taskNotifications = ref(false);
+  const creatingTask = ref(false);
   const requestedTaskMessageId = ref(null);
   const tab = ref("messages"),
     requestedTaskId = ref(null);
@@ -70,6 +73,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     requestedTaskId.value = null;
     requestedTaskMessageId.value = null;
     taskNotifications.value = false;
+    creatingTask.value = false;
     unread.value = 0;
     busy.value = false;
     error.value = "";
@@ -78,6 +82,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     historyReady.value = false;
     lastMessage = "";
     outbox.value = [];
+    threads.value = {};
+    threadTickets.clear();
     messageQueue = Promise.resolve();
     delete teamApi.defaults.headers.common["x-index12-workspace-id"];
     delete teamApi.defaults.headers.common["x-index12-chat-only"];
@@ -217,6 +223,58 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       if (g === generation) error.value = teamError(e);
     }
   }
+  async function refreshThread(id, messageIds = []) {
+    const g = generation,
+      t = (threadTickets.get(id) || 0) + 1;
+    threadTickets.set(id, t);
+    threads.value[id] ||= {
+      messages: [],
+      messageUpdates: [],
+      deletedMessageIds: [],
+      ready: false,
+    };
+    const snapshot = threads.value[id];
+    snapshot.loading = true;
+    try {
+      const { data } = await teamApi.get("/messages", {
+        params: {
+          taskId: id,
+          ...(messageIds.length
+            ? { messageIds: messageIds.slice(0, 150).join(",") }
+            : {}),
+        },
+      });
+      if (g !== generation || threadTickets.get(id) !== t) return;
+      threads.value[id] = { ...data, ready: true, loading: false };
+      snapshot.error = "";
+    } catch (e) {
+      if (g === generation && threadTickets.get(id) === t) {
+        snapshot.error = teamError(e);
+        throw e;
+      }
+    } finally {
+      if (g === generation && threads.value[id])
+        threads.value[id].loading = false;
+    }
+  }
+  function mergeMessage(message) {
+    const target =
+      message.taskId && message.kind !== "task"
+        ? (threads.value[message.taskId] ||= { messages: [], ready: true })
+        : state.value;
+    if (message.taskId)
+      threadTickets.set(
+        message.taskId,
+        (threadTickets.get(message.taskId) || 0) + 1,
+      );
+    target.messages = [
+      ...target.messages.filter((m) => m._id !== message._id),
+      message,
+    ].sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
+    );
+  }
   async function action(path, body, method = "post") {
     const g = generation;
     busy.value = true;
@@ -233,19 +291,39 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         if (index < 0) state.value.tasks.unshift(data.task);
         else state.value.tasks[index] = data.task;
       }
-      if (data.message)
-        state.value.messages = [
-          ...state.value.messages.filter((m) => m._id !== data.message._id),
-          data.message,
-        ].sort(
-          (a, b) =>
-            a.createdAt.localeCompare(b.createdAt) ||
-            a._id.localeCompare(b._id),
-        );
-      if (data.deletedMessageId)
+      if (data.message) mergeMessage(data.message);
+      if (data.deletedMessageId) {
         state.value.messages = state.value.messages.filter(
           (m) => m._id !== data.deletedMessageId,
         );
+        for (const thread of Object.values(threads.value)) {
+          thread.messages = thread.messages.filter(
+            (m) => m._id !== data.deletedMessageId,
+          );
+          thread.deletedMessageIds = [
+            ...new Set([
+              ...(thread.deletedMessageIds || []),
+              data.deletedMessageId,
+            ]),
+          ];
+        }
+      }
+      if (data.deletedTaskId) {
+        state.value.tasks = state.value.tasks.filter(
+          (t) => t._id !== data.deletedTaskId,
+        );
+        state.value.messages = state.value.messages.filter(
+          (m) => m.taskId !== data.deletedTaskId,
+        );
+        delete threads.value[data.deletedTaskId];
+        outbox.value = outbox.value.filter(
+          (m) => m.taskId !== data.deletedTaskId,
+        );
+        if (requestedTaskId.value === data.deletedTaskId) {
+          requestedTaskId.value = null;
+          requestedTaskMessageId.value = null;
+        }
+      }
       if (data.member) {
         const at = state.value.members.findIndex(
           (m) => m._id === data.member._id,
@@ -277,15 +355,18 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       const { data } = await teamApi.post("/messages", {
         id: row._id,
         text: row.text,
+        ...(row.taskId ? { taskId: row.taskId } : {}),
         fileIds: row.attachments.map((file) => file.fileId),
         ...(row.mentionIds?.length ? { mentionIds: row.mentionIds } : {}),
         ...(row.replyTo ? { replyToId: row.replyTo.messageId } : {}),
       });
       if (g !== generation) return;
       ++ticket;
-      const existing = state.value.messages.find(
-        (message) => message._id === id,
-      );
+      const existing = (
+        row.taskId
+          ? threads.value[row.taskId]?.messages || []
+          : state.value.messages
+      ).find((message) => message._id === id);
       const confirmed = {
         ...data.message,
         attachments: (data.message.attachments || []).map((file) => ({
@@ -299,14 +380,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
           Number(existing.version || 0) >= Number(confirmed.version || 0))
           ? { ...confirmed, ...existing }
           : confirmed;
-      state.value.messages = [
-        ...state.value.messages.filter((message) => message._id !== id),
-        message,
-      ].sort(
-        (a, b) =>
-          new Date(a.createdAt) - new Date(b.createdAt) ||
-          a._id.localeCompare(b._id),
-      );
+      mergeMessage(message);
       outbox.value = outbox.value.filter((message) => message._id !== id);
       schedule();
     } catch (e) {
@@ -334,6 +408,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       authorId: me.value.actorId,
       authorName: me.value.displayName,
       text: text.trim(),
+      ...(options.taskId ? { taskId: options.taskId } : {}),
       ...(options.replyTo ? { replyTo: { ...options.replyTo } } : {}),
       ...(options.mentionIds?.length ? { mentionIds: options.mentionIds } : {}),
       createdAt: new Date().toISOString(),
@@ -365,6 +440,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     historyLoading,
     historyReady,
     outbox,
+    threads,
+    refreshThread,
     retryMessage,
     isOwner,
     notice,
@@ -373,6 +450,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     requestedTaskId,
     requestedTaskMessageId,
     taskNotifications,
+    creatingTask,
     state,
     error,
     open,

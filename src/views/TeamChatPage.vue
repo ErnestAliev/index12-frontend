@@ -355,6 +355,7 @@ const closedText = (status) =>
       v-else
       :open="true"
       heading-owns-close
+    :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"

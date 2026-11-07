@@ -203,21 +203,6 @@ onBeforeUnmount(() => {
           />{{ s.label }}
         </button>
         <hr />
-        <button
-          type="button"
-          @click="
-            chat.taskNotifications = true;
-            close();
-          "
-        >
-          <UiIcon name="bell" />Уведомления<span v-if="chat.actionable">{{
-            chat.actionable
-          }}</span>
-        </button>
-        <button v-if="chat.isOwner" type="button" @click="select('members')">
-          <UiIcon name="settings" />Роли и участники
-        </button>
-        <span class="team-navigation-group">Настройки чата</span>
         <button type="button" @click="theme">
           <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
             appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
@@ -237,16 +222,6 @@ onBeforeUnmount(() => {
           }}
         </button>
         <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
-        <hr />
-        <button
-          type="button"
-          @click="
-            close();
-            emit('logout');
-          "
-        >
-          <UiIcon name="logout" />Выйти
-        </button>
       </section>
     </div>
     <button
@@ -377,13 +352,6 @@ onBeforeUnmount(() => {
   margin: 6px;
   color: var(--color-danger, #c65048);
   font-size: 12px;
-}
-.team-navigation-group {
-  display: block;
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--codex-pane-muted);
 }
 .team-chat-navigation button:focus {
   outline: none !important;

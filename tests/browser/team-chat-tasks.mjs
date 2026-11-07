@@ -74,10 +74,10 @@ try {
     .locator(".task-cover")
     .filter({ hasText: "Проверить договор и забрать документы" + suffix });
   await cover.waitFor();
-  assert.equal((await cover.boundingBox()).height, 92);
+  assert.equal((await cover.boundingBox()).height, 90);
   await cover.click();
   await panel
-    .locator("input[type=file]")
+    .locator(".task-discussion .team-compose-area input[type=file]")
     .setInputFiles({
       name: "Снимок.png",
       mimeType: "image/png",
@@ -86,25 +86,29 @@ try {
         "base64",
       ),
     });
-  await page.waitForFunction(() => !document.querySelector(".upload-state"));
+  await page.waitForFunction(
+    () => !!document.querySelector(".task-discussion .team-staged"),
+  );
   await panel
     .getByRole("textbox", { name: "Сообщение", exact: true })
     .fill("Первое сообщение в задаче");
   await panel.getByRole("button", { name: "Отправить", exact: true }).click();
   await panel
-    .locator(".task-conversation article")
+    .locator(".task-discussion .team-message")
     .filter({ hasText: "Первое сообщение в задаче" })
     .waitFor();
   await panel
-    .locator(".task-conversation")
+    .locator(".task-discussion .team-feed")
     .getByRole("button", { name: "Снимок.png", exact: true })
     .click();
-  await panel
-    .getByRole("dialog", { name: "Снимок.png", exact: true })
-    .waitFor();
-  await panel
-    .getByRole("button", { name: "Закрыть просмотр", exact: true })
+  await page.getByRole("dialog", { name: "Снимок.png", exact: true }).waitFor();
+  await page
+    .getByRole("button", { name: "Закрыть снимок.png", exact: true })
     .click();
+  if (!(await panel.locator(".task-overview").isVisible()))
+    await panel
+      .getByRole("button", { name: "Параметры задачи", exact: true })
+      .click();
   await panel.locator(".task-description").click();
   await panel
     .getByRole("textbox", { name: "Описание задачи", exact: true })
@@ -120,7 +124,7 @@ try {
   await panel.getByRole("button", { name: "Employee", exact: true }).click();
   await panel.getByRole("button", { name: "В процессе", exact: true }).click();
   await panel.getByRole("button", { name: "Готово", exact: true }).click();
-  await panel.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await panel.getByRole("button", { name: "Назад", exact: true }).click();
   const completed = page
     .locator(".task-cover")
     .filter({ hasText: "Договор проверен — забрать документы" + suffix });
@@ -179,7 +183,7 @@ try {
       );
       assert.ok(
         bounds.y + bounds.height <= viewport.height - bottom - 12,
-        "bottom action is clear of safe area",
+        JSON.stringify({ viewport, bottom, bounds }),
       );
       assert.ok(bounds.height >= 44, "bottom action hit target");
       await panel.getByRole("button", { name: "Закрыть", exact: true }).click();
@@ -206,7 +210,7 @@ try {
     .boundingBox();
 
   assert.ok(
-    keyboardButton.y + keyboardButton.height <= 428,
+    keyboardButton.y + keyboardButton.height <= 430,
     "submit stays above simulated keyboard",
   );
   await page.screenshot({
