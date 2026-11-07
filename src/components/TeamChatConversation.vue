@@ -11,11 +11,11 @@ import UiIcon from "./UiIcon.vue";
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
-import { decisionStatus } from "@/utils/teamMessageStatus";
 import TeamTaskCover from "./TeamTaskCover.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
+import TeamMediaPreview from "./TeamMediaPreview.vue";
 import { useChatDictation } from "@/composables/useChatDictation";
 const props = defineProps({
   mobile: Boolean,
@@ -113,6 +113,7 @@ function cancelHold() {
 }
 function openMessageMenu(row, touchHold = false) {
   if (row.kind === "task") return;
+  window.getSelection()?.removeAllRanges();
   cancelHold();
   resetSwipe();
   if (row._delivery || selectedMessageId.value === row._id) return;
@@ -262,9 +263,7 @@ async function reactToMessage(row, reaction) {
     }),
   );
 }
-const messageStatus = (row) =>
-  decisionStatus(row.approval?.history) ||
-  (row.readCount ? "Просмотрено" : "Доставлено");
+const messageStatus = (row) => (row.readCount ? "Просмотрено" : "Доставлено");
 const mentionChoices = computed(() =>
   (chat.state.people || []).filter(
     (p) =>
@@ -564,10 +563,12 @@ async function attach(event) {
   uploading.value = false;
 }
 async function download(file) {
+  const workspace = chat.me?.workspaceId;
   await run(async () => {
     const { data } = await teamApi.get(`/files/${file.fileId}`, {
       responseType: "blob",
     });
+    if (disposed || workspace !== chat.me?.workspaceId) return;
     if (
       /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(
         file.mimeType || "",
@@ -813,17 +814,7 @@ watch(
 </script>
 <template>
   <div class="team-pane team-chat-conversation" style="position: relative">
-    <TeamChatDialog v-if="preview" :title="preview.name" @close="closePreview"
-      ><img
-        v-if="preview.mimeType.startsWith('image/')"
-        :src="preview.url"
-        :alt="preview.name"
-        class="team-image-preview" /><iframe
-        v-else
-        :src="preview.url"
-        :title="preview.name"
-        class="team-pdf-preview"
-    /></TeamChatDialog>
+    <TeamMediaPreview v-if="preview" :media="preview" @close="closePreview" />
     <TeamMessageMenu
       v-if="selectedMessage"
       :message="selectedMessage"
@@ -1035,20 +1026,10 @@ watch(
                 class="team-message-meta"
               >
                 <span v-if="m.editedAt">изменено</span
-                ><span
-                  v-if="m.approval || m.authorId === chat.me.actorId"
-                  :class="{
-                    'message-rejected': m.approval?.state === 'rejected',
-                  }"
-                  >{{ messageStatus(m) }}</span
-                >
+                ><span v-if="m.authorId === chat.me.actorId">{{
+                  messageStatus(m)
+                }}</span>
               </div>
-              <p
-                v-if="m.approval?.state === 'rejected'"
-                class="team-rejection-reason"
-              >
-                {{ m.approval.history?.at(-1)?.note }}
-              </p>
             </div>
           </article>
         </template>

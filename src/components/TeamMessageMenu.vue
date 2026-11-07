@@ -10,19 +10,9 @@ const chat = useTeamChatStore(),
   busy = ref(false),
   error = ref(""),
   text = ref(props.message.text || ""),
-  reason = ref(""),
   editVersion = ref(props.message.version || 0),
   targets = ref([]);
 const emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
-const stage = computed(() =>
-  props.message.approval?.state === "director_review" ? "director" : "manager",
-);
-const canReview = computed(
-  () =>
-    props.message.kind !== "request" &&
-    !["approved", "rejected"].includes(props.message.approval?.state) &&
-    (chat.isOwner || chat.me?.role === stage.value),
-);
 const own = computed(() => props.message.authorId === chat.me?.actorId);
 const canDelete = computed(() => chat.isOwner || own.value);
 const title = computed(
@@ -30,10 +20,8 @@ const title = computed(
     ({
       actions: "Сообщение",
       edit: "Редактировать",
-      reject: "Причина отклонения",
       forward: "Переслать",
       delete: "Удалить сообщение?",
-      history: "Согласование",
     })[mode.value],
 );
 const bounds = ref({});
@@ -48,6 +36,26 @@ function releaseOpeningTouch(event) {
   waitingForRelease = false;
   document.removeEventListener("touchend", releaseOpeningTouch, true);
   document.removeEventListener("touchcancel", releaseOpeningTouch, true);
+}
+function clearMenuSelection() {
+  if (
+    document.activeElement?.matches('input,textarea,[contenteditable="true"]')
+  )
+    return;
+  const selected = window.getSelection();
+  if (
+    selected?.rangeCount &&
+    (panel.value?.contains(selected.anchorNode) ||
+      panel.value?.contains(selected.focusNode))
+  )
+    selected.removeAllRanges();
+}
+function preventNativeSelection(event) {
+  const target =
+    event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+  if (target?.closest('input,textarea,[contenteditable="true"]')) return;
+  event.preventDefault();
+  clearMenuSelection();
 }
 function viewport() {
   const v = window.visualViewport;
@@ -105,19 +113,6 @@ function sendForward(target) {
     }),
   );
 }
-function decide(action, note = "") {
-  if (action === "reject" && !note) {
-    mode.value = "reject";
-    return;
-  }
-  return run(() =>
-    chat.action(`/messages/${props.message._id}/decision`, {
-      action,
-      note,
-      expectedVersion: props.message.version || 0,
-    }),
-  );
-}
 function save() {
   return run(() =>
     chat.action(
@@ -164,6 +159,8 @@ function keys(event) {
   }
 }
 onMounted(async () => {
+  window.getSelection()?.removeAllRanges();
+  document.addEventListener("selectionchange", clearMenuSelection);
   waitingForRelease = props.suppressOpeningTouch;
   if (waitingForRelease) {
     document.addEventListener("touchend", releaseOpeningTouch, {
@@ -182,6 +179,8 @@ onMounted(async () => {
   panel.value.focus({ preventScroll: true });
 });
 onBeforeUnmount(() => {
+  document.removeEventListener("selectionchange", clearMenuSelection);
+  clearMenuSelection();
   document.removeEventListener("touchend", releaseOpeningTouch, true);
   document.removeEventListener("touchcancel", releaseOpeningTouch, true);
   window.visualViewport?.removeEventListener("resize", viewport);
@@ -198,6 +197,8 @@ onBeforeUnmount(() => {
       :style="bounds"
       @pointerdown.self="close"
       @keydown="keys"
+      @selectstart="preventNativeSelection"
+      @contextmenu="preventNativeSelection"
     >
       <section
         ref="panel"
@@ -274,36 +275,6 @@ onBeforeUnmount(() => {
           >
             <UiIcon name="copy" />Копировать
           </button>
-          <template v-if="canReview"
-            ><button
-              type="button"
-              class="menu-action menu-approve"
-              :disabled="busy"
-              @click="decide('approve')"
-            >
-              <UiIcon name="check" />{{
-                stage === "manager"
-                  ? "Согласовать → руководителю"
-                  : "Согласовать как руководитель"
-              }}</button
-            ><button
-              type="button"
-              class="menu-action menu-danger"
-              :disabled="busy"
-              @click="decide('reject')"
-            >
-              <UiIcon name="close" />Отклонить
-            </button></template
-          >
-          <button
-            v-if="message.approval?.history?.length"
-            type="button"
-            class="menu-action"
-            :disabled="busy"
-            @click="mode = 'history'"
-          >
-            <UiIcon name="info" />История согласования
-          </button>
           <button
             v-if="canDelete"
             type="button"
@@ -314,26 +285,6 @@ onBeforeUnmount(() => {
             <UiIcon name="trash" />Удалить
           </button>
         </template>
-        <form
-          v-else-if="mode === 'reject'"
-          @submit.prevent="decide('reject', reason.trim())"
-        >
-          <textarea
-            v-model="reason"
-            aria-label="Причина отклонения"
-            placeholder="Почему отклонено"
-            maxlength="1000"
-            rows="4"
-            required
-            autofocus
-          ></textarea>
-          <button
-            class="menu-action menu-danger"
-            :disabled="busy || !reason.trim()"
-          >
-            Отклонить
-          </button>
-        </form>
         <form v-else-if="mode === 'edit'" @submit.prevent="save">
           <textarea
             v-model="text"
@@ -378,22 +329,6 @@ onBeforeUnmount(() => {
             Отмена
           </button></template
         >
-        <ol v-else-if="mode === 'history'" class="message-approval-history">
-          <li v-for="(entry, index) in message.approval.history" :key="index">
-            <strong>{{ entry.name }}</strong
-            ><span
-              >{{ chat.me.roles[entry.role] }} ·
-              {{
-                entry.action === "approve" ? "Согласовано" : "Отклонено"
-              }}</span
-            ><time>{{
-              new Date(entry.at).toLocaleString("ru-RU", {
-                timeZone: "Asia/Almaty",
-              })
-            }}</time>
-            <p v-if="entry.note">{{ entry.note }}</p>
-          </li>
-        </ol>
       </section>
     </div>
   </Teleport>
@@ -571,6 +506,20 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 }
+
+.team-message-menu,
+.team-message-menu :deep(*) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.team-message-menu textarea,
+.team-message-menu input,
+.team-message-menu [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
 </style>
 
 <style scoped>
@@ -584,5 +533,19 @@ onBeforeUnmount(() => {
   --codex-pane-accent: var(--light-accent, #3b6763);
   --codex-pane-danger: var(--light-expense, #a74439);
   --codex-pane-focus: var(--light-accent, #3b6763);
+}
+
+.team-message-menu,
+.team-message-menu :deep(*) {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.team-message-menu textarea,
+.team-message-menu input,
+.team-message-menu [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 </style>

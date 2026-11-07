@@ -18,6 +18,8 @@ import {
 import UiIcon from "./UiIcon.vue";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
+import TeamMediaPreview from "./TeamMediaPreview.vue";
+import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
   creating: Boolean,
@@ -72,15 +74,6 @@ const directory = computed(() =>
   [...(chat.state.people || [])].sort(
     (a, b) => (b._id === chat.me.actorId) - (a._id === chat.me.actorId),
   ),
-);
-const people = computed(() =>
-  directory.value
-    .filter((p) =>
-      p.name
-        .toLocaleLowerCase()
-        .includes(query.value.trim().toLocaleLowerCase()),
-    )
-    .slice(0, 12),
 );
 const selectedNames = computed(() =>
   active.value?.assigneeIds
@@ -328,10 +321,12 @@ async function upload(event) {
   }
 }
 async function download(file) {
+  const g = generation;
   try {
     const { data } = await teamApi.get(`/files/${file.fileId}`, {
       responseType: "blob",
     });
+    if (g !== generation) return;
     if (
       /^(image\/(png|jpeg|gif|webp)|application\/pdf)$/.test(
         file.mimeType || "",
@@ -453,26 +448,7 @@ onBeforeUnmount(() => {
     }"
     @keydown.esc.stop.prevent="close"
   >
-    <div
-      v-if="preview"
-      class="task-preview-overlay"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="preview.name"
-      @keydown.esc.stop.prevent="closePreview"
-    >
-      <header>
-        <span>{{ preview.name }}</span
-        ><button aria-label="Закрыть просмотр" @click="closePreview">
-          <UiIcon name="close" />
-        </button>
-      </header>
-      <img
-        v-if="preview.mimeType.startsWith('image/')"
-        :src="preview.url"
-        :alt="preview.name"
-      /><iframe v-else :src="preview.url" :title="preview.name" />
-    </div>
+    <TeamMediaPreview v-if="preview" :media="preview" @close="closePreview" />
     <input ref="fileInput" type="file" multiple hidden @change="upload" />
     <TeamTaskMenu
       v-if="menuTask"
@@ -539,13 +515,24 @@ onBeforeUnmount(() => {
               ›
             </button></template
           ><template v-else
-            ><button @click="clockPart = 'hour'">
-              {{ String(hour).padStart(2, "0") }}</button
-            ><span>:</span
-            ><button @click="clockPart = 'minute'">
-              {{ String(minute).padStart(2, "0") }}
-            </button></template
-          >
+            ><div class="clock-display">
+              <button
+                aria-label="Часы"
+                :aria-pressed="clockPart === 'hour'"
+                @click="clockPart = 'hour'"
+              >
+                {{ String(hour).padStart(2, "0") }}</button
+              ><span>:</span
+              ><button
+                aria-label="Минуты"
+                :aria-pressed="clockPart === 'minute'"
+                @click="clockPart = 'minute'"
+              >
+                {{ String(minute).padStart(2, "0") }}
+              </button>
+            </div>
+            <span class="clock-header-spacer" aria-hidden="true"
+          /></template>
         </header>
         <div v-if="picker === 'date'" class="calendar">
           <span
@@ -564,10 +551,21 @@ onBeforeUnmount(() => {
           /></template>
         </div>
         <div v-else class="clock-face">
+          <span
+            class="clock-hand"
+            aria-hidden="true"
+            :style="{
+              height: (clockPart === 'hour' ? (hour < 12 ? 42 : 28) : 42) + '%',
+              transform: `rotate(${clockPart === 'hour' ? (hour % 12) * 30 : minute * 6}deg)`,
+            }"
+          />
+          <span class="clock-center" aria-hidden="true" />
+
           <template v-if="clockPart === 'hour'"
             ><button
               v-for="(_, i) in 24"
               :key="i"
+              :aria-pressed="hour === i"
               :style="{
                 left:
                   50 +
@@ -587,6 +585,8 @@ onBeforeUnmount(() => {
             ><button
               v-for="(_, i) in 12"
               :key="'m' + i"
+              :aria-pressed="minute === i * 5"
+              :aria-label="`${i * 5} минут`"
               :style="{
                 left: 50 + 42 * Math.sin((i * Math.PI) / 6) + '%',
                 top: 50 - 42 * Math.cos((i * Math.PI) / 6) + '%',
@@ -622,31 +622,13 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="creating" class="task-stage">
       <div class="task-focus">
-        <div v-if="step === 'who'" class="task-input-line">
-          <span>Кому:</span>
-          <div class="task-choice-content">
-            <input
-              v-model="query"
-              placeholder="Имя"
-              aria-label="Найти сотрудника"
-            />
-            <div class="inline-choices">
-              <button v-for="p in people" :key="p._id" @click="choosePerson(p)">
-                {{ p._id === chat.me.actorId ? "Себе" : p.name }}</button
-              ><button
-                aria-label="Найти сотрудника"
-                @click="
-                  $event.currentTarget
-                    .closest('.task-choice-content')
-                    .querySelector('input')
-                    .focus()
-                "
-              >
-                <UiIcon name="search" />
-              </button>
-            </div>
-          </div>
-        </div>
+        <TeamTaskRecipientPicker
+          v-if="step === 'who'"
+          :people="directory"
+          :actor-id="chat.me.actorId"
+          :disabled="busy"
+          @select="choosePerson"
+        />
         <div v-else-if="step === 'when'" class="task-input-line">
           <span>Когда:</span>
           <div class="inline-choices">
@@ -815,19 +797,14 @@ onBeforeUnmount(() => {
               <UiIcon name="clock" />
             </button>
           </div>
-          <div v-if="['who', 'add'].includes(editing)" class="task-input-line">
-            <input
-              v-model="query"
-              placeholder="Имя"
-              aria-label="Найти сотрудника"
-            />
-            <div class="inline-choices">
-              <button v-for="p in people" :key="p._id" @click="choosePerson(p)">
-                {{ p._id === chat.me.actorId ? "Себе" : p.name }}
-              </button>
-            </div>
-            <button aria-label="Закрыть выбор" @click="editing = ''">×</button>
-          </div>
+          <TeamTaskRecipientPicker
+            v-if="['who', 'add'].includes(editing)"
+            :key="editing"
+            :people="directory"
+            :actor-id="chat.me.actorId"
+            :disabled="busy"
+            @select="choosePerson"
+          />
           <div v-if="editing === 'when'" class="inline-choices">
             <button @click="chooseTiming('urgent')">Срочно</button
             ><button @click="chooseTiming('deadline')">К сроку</button
@@ -987,7 +964,9 @@ onBeforeUnmount(() => {
             :aria-label="t.status === 'done' ? 'Вернуть задачу' : 'Готово'"
             @click="toggleList(t)"
           >
-            {{ t.status === "done" ? "✓" : "○" }}</button
+            <span class="list-checkmark" aria-hidden="true">{{
+              t.status === "done" ? "✓" : ""
+            }}</span></button
           ><button class="list-content" @click="chat.requestedTaskId = t._id">
             <span :title="t.description">{{ t.description }}</span
             ><span>{{ t.assignees.map((p) => p.name).join(", ") }}</span
