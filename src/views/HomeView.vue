@@ -733,7 +733,6 @@ const openPopup = (type) => {
 };
 
 const handleEditOperation = (operation) => {
-  if(operation?.isTeamRequest){window.dispatchEvent(new CustomEvent('index12:edit-team-request',{detail:{id:operation.requestId}}));return;}
   operationToEdit.value = operation;
   const opDate = _parseDateKey(operation.dateKey); 
   selectedDay.value = { date: opDate, dayOfYear: operation.dayOfYear, dateKey: operation.dateKey };
@@ -802,7 +801,6 @@ const onContainerDragOver = (e) => {
 };
 const onContainerDragLeave = (e) => { stopAutoScroll(); };
 const handleOperationDrop = async (dropData) => {
-  if(dropData.operation?.isTeamRequest){window.dispatchEvent(new CustomEvent('index12:edit-team-request',{detail:{id:dropData.operation.requestId,dateKey:dropData.toDateKey,date:dropData.targetDate||mainStore._parseDateKey(dropData.toDateKey),cellIndex:dropData.toCellIndex,drop:true}}));return;}
   stopAutoScroll();
 
   const operation = dropData.operation;

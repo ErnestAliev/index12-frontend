@@ -334,7 +334,6 @@ const onTouchEnd = (e) => {
       class="op-chip"
       :title="`${formatNumber(Math.abs(displayAmount ?? operation.amount))} ₸ · ${isTransferOp ? transferRoute : chipLabel}`"
       :class="{ 
-         'team-request-chip':operation.isTeamRequest,
          transfer: isTransferOp, 
          income: operation.type==='income' && !isWithdrawalOp && !isCreditIncomeOp && !isClosedDealOp, 
          expense: operation.type==='expense' && !isWithdrawalOp && !isTechnicalOp && !isTransferOp,
@@ -411,7 +410,6 @@ const onTouchEnd = (e) => {
 </template>
 
 <style scoped>
-.op-chip.team-request-chip{border-style:dashed!important;opacity:.85}
 
 .amount-short { display: none; }
 /* Добавлен класс .hour-cell для поиска через closest */

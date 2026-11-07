@@ -7,161 +7,13 @@ import ChatWindowFrame from "./ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
-import ExpensePopup from "./ExpensePopup.vue";
 const main = useMainStore(),
   chat = useTeamChatStore(),
   route = useRoute(),
   dismissed = ref([]),
   role = ref("employee"),
   approvalError = ref("");
-const approvalPanel = ref(null),
-  edit = ref(null),
-  editError = ref(""),
-  savingPlacement = ref(false),
-  editConflict = ref(false);
-async function editRequest(event) {
-  const info = event.detail || {},
-    row =
-      chat.state.requests.find((r) => r._id === info.id) ||
-      chat.state.placements?.find((r) => r._id === info.id);
-  if (!row || !chat.me?.owner || savingPlacement.value) return;
-  editError.value = "";
-  editConflict.value = false;
-  delete document.body.dataset.teamRequestDragging;
-  if (row.state !== "manager_review") {
-    chat.tab = "tasks";
-    chat.requestedRequestId = row._id;
-    chat.show();
-    return;
-  }
-  if (
-    !main.contractors.some((c) => c._id === row.contractorId) ||
-    !main.accounts.length
-  ) {
-    const workspace = chat.me.workspaceId;
-    try {
-      await main.fetchAllEntities();
-    } catch (e) {
-      editError.value = teamError(e);
-      return;
-    }
-    if (chat.me?.workspaceId !== workspace) return;
-  }
-  const date = info.date
-      ? new Date(info.date)
-      : new Date(row.dueDate + "T12:00:00+05:00"),
-    cell = Number.isInteger(info.cellIndex)
-      ? info.cellIndex
-      : row.placement?.cellIndex || 0;
-  const desiredDate = info.dateKey
-    ? new Date(
-        Date.UTC(
-          Number(info.dateKey.split("-")[0]),
-          0,
-          Number(info.dateKey.split("-")[1]),
-        ),
-      )
-        .toISOString()
-        .slice(0, 10)
-    : row.dueDate;
-  const operation = {
-    dueDate: desiredDate,
-    ...row.placement,
-    amount: -row.amountCents / 100,
-    date,
-    cellIndex: cell,
-    companyId: row.companyId,
-    contractorId: row.contractorId,
-    categoryId: row.categoryId,
-    subcategoryId: row.subcategoryId,
-    projectId: row.projectId || row.placement?.projectId,
-    projectIds:
-      row.placement?.projectIds || (row.projectId ? [row.projectId] : []),
-    description: row.placement?.description || row.title,
-    comment: row.comment || "",
-  };
-  if (info.drop && row.placement) {
-    try {
-      await chat.action(`/requests/${row._id}/placement`, {
-        expectedVersion: row.version,
-        operation,
-        mutationId: crypto.randomUUID(),
-      });
-      chat.tab = "tasks";
-      return;
-    } catch (e) {
-      editError.value = teamError(e);
-    }
-  }
-  chat.open = false;
-  chat.tab = "tasks";
-  edit.value = { row, date, cell, operation, key: crypto.randomUUID() };
-}
-async function savePlacement(payload) {
-  if (!edit.value || savingPlacement.value) return;
-  savingPlacement.value = true;
-  editError.value = "";
-  editConflict.value = false;
-  const current = edit.value,
-    workspace = chat.me?.workspaceId;
-  const fingerprint = JSON.stringify(payload);
-  if (current.mutation?.fingerprint !== fingerprint)
-    current.mutation = { fingerprint, id: crypto.randomUUID() };
-  try {
-    const result = await chat.action(`/requests/${current.row._id}/placement`, {
-      expectedVersion: current.row.version,
-      mutationId: current.mutation.id,
-      operation: payload.data,
-      submit: payload.submit,
-    });
-    if (chat.me?.workspaceId !== workspace || edit.value !== current || !result)
-      return;
-    chat.requestedRequestId = current.row._id;
-    const row = result.request;
-    chat.notice = `${payload.submit ? "Передано руководителю" : "Заявка размещена"} · ${row.dueDate.split("-").reverse().join(".")} · ${row.placement.accountName}`;
-    edit.value = null;
-    editError.value = "";
-    chat.tab = "tasks";
-    chat.show();
-  } catch (e) {
-    if (chat.me?.workspaceId !== workspace || edit.value !== current) return;
-    editConflict.value =
-      e.response?.status === 409 &&
-      /^(Заявка изменилась|Верните заявку)/.test(
-        e.response?.data?.message || "",
-      );
-    editError.value = editConflict.value
-      ? "Другой участник изменил заявку. Ваши данные остались в форме; загрузите актуальные реквизиты перед повторной отправкой."
-      : teamError(e);
-  } finally {
-    savingPlacement.value = false;
-  }
-}
-async function reloadEditor() {
-  if (!edit.value || savingPlacement.value) return;
-  const id = edit.value.row._id;
-  await chat.refresh();
-  const row = chat.state.requests.find((r) => r._id === id);
-  editError.value = "";
-  editConflict.value = false;
-  if (!row) {
-    edit.value = null;
-    chat.notice = "Заявка удалена другим участником";
-    chat.show();
-    return;
-  }
-  edit.value = null;
-  await editRequest({ detail: { id } });
-}
-function closeEditor() {
-  if (savingPlacement.value) return;
-  edit.value = null;
-  editError.value = "";
-  editConflict.value = false;
-  chat.tab = "tasks";
-  chat.show();
-}
-window.addEventListener("index12:edit-team-request", editRequest);
+const approvalPanel = ref(null);
 
 let approvalFocus;
 function approvalKeys(event) {
@@ -209,9 +61,6 @@ watch(
   ],
   ([actor, workspace, publicPage]) => {
     dismissed.value = [];
-    edit.value = null;
-    editError.value = "";
-    editConflict.value = false;
     if (publicPage) return;
     if (actor && workspace)
       void chat.start(String(workspace)).then(() => {
@@ -248,7 +97,6 @@ onBeforeUnmount(() => {
   navigator.serviceWorker?.removeEventListener("message", notificationOpened);
   window.removeEventListener("index12:open-team-chat", show);
   window.removeEventListener("index12:team-operation-created", created);
-  window.removeEventListener("index12:edit-team-request", editRequest);
   chat.stop();
 });
 async function decide(status) {
@@ -279,31 +127,6 @@ async function decide(status) {
       ><TeamChatHeader @close="close" @logout="chat.open = false" /></template
     ><TeamChatPane :mobile="route.name === 'mobile-home'"
   /></ChatWindowFrame>
-  <Teleport to="body"
-    ><ExpensePopup
-      v-if="edit"
-      :key="edit.key"
-      :date="edit.date"
-      :cell-index="edit.cell"
-      :operation-to-edit="edit.operation"
-      approval-request
-      :approval-request-id="edit.row._id"
-      :approval-saving="savingPlacement"
-      :approval-conflict="editConflict"
-      :approval-error="editError"
-      @reload-approval="reloadEditor"
-      @close="closeEditor"
-      @approval-save="savePlacement"
-    />
-    <div
-      v-if="editError && !edit"
-      class="placement-error"
-      role="alert"
-      @click="editError = ''"
-    >
-      {{ editError }}
-    </div></Teleport
-  >
   <Teleport to="body"
     ><div v-if="pending" class="team-approval-backdrop">
       <section

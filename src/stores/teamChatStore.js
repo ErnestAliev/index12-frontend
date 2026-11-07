@@ -19,10 +19,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     historyReady = ref(false);
   const notice = ref(""),
     olderMessageIds = ref([]);
+  const taskNotifications = ref(false);
+  const requestedTaskMessageId = ref(null);
   const tab = ref("messages"),
-    requestedRequestId = ref(null);
+    requestedTaskId = ref(null);
   const me = ref(null),
-    state = ref({ messages: [], requests: [], members: [], companies: [] }),
+    state = ref({ messages: [], tasks: [], members: [], people: [] }),
     error = ref(""),
     open = ref(false),
     busy = ref(false),
@@ -36,12 +38,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   );
   const actionable = computed(
     () =>
-      state.value.requests.filter(
-        (r) =>
-          (r.state === "manager_review" &&
-            (me.value?.owner || me.value?.role === "manager")) ||
-          (r.state === "director_review" && me.value?.role === "director") ||
-          (r.state === "ready" && me.value?.owner),
+      (state.value.tasks || []).filter(
+        (task) => task.unreadCount || task.mentioned,
       ).length,
   );
   let generation = 0,
@@ -54,30 +52,24 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     workspace = "",
     lastMessage = "",
     messageQueue = Promise.resolve(),
-    loaded = false,
-    pendingSnapshot = null,
-    dragFlush;
+    loaded = false;
   function stop() {
     ++generation;
     ++ticket;
     clearInterval(timer);
     clearTimeout(debounce);
-    clearTimeout(dragFlush);
-    pendingSnapshot = null;
-    if (document.body?.dataset)
-      delete document.body.dataset.teamRequestDragging;
-    document.removeEventListener("drop", finishDrag, { capture: true });
-    document.removeEventListener("dragend", finishDrag, { capture: true });
     debounce = null;
     source?.close();
     source = null;
     me.value = null;
-    state.value = { messages: [], requests: [], members: [], companies: [] };
+    state.value = { messages: [], tasks: [], members: [], people: [] };
     notice.value = "";
     olderMessageIds.value = [];
     open.value = false;
     tab.value = "messages";
-    requestedRequestId.value = null;
+    requestedTaskId.value = null;
+    requestedTaskMessageId.value = null;
+    taskNotifications.value = false;
     unread.value = 0;
     busy.value = false;
     error.value = "";
@@ -100,29 +92,11 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     lastMessage = newest;
     loaded = true;
     historyReady.value = true;
-    state.value = {
-      ...data,
-      ...(!Object.hasOwn(data, "financial")
-        ? { financial: state.value.financial }
-        : {}),
-    };
+    state.value = data;
     const confirmed = new Set(data.messages.map((row) => row._id));
     outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
     if (data.identity) me.value = data.identity;
     error.value = "";
-  }
-  function finishDrag() {
-    if (!me.value) return;
-    const g = generation;
-    clearTimeout(dragFlush);
-    dragFlush = setTimeout(() => {
-      if (g !== generation) return;
-      if (document.body?.dataset)
-        delete document.body.dataset.teamRequestDragging;
-      const p = pendingSnapshot;
-      pendingSnapshot = null;
-      if (p && p.g === generation && p.t === ticket) acceptSnapshot(p.data);
-    }, 0);
   }
   async function refresh() {
     const g = generation,
@@ -142,9 +116,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         },
       });
       if (g !== generation || t !== ticket) return;
-      if (document.body?.dataset?.teamRequestDragging === "true")
-        pendingSnapshot = { data, g, t };
-      else acceptSnapshot(data);
+      acceptSnapshot(data);
     } catch (e) {
       if (g === generation && t === ticket) {
         error.value = teamError(e);
@@ -157,7 +129,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
           source?.close();
           state.value = {
             messages: [],
-            requests: [],
+            tasks: [],
             members: [],
             companies: [],
           };
@@ -224,8 +196,6 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
       me.value = data;
-      document.addEventListener("drop", finishDrag, { capture: true });
-      document.addEventListener("dragend", finishDrag, { capture: true });
       window.addEventListener("focus", wake);
       document.addEventListener("visibilitychange", wake);
       timer = setInterval(() => {
@@ -256,18 +226,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       if (data.identity) me.value = data.identity;
       // The mutation is already committed. A subsequent refresh failure must not turn it into a failed save.
       ++ticket;
-      if (data.request) {
-        if (state.value.activeRequestCosts) {
-          const costs = state.value.activeRequestCosts.filter(
-            (r) => r._id !== data.request._id,
-          );
-          state.value.activeRequestCosts = [...costs, data.request];
-        }
-        const index = state.value.requests.findIndex(
-          (r) => r._id === data.request._id,
+      if (data.task) {
+        const index = state.value.tasks.findIndex(
+          (t) => t._id === data.task._id,
         );
-        if (index < 0) state.value.requests.unshift(data.request);
-        else state.value.requests[index] = data.request;
+        if (index < 0) state.value.tasks.unshift(data.task);
+        else state.value.tasks[index] = data.task;
       }
       if (data.message)
         state.value.messages = [
@@ -278,16 +242,6 @@ export const useTeamChatStore = defineStore("teamChat", () => {
             a.createdAt.localeCompare(b.createdAt) ||
             a._id.localeCompare(b._id),
         );
-      if (data.deletedRequestId) {
-        state.value.requests = state.value.requests.filter(
-          (r) => r._id !== data.deletedRequestId,
-        );
-        if (state.value.activeRequestCosts)
-          state.value.activeRequestCosts =
-            state.value.activeRequestCosts.filter(
-              (r) => r._id !== data.deletedRequestId,
-            );
-      }
       if (data.deletedMessageId)
         state.value.messages = state.value.messages.filter(
           (m) => m._id !== data.deletedMessageId,
@@ -416,7 +370,9 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     notice,
     olderMessageIds,
     tab,
-    requestedRequestId,
+    requestedTaskId,
+    requestedTaskMessageId,
+    taskNotifications,
     state,
     error,
     open,

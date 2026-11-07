@@ -1,6 +1,13 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  back: "m15 6-6 6 6 6",
+  calendar: "M4 5h16v16H4zM8 3v4m8-4v4M4 10h16",
+  clock: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2",
+  mic: "M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0V5ZM5 11v1a7 7 0 0 0 14 0v-1M12 19v3m-4 0h8",
+  filter: "M4 6h16M7 12h10M10 18h4",
+  search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
+
   menu: "M4 6h16M4 12h16M4 18h16",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   sun: "M12 3V1m0 22v-2M3 12H1m22 0h-2M4.2 4.2l1.4 1.4m12.8 12.8 1.4 1.4M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M17 12a5 5 0 1 1-10 0 5 5 0 0 1 10 0",

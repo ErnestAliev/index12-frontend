@@ -135,7 +135,7 @@ export async function verifyNotificationMenu({
     const labels = (await menu.locator("button").allTextContents()).map((t) =>
       t.trim(),
     );
-    assert.deepEqual(labels.slice(0, 3), ["Чат", "Заявки", "Задачи"]);
+    assert.deepEqual(labels.slice(0, 2), ["Чат", "Задачи"]);
     assert.equal(labels.at(-1), "Выйти");
     assert.equal(
       await menu

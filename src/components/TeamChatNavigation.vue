@@ -33,9 +33,7 @@ const chat = useTeamChatStore(),
 const menuId = useId();
 const sections = computed(() => [
   { value: "messages", label: "Чат" },
-  { value: "requests", label: "Заявки" },
   { value: "tasks", label: "Задачи" },
-  ...(chat.isOwner ? [{ value: "members", label: "Роли и участники" }] : []),
 ]);
 const label = computed(
   () =>
@@ -205,6 +203,20 @@ onBeforeUnmount(() => {
           />{{ s.label }}
         </button>
         <hr />
+        <button
+          type="button"
+          @click="
+            chat.taskNotifications = true;
+            close();
+          "
+        >
+          <UiIcon name="bell" />Уведомления<span v-if="chat.actionable">{{
+            chat.actionable
+          }}</span>
+        </button>
+        <button v-if="chat.isOwner" type="button" @click="select('members')">
+          <UiIcon name="settings" />Роли и участники
+        </button>
         <span class="team-navigation-group">Настройки чата</span>
         <button type="button" @click="theme">
           <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{

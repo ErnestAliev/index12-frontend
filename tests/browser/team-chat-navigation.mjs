@@ -100,8 +100,8 @@ export async function verifyTopNavigation(page, frame, output) {
     );
     const labels = await menu.locator("button").allTextContents();
     assert.deepEqual(
-      labels.slice(0, 3).map((t) => t.trim()),
-      ["Чат", "Заявки", "Задачи"],
+      labels.slice(0, 2).map((t) => t.trim()),
+      ["Чат", "Задачи"],
     );
     assert.equal(labels.at(-1).trim(), "Выйти");
     const focus = await trigger.evaluate((el) => ({

@@ -7,9 +7,9 @@ const tick = () => new Promise((r) => setImmediate(r)),
   settle = () => new Promise((r) => setTimeout(r, 120));
 const empty = () => ({
   messages: [],
-  requests: [],
+  tasks: [],
   members: [],
-  companies: [],
+  people: [],
 });
 before(async () => {
   globalThis.window = Object.assign(new EventTarget(), {
@@ -368,32 +368,16 @@ test("member changes use one foreground request and apply the returned member wi
   s.stop();
 });
 
-test("background state cannot move a dragged request, and its deferred snapshot is discarded on logout", async () => {
-  const s = fixture();
-  let messages = [];
-  teamApi.defaults.adapter = async (config) => ({
-    status: 200,
-    data:
-      config.url === "/me"
-        ? { workspaceId: "drag", status: "active" }
-        : { ...empty(), messages },
-  });
-  await s.start("drag");
-  document.body = { dataset: { teamRequestDragging: "true" } };
-  messages = [{ _id: "new", text: "Arrived during drag" }];
-  await s.refresh();
-  assert.equal(s.state.messages.length, 0);
-  document.dispatchEvent(new Event("drop"));
-  await new Promise((r) => setTimeout(r, 10));
-  assert.equal(s.state.messages[0]._id, "new");
-  document.body.dataset.teamRequestDragging = "true";
-  messages = [{ _id: "later", text: "Private deferred message" }];
-  await s.refresh();
-  s.stop();
-  document.dispatchEvent(new Event("dragend"));
-  await tick();
-  assert.equal(s.me, null);
-  assert.deepEqual(s.state.messages, []);
-  assert.equal(document.body.dataset.teamRequestDragging, undefined);
-  delete document.body;
+test("task mutations merge immediately, preserve identity and discard session state on logout", async () => {
+ const s=fixture();
+ teamApi.defaults.adapter=async config=>({status:200,data:config.url==="/me"?{workspaceId:"tasks",actorId:"actor",status:"active"}:config.method==="patch"?{task:{_id:"task",status:"done",version:2}}:empty()});
+ await s.start("tasks");
+ s.state.tasks=[{_id:"task",status:"open",version:1}];
+ await s.action("/tasks/task",{expectedVersion:1,status:"done"},"patch");
+ assert.equal(s.state.tasks.length,1);
+ assert.equal(s.state.tasks[0].status,"done");
+ assert.equal(s.me.actorId,"actor");
+ s.stop();
+ assert.deepEqual(s.state.tasks,[]);
+ assert.equal(s.requestedTaskId,null);
 });

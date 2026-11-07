@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
 defineProps({ disabled: Boolean });
-const emit = defineEmits(["request", "file"]),
+const emit = defineEmits(["task", "file"]),
   open = ref(false),
   root = ref(null),
   button = ref(null);
@@ -62,10 +62,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", close));
       <button
         type="button"
         role="menuitem"
-        class="team-add-expense"
-        @click="choose('request')"
+        class="team-add-task"
+        @click="choose('task')"
       >
-        <UiIcon name="plus" />Создать заявку</button
+        <UiIcon name="plus" />Новая задача</button
       ><button type="button" role="menuitem" @click="choose('file')">
         <UiIcon name="attach" />Загрузить файл или фото
       </button>
@@ -126,8 +126,8 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", close));
 .team-add-options button:focus-visible {
   background: var(--codex-pane-surface-soft) !important;
 }
-.team-add-options .team-add-expense {
-  color: var(--color-danger, #c65048);
+.team-add-options .team-add-task {
+  color: var(--codex-pane-text);
 }
 @media (max-width: 480px) {
   .team-add-trigger {

@@ -85,4 +85,14 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
   await waiting;
   assert.equal(opened.length, 1);
   assert.equal(messages[0].workspaceId, workspace);
+  const taskId = "11111111-1111-4111-8111-111111111111";
+  self.clients.matchAll = async () => [{
+    url: origin + "/?teamChat=" + workspace + "&task=" + taskId + "&message=" + taskId,
+    focus: async () => {}, postMessage: m => messages.push(m),
+  }];
+  handlers.notificationclick({notification:{data:{...shown[0].data,taskId,messageId:taskId},close(){}},waitUntil:p=>{waiting=p;}});
+  await waiting;
+  assert.equal(opened.length,1,"task notifications reuse the open chat window");
+  assert.equal(messages.at(-1).taskId,taskId);
+  assert.equal(messages.at(-1).messageId,taskId);
 });

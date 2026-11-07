@@ -36,7 +36,12 @@ self.addEventListener("push", (event) => {
         icon: "/chat-192.png",
         badge: "/chat-badge.png",
         tag: data.tag,
-        data: { url: url.href, workspaceId: data.workspaceId },
+        data: {
+          url: url.href,
+          workspaceId: data.workspaceId,
+          taskId: data.taskId,
+          messageId: data.messageId,
+        },
       });
       if (data.testId) {
         const windows = await self.clients.matchAll({
@@ -64,16 +69,33 @@ self.addEventListener("notificationclick", (event) => {
         type: "window",
         includeUncontrolled: true,
       });
-      const existing = windows.find(
-        (client) => client.url.split("#")[0] === url,
-      );
+      const existing = windows.find((client) => {
+        const current = new URL(client.url);
+        current.hash = "";
+        current.searchParams.delete("task");
+        current.searchParams.delete("message");
+        return current.href === url;
+      });
       if (existing) {
         await existing.focus();
         existing.postMessage({
           type: "team:refresh",
           workspaceId: event.notification.data?.workspaceId,
+          taskId: event.notification.data?.taskId,
+          messageId: event.notification.data?.messageId,
         });
-      } else await self.clients.openWindow(url);
+      } else {
+        const destination = new URL(url);
+        if (/^[a-f\d-]{36}$/i.test(event.notification.data?.taskId || "")) {
+          destination.searchParams.set("task", event.notification.data.taskId);
+          if (/^[a-f\d-]{36}$/i.test(event.notification.data?.messageId || ""))
+            destination.searchParams.set(
+              "message",
+              event.notification.data.messageId,
+            );
+        }
+        await self.clients.openWindow(destination.href);
+      }
     })(),
   );
 });

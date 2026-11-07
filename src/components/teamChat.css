@@ -122,9 +122,7 @@
   background: var(--codex-pane-user);
   border-color: var(--codex-pane-user-border);
 }
-.team-bubble header,
-.team-request header,
-.team-convert header {
+.team-bubble header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -134,8 +132,7 @@
   font-size: 12px;
   font-weight: 500;
 }
-.team-bubble time,
-.team-request time {
+.team-bubble time {
   font-size: 11px;
   color: var(--codex-pane-muted);
   white-space: nowrap;
@@ -242,13 +239,6 @@
   flex: 1;
   overscroll-behavior: contain;
 }
-.team-pane .team-request-new {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  margin-bottom: 16px;
-}
 .team-form,
 .team-settings {
   display: flex;
@@ -261,79 +251,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.team-request {
-  padding: 16px;
-  margin-bottom: 12px;
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 12px;
-  background: var(--codex-pane-surface);
-}
-.team-request > strong {
-  display: block;
-  font-weight: 500;
-  margin-top: 12px;
-  line-height: 1.5;
-}
-.team-status {
-  font-size: 11px;
-  color: var(--codex-pane-muted);
-}
-.team-request[data-state="ready"] .team-status {
-  color: var(--codex-pane-accent);
-}
-.team-request[data-state="rejected"] {
-  opacity: 0.65;
-}
-.team-request-amount {
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
-  margin: 8px 0;
-}
-.team-request p,
-.team-request details {
-  color: var(--codex-pane-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.team-decisions {
-  display: flex;
-  gap: 8px;
-}
-.team-request details {
-  margin-top: 12px;
-}
-.team-forecast {
-  border-bottom: 1px solid var(--codex-pane-border);
-  padding-bottom: 16px;
-  margin-bottom: 16px;
-}
-.team-forecast article {
-  margin-bottom: 16px;
-}
-.team-forecast strong {
-  font-weight: 500;
-}
-.team-forecast dl {
-  font-size: 12px;
-  line-height: 1.6;
-}
-.team-forecast dl div,
 .team-balance {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-}
-.team-forecast dt {
-  color: var(--codex-pane-muted);
-}
-.team-forecast dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.team-forecast p {
-  font-size: 12px;
-  margin: 8px 0;
 }
 .negative,
 .team-error {
@@ -344,10 +265,6 @@
   font-size: 12px;
   line-height: 1.5;
   flex-shrink: 0;
-}
-.team-forecast summary {
-  font-size: 12px;
-  cursor: pointer;
 }
 .team-balance {
   font-size: 12px;
@@ -374,19 +291,6 @@
   justify-content: space-between;
   gap: 8px;
 }
-.team-convert {
-  position: absolute;
-  inset: 52px 12px 12px;
-  overflow: auto;
-  background: var(--codex-pane-bg);
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 12px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  z-index: 2;
-}
 .team-pane summary {
   cursor: pointer;
 }
@@ -404,9 +308,6 @@
   }
   .team-tabs {
     justify-content: space-between;
-  }
-  .team-convert {
-    inset: 56px 12px max(12px, env(safe-area-inset-bottom));
   }
   .team-composer {
     padding-bottom: max(12px, env(safe-area-inset-bottom));
@@ -438,14 +339,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.team-pane .team-expense-primary {
-  background: var(--codex-pane-danger);
-  color: #fff;
-  border-color: transparent;
-}
-.team-expense-form {
-  gap: 12px;
-}
 .team-compose-area {
   flex-shrink: 0;
   min-width: 0;
@@ -456,33 +349,6 @@
 }
 .team-compose-area .team-staged {
   padding: 8px 12px 0;
-}
-.team-pdf-question {
-  padding-top: 12px;
-  border-top: 1px solid var(--codex-pane-border);
-  margin-top: 8px;
-  font-size: 12px;
-}
-.team-pdf-question > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-.team-pdf-question button {
-  font-size: 11px !important;
-  padding: 6px 8px !important;
-}
-.team-pane .team-request-new {
-  background: var(--codex-pane-danger);
-  color: white;
-  border: 0;
-}
-
-.team-pane .team-expense-primary,
-.team-pane .team-request-new {
-  background: #b7433b;
-  color: #fff;
 }
 
 .team-role {
@@ -534,30 +400,6 @@
 }
 .team-pane .team-message-actions .team-copy {
   margin: 0;
-}
-.team-account-forecast {
-  border-top: 1px solid var(--codex-pane-border);
-  padding: 12px 0;
-}
-.team-account-forecast > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  list-style: none;
-}
-.team-account-forecast > summary small {
-  display: block;
-  margin-top: 4px;
-  color: var(--codex-pane-muted);
-  font-size: 11px;
-}
-.team-account-forecast > summary > span:last-child {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.team-account-forecast dl {
-  margin: 12px 0 0;
 }
 @media (max-width: 400px) {
   .team-identity {
@@ -623,21 +465,6 @@
   scroll-padding: 12px;
   padding: 8px 12px 16px;
 }
-.team-request-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin: 0 0 12px;
-}
-.team-pane .team-request-new {
-  width: auto;
-  min-height: 36px;
-  margin: 0;
-  padding: 8px 12px;
-  justify-content: center;
-  gap: 8px;
-  font-size: 13px;
-}
 .team-form-heading {
   display: flex;
   align-items: center;
@@ -645,27 +472,6 @@
   gap: 12px;
   font-size: 13px;
   font-weight: 500;
-}
-.team-pane .team-small-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--codex-pane-muted);
-}
-.team-expense-form {
-  gap: 8px;
-  padding: 0;
-}
-.team-expense-form input:not([hidden]),
-.team-expense-form textarea {
-  font-size: 16px;
-}
-.team-expense-form input:not([hidden]) {
-  height: 44px;
 }
 .team-fields {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -716,15 +522,6 @@
   outline: 2px solid var(--codex-pane-focus);
   outline-offset: 2px;
 }
-.team-expense-form textarea {
-  min-height: 64px;
-  max-height: 140px;
-  resize: vertical;
-  padding: 10px 12px;
-}
-.team-expense-form > button {
-  min-height: 44px;
-}
 @media (max-width: 359px) {
   .team-tabs {
     margin-left: 8px;
@@ -751,29 +548,6 @@
   margin-left: 4px;
   color: inherit;
   opacity: 0.75;
-}
-.team-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.team-title-row > .team-title-field {
-  flex: 1;
-  min-width: 0;
-}
-.team-title-row > .team-small-icon {
-  flex: none;
-  height: 44px;
-  width: 32px;
-}
-
-.team-expense-form > .team-request-submit {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  flex: none;
-  box-shadow: 0 -8px 0 var(--codex-pane-bg);
 }
 
 .team-bubble {
@@ -868,9 +642,6 @@
 .team-mention-list button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;border:0;background:transparent;font-size:13px;text-align:left}
 .team-mention-list button[aria-selected="true"]{background:var(--codex-pane-surface-soft)}
 .team-mention-list small{color:var(--codex-pane-muted);font-size:11px}
-.team-rejection-reason{margin:8px 0 0;padding:8px;border-left:2px solid var(--color-danger,#c65048);color:var(--codex-pane-text);font-size:13px;white-space:pre-wrap}
-.team-scroll:has(>.team-request-create-tab){display:flex;flex-direction:column}
-.team-request-create-tab{display:flex;flex:1;align-items:flex-end;justify-content:center;min-height:120px;padding:12px 0}
 .team-tabs{overflow-x:auto;scrollbar-width:none;flex:none}.team-tabs::-webkit-scrollbar{display:none}.team-tabs button{white-space:nowrap;flex:none}
 @media(max-width:480px){.team-tabs{gap:2px!important;padding-right:4px}.team-tabs button{padding-right:8px!important;padding-left:8px!important;font-size:12px!important}}
 
@@ -882,8 +653,9 @@
 .team-message.reply-target>.team-bubble{box-shadow:0 0 0 2px var(--codex-pane-accent)}
 .team-original-message{overflow-y:auto;min-height:0;padding:16px;font-size:14px}
 @media(prefers-reduced-motion:reduce){.team-bubble{transition:none}}
-.team-account-forecast>summary>span:first-child{display:block;min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.team-account-forecast>summary>span:last-child{flex:none;white-space:nowrap}
 
-/* Bottom actions in requests, tasks and roles, independent of the message composer. */
+/* Bottom actions in chat and participant settings, independent of the message composer. */
 .team-scroll { padding-bottom: var(--chat-composer-bottom-space, 16px); }
+
+.team-message.task-message { width:100%;max-width:100%;align-self:stretch; }
+.team-message.task-message > .team-bubble { width:100%;max-width:100%;padding:0;border:0;background:transparent;box-shadow:none; }

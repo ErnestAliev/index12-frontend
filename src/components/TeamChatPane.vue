@@ -10,17 +10,10 @@ import {
 import UiIcon from "./UiIcon.vue";
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
-import TeamRequestForm from "./TeamRequestForm.vue";
-import TeamRejectDialog from "./TeamRejectDialog.vue";
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
-import TeamChatRequestMessage from "./TeamChatRequestMessage.vue";
-import { decisionStatus } from "@/utils/teamRequestStatus";
-import {
-  accountLabel,
-  accountRequestForecast,
-  liveRequestCosts,
-} from "@/utils/teamCashForecast";
-import TeamRequestCard from "./TeamRequestCard.vue";
+import { decisionStatus } from "@/utils/teamMessageStatus";
+import TeamTaskPanel from "./TeamTaskPanel.vue";
+import TeamTaskCover from "./TeamTaskCover.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamChatMembers from "./TeamChatMembers.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
@@ -43,7 +36,6 @@ const chat = useTeamChatStore(),
   mentionIndex = ref(0),
   mentionRange = ref(null),
   mentionedPeople = ref([]),
-  rejecting = ref(null),
   replyDraft = ref(null),
   quoteView = ref(null),
   quoteError = ref(""),
@@ -84,6 +76,7 @@ function cancelHold() {
   holdTimer = null;
 }
 function openMessageMenu(row, touchHold = false) {
+  if (row.kind === "task") return;
   cancelHold();
   resetSwipe();
   if (row._delivery || selectedMessageId.value === row._id) return;
@@ -91,6 +84,7 @@ function openMessageMenu(row, touchHold = false) {
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
+  if (row.kind === "task") return;
   if (
     event.button !== 0 ||
     selectedMessage.value ||
@@ -101,9 +95,7 @@ function holdMessage(event, row) {
   suppressedClick = null;
   holdStart = { x: event.clientX, y: event.clientY };
   gesture =
-    !row._delivery &&
-    row.kind !== "request" &&
-    !event.target.closest("button,a")
+    !row._delivery && row.kind !== "task" && !event.target.closest("button,a")
       ? {
           id: row._id,
           pointerId: event.pointerId,
@@ -327,10 +319,27 @@ function revealField() {
       scroll.value.scrollTop -= area.top - box.top + 12;
   });
 }
-function startRequest() {
+function startTask() {
   creating.value = true;
   localError.value = "";
-  chat.notice = "";
+}
+function openTask(id) {
+  chat.requestedTaskMessageId = null;
+  chat.requestedTaskId = id;
+}
+function openNotification(event) {
+  const data = event.data;
+  if (
+    data?.type === "team:refresh" &&
+    data.workspaceId === chat.me?.workspaceId &&
+    /^[a-f\d-]{36}$/i.test(data.taskId || "")
+  ) {
+    chat.requestedTaskMessageId = /^[a-f\d-]{36}$/i.test(data.messageId || "")
+      ? data.messageId
+      : null;
+    chat.requestedTaskId = data.taskId;
+    chat.show();
+  }
 }
 
 watch(
@@ -347,10 +356,22 @@ watch(
 onMounted(async () => {
   window.visualViewport?.addEventListener("resize", revealField);
   window.addEventListener("index12:chat-dialog-closed", scheduleReads);
+  navigator.serviceWorker?.addEventListener("message", openNotification);
+  const query = new URLSearchParams(location.search);
+  if (/^[a-f\d-]{36}$/i.test(query.get("task") || ""))
+    openNotification({
+      data: {
+        type: "team:refresh",
+        workspaceId: chat.me?.workspaceId,
+        taskId: query.get("task"),
+        messageId: query.get("message"),
+      },
+    });
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
 });
 onBeforeUnmount(() => {
+  navigator.serviceWorker?.removeEventListener("message", openNotification);
   clearTimeout(noticeTimer);
   clearTimeout(highlightTimer);
   clearTimeout(readTimer);
@@ -361,53 +382,10 @@ onBeforeUnmount(() => {
   window.removeEventListener("index12:chat-dialog-closed", scheduleReads);
   chat.notice = "";
 });
-const draft = ref({
-  title: "",
-  categoryId: null,
-  projectId: null,
-  subcategoryId: null,
-  amount: "",
-  contractorId: null,
-  contractorName: "",
-  comment: "",
-  dueDate: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Almaty" }).format(
-    new Date(),
-  ),
-  id: crypto.randomUUID(),
-});
 watch(tab, (value) => {
   if (value !== "messages") dictation.stop();
   chat.schedule();
 });
-watch(
-  () => chat.requestedRequestId,
-  (id) => {
-    if (id) {
-      focusedRequest.value = id;
-      tab.value = "tasks";
-    }
-  },
-);
-const processingPdf = ref(null),
-  focusedRequest = ref(chat.requestedRequestId || null);
-const money = (cents) =>
-  new Intl.NumberFormat("ru-KZ", {
-    style: "currency",
-    currency: "KZT",
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
-const accountForecasts = computed(() =>
-  (chat.state.financial?.accounts || []).map((a) =>
-    accountRequestForecast(
-      a,
-      liveRequestCosts(chat.state.activeRequestCosts, chat.state.requests),
-      chat.state.financial.asOf,
-    ),
-  ),
-);
-const isReviewer = computed(
-  () => chat.isOwner || ["manager", "director"].includes(chat.me?.role),
-);
 const shownMessages = computed(() =>
   [
     ...older.value.filter(
@@ -419,7 +397,11 @@ const shownMessages = computed(() =>
     ),
   ]
     .filter(
-      (m) => !m.deletedAt && !chat.state.deletedMessageIds?.includes(m._id),
+      (m) =>
+        !m.deletedAt &&
+        m.kind !== "request" &&
+        (!m.taskId || m.kind === "task") &&
+        !chat.state.deletedMessageIds?.includes(m._id),
     )
     .sort(
       (a, b) =>
@@ -741,119 +723,30 @@ async function loadGap(gap) {
     if (workspaceId === chat.me?.workspaceId) loadingGap.value = null;
   }
 }
-async function createRequest(value) {
-  draft.value = { ...value };
-  const result = await run(() =>
-    chat.action("/requests", {
-      ...draft.value,
-      amount: draft.value.amount.replace(/\s/g, ""),
-    }),
-  );
-  if (result) {
-    creating.value = false;
-    focusedRequest.value = result.request._id;
-    chat.requestedRequestId = null;
-    tab.value = "messages";
-    draft.value = {
-      ...draft.value,
-      title: "",
-      categoryId: null,
-      subcategoryId: null,
-      projectId: null,
-      amount: "",
-      comment: "",
-      id: crypto.randomUUID(),
-    };
-  }
-}
-async function decide(row, action, note = "") {
-  if (action === "reject" && !note) {
-    localError.value = "";
-    rejecting.value = row;
-    return;
-  }
-  const result = await run(() =>
-    chat.action(`/requests/${row._id}/decision`, {
-      action,
-      note,
-      expectedVersion: row.version,
-    }),
-  );
-  if (result) rejecting.value = null;
-}
-function editRequest(row) {
-  window.dispatchEvent(
-    new CustomEvent("index12:edit-team-request", { detail: { id: row._id } }),
-  );
-}
-async function convert(row) {
-  const result = await run(() =>
-    chat.action(`/requests/${row._id}/convert`, {
-      expectedVersion: row.version,
-    }),
-  );
-  if (result) window.dispatchEvent(new Event("index12:team-operation-created"));
-}
-async function recall(row) {
-  await run(() =>
-    chat.action(`/requests/${row._id}/recall`, {
-      expectedVersion: row.version,
-    }),
-  );
-}
-async function processPdf(message, file) {
-  processingPdf.value = file.fileId;
-  await run(async () => {
-    const { data } = await teamApi.post(
-      `/messages/${message._id}/files/${file.fileId}/invoice`,
-      {},
-      { timeout: 200000 },
-    );
-    await chat.refresh();
-    focusedRequest.value = data.request._id;
-    tab.value = "tasks";
-  });
-  processingPdf.value = null;
-}
-async function dismissPdf(message, file) {
-  await run(() =>
-    chat.action(`/messages/${message._id}/files/${file.fileId}/dismiss`, {}),
-  );
-}
-async function removeRequest(row) {
-  const question = row.operationId
-    ? "Удалить карточку заявки? Записанный расход останется на таймлайне."
-    : "Удалить заявку и её черновик с таймлайна?";
-  if (!window.confirm(question)) return;
-  const result = await run(() =>
-    chat.action(
-      `/requests/${row._id}`,
-      { expectedVersion: row.version },
-      "delete",
-    ),
-  );
-  if (result) chat.notice = "";
-}
-async function copy(text) {
-  await run(() => navigator.clipboard.writeText(text));
-}
 </script>
 <template>
-  <div class="team-pane">
-    <TeamRequestForm
-      v-if="creating"
-      v-model="draft"
-      :busy="chat.busy"
-      :error="localError || chat.error"
-      @close="creating = false"
-      @submit="createRequest"
-    />
-    <TeamRejectDialog
-      v-if="rejecting"
-      :busy="chat.busy"
-      :error="localError || chat.error"
-      @close="rejecting = null"
-      @submit="decide(rejecting, 'reject', $event)"
+  <div class="team-pane" style="position: relative">
+    <TeamTaskPanel
+      v-if="
+        creating ||
+        chat.requestedTaskId ||
+        chat.taskNotifications ||
+        tab === 'tasks'
+      "
+      :creating="creating"
+      :task-id="chat.requestedTaskId"
+      :notifications="chat.taskNotifications"
+      @close="
+        creating = false;
+        chat.requestedTaskId = null;
+        chat.requestedTaskMessageId = null;
+        chat.taskNotifications = false;
+      "
+      @created="
+        creating = false;
+        tab = 'messages';
+      "
+      @new="startTask"
     />
     <TeamMessageMenu
       v-if="selectedMessage"
@@ -904,7 +797,14 @@ async function copy(text) {
     <div v-else-if="chat.me.status === 'pending'" class="team-empty">
       Запрос отправлен владельцу. Ожидается одобрение
     </div>
-    <template v-else-if="tab === 'messages'">
+    <template
+      v-else-if="
+        tab === 'messages' &&
+        !creating &&
+        !chat.requestedTaskId &&
+        !chat.taskNotifications
+      "
+    >
       <div
         ref="feed"
         class="team-feed"
@@ -958,6 +858,7 @@ async function copy(text) {
             :data-message-id="m._id"
             class="team-message"
             :class="{
+              'task-message': m.kind === 'task',
               self: m.authorId === chat.me.actorId,
               'reply-target': highlightedMessage === m._id,
               swiping: swipe.id === m._id,
@@ -988,7 +889,7 @@ async function copy(text) {
               @contextmenu.capture.prevent="openMessageMenu(m)"
               @keydown="messageKeys($event, m)"
             >
-              <header>
+              <header v-if="m.kind !== 'task'">
                 <strong>{{ m.authorName }}</strong
                 ><time>{{
                   new Date(m.createdAt).toLocaleTimeString("ru-RU", {
@@ -1005,20 +906,13 @@ async function copy(text) {
               <span v-if="m.forwardedFrom" class="team-forwarded"
                 >Переслано · {{ m.forwardedFrom.authorName }}</span
               >
-              <div v-if="m.kind === 'request'">
-                <TeamChatRequestMessage
-                  :request-id="m.requestId"
-                  @edit="editRequest"
-                  @decision="decide"
-                  @convert="convert"
-                  @recall="recall"
-                  @file="download"
-                  @copy="copy"
-                  @delete="removeRequest"
-                />
-              </div>
+              <TeamTaskCover
+                v-if="m.kind === 'task'"
+                :task-id="m.taskId"
+                @open="openTask(m.taskId)"
+              />
               <CodexMessageText
-                v-if="m.text && m.kind !== 'request'"
+                v-if="m.text && m.kind !== 'task'"
                 :text="m.text"
                 class="team-message-content"
               />
@@ -1031,44 +925,6 @@ async function copy(text) {
               >
                 <UiIcon name="attach" />{{ file.name }}
               </button>
-              <template
-                v-for="file in m.attachments.filter(
-                  (f) =>
-                    !m._delivery &&
-                    f.isPdf &&
-                    !f.invoiceRequestId &&
-                    !f.invoiceDismissed &&
-                    !chat.state.requests.some(
-                      (r) => r.sourceFileId === f.fileId,
-                    ),
-                )"
-                :key="'pdf-' + file.fileId"
-                ><div
-                  v-if="m.authorId === chat.me.actorId"
-                  class="team-pdf-question"
-                >
-                  <span>Это счёт на оплату?</span>
-                  <div>
-                    <button
-                      type="button"
-                      :disabled="!!processingPdf"
-                      @click="processPdf(m, file)"
-                    >
-                      {{
-                        processingPdf === file.fileId
-                          ? "Распознавание…"
-                          : "Да, создать заявку"
-                      }}</button
-                    ><button
-                      type="button"
-                      :disabled="!!processingPdf"
-                      @click="dismissPdf(m, file)"
-                    >
-                      Не обрабатывать
-                    </button>
-                  </div>
-                </div></template
-              >
               <div
                 v-if="m._delivery"
                 class="team-delivery"
@@ -1102,7 +958,7 @@ async function copy(text) {
                 </button>
               </div>
               <div
-                v-if="!m._delivery && m.kind !== 'request'"
+                v-if="!m._delivery && m.kind !== 'task'"
                 class="team-message-meta"
               >
                 <span v-if="m.editedAt">изменено</span
@@ -1191,143 +1047,17 @@ async function copy(text) {
           ><template #leading
             ><TeamChatAddMenu
               :disabled="uploading"
-              @request="startRequest"
+              @task="startTask"
               @file="input.click()" /></template></CodexComposer
         ><span v-if="uploading" role="status">Загрузка файла…</span>
       </div>
     </template>
     <div
-      v-else
+      v-else-if="tab === 'members' && chat.isOwner"
       ref="scroll"
-      id="team-panel"
-      role="region"
-      :aria-label="
-        {
-          requests: 'Заявки',
-          tasks: 'Задачи',
-          members: 'Роли и участники',
-        }[tab]
-      "
       class="team-scroll"
-      @focusin="revealField"
     >
-      <template v-if="tab === 'requests'">
-        <div class="team-request-create-tab">
-          <button
-            type="button"
-            class="team-expense-primary team-request-new"
-            aria-label="Создать заявку"
-            @click="startRequest"
-          >
-            <UiIcon name="plus" />Создать заявку
-          </button>
-        </div>
-      </template>
-      <template v-else-if="tab === 'tasks'">
-        <template v-if="tab === 'tasks'">
-          <div v-if="isReviewer && chat.state.financial" class="team-forecast">
-            <div
-              v-if="chat.state.financial.unallocatedCents"
-              class="team-unallocated"
-            >
-              Без выбранной компании:
-              {{ money(chat.state.financial.unallocatedCents) }}
-            </div>
-            <article
-              v-for="c in chat.state.financial.companies.filter(
-                (c) => c.requestedCents,
-              )"
-              :key="c.companyId"
-            >
-              <strong>{{
-                chat.state.companies.find((x) => x._id === c.companyId)?.name ||
-                "Общие счета"
-              }}</strong>
-              <dl>
-                <div>
-                  <dt>Сейчас на счетах</dt>
-                  <dd>{{ money(c.currentCents) }}</dd>
-                </div>
-                <div>
-                  <dt>Заявки к оплате</dt>
-                  <dd>−{{ money(c.requestedCents) }}</dd>
-                </div>
-                <div>
-                  <dt>Минимум по прогнозу</dt>
-                  <dd :class="{ negative: c.minimumCents < 0 }">
-                    {{ money(c.minimumCents) }}
-                  </dd>
-                </div>
-              </dl>
-              <p v-if="c.gapDate" class="negative">
-                Кассовый разрыв с {{ c.gapDate }}
-              </p>
-            </article>
-            <details>
-              <summary>Остатки на счетах</summary>
-              <details
-                v-for="a in accountForecasts"
-                :key="a._id"
-                class="team-account-forecast"
-              >
-                <summary>
-                  <span :title="accountLabel(a, chat.state.companies)">{{
-                    accountLabel(a, chat.state.companies)
-                  }}</span
-                  ><span>{{ money(a.balanceCents) }}</span>
-                </summary>
-                <dl>
-                  <div>
-                    <dt>На согласовании</dt>
-                    <dd>−{{ money(a.pendingCents || 0) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Утверждено</dt>
-                    <dd>−{{ money(a.approvedCents || 0) }}</dd>
-                  </div>
-                  <div>
-                    <dt>На сегодняшний день</dt>
-                    <dd :class="{ negative: a.afterDueRequestsCents < 0 }">
-                      {{ money(a.afterDueRequestsCents) }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>До конца месяца</dt>
-                    <dd :class="{ negative: a.afterMonthRequestsCents < 0 }">
-                      {{ money(a.afterMonthRequestsCents) }}
-                    </dd>
-                  </div>
-                </dl>
-              </details>
-            </details>
-          </div>
-          <p v-if="chat.state.requestsTruncated" class="team-error">
-            Показаны последние 500 заявок. Прогноз учитывает все активные заявки
-          </p>
-          <div
-            v-if="!chat.state.requests.length && !creating"
-            class="team-empty"
-          >
-            Заявок пока нет
-          </div>
-          <TeamRequestCard
-            v-for="r in chat.state.requests"
-            :key="r._id"
-            :request="r"
-            :default-open="focusedRequest === r._id"
-            @edit="editRequest"
-            @decision="decide"
-            @convert="convert"
-            @recall="recall"
-            @file="download"
-            @copy="copy"
-            @delete="removeRequest"
-          />
-        </template>
-      </template>
-      <template v-else-if="tab === 'members' && chat.isOwner"
-        ><TeamChatMembers />
-      </template>
+      <TeamChatMembers />
     </div>
   </div>
 </template>

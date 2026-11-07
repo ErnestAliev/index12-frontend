@@ -273,10 +273,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-:global(body[data-team-request-dragging] #team-chat-window) {
-  pointer-events: none;
-  opacity: 0.2;
-}
+
 
 .codex-chat-window {
   --codex-pane-bg: var(--bg-main, #1a1a1a);

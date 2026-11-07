@@ -1,8 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import {useTeamChatStore} from '@/stores/teamChatStore';
 import { useMainStore } from '@/stores/mainStore';
-import { formatNumber } from '@/utils/formatters.js';
 import HourCell from './HourCell.vue';
 
 /**
@@ -30,11 +28,7 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 
 const mainStore = useMainStore();
 
-const operations = computed(() => {
-  const real=mainStore.getOperationsForDay(props.dateKey);
-  const draft=(useTeamChatStore().state.placements||[]).filter(r=>r.placement?.dateKey===props.dateKey&&!r.operationId).map(r=>({...r.placement,_id:'team-request:'+r._id,requestId:r._id,isTeamRequest:true,approvalState:r.state,description:r.title,comment:r.comment}));
-  return [...real,...draft];
-});
+const operations = computed(() => mainStore.getOperationsForDay(props.dateKey));
 
 // Get phantom operations for hidden excluded accounts
 const phantoms = computed(() => {

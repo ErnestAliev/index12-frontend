@@ -1,22 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  reviewerLabel,
   decisionStatus,
-} from "../src/utils/teamRequestStatus.js";
-test("review queues show registered names without assigning an arbitrary director", () => {
-  const people = [
-    { owner: true, role: "employee", name: "Эрнест Алиев" },
-    { role: "director", name: "Анна" },
-    { role: "director", name: "Данияр" },
-  ];
-  assert.equal(reviewerLabel("manager", people), "Управляющий (Эрнест Алиев)");
-  assert.equal(
-    reviewerLabel("director", people),
-    "Руководитель (Анна, Данияр)",
-  );
-  assert.equal(reviewerLabel("director", []), "Руководитель");
-});
+} from "../src/utils/teamMessageStatus.js";
 test("decision status uses the actual actor recorded at that stage", () => {
   const history = [
     { action: "approve", role: "manager", name: "Эрнест Алиев" },

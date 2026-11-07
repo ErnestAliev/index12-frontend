@@ -1,6 +1,5 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
-import {useTeamChatStore} from '@/stores/teamChatStore';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
@@ -35,14 +34,11 @@ const props = defineProps({
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
   operationToEdit: { type: Object, default: null },
-  approvalRequest: {type:Boolean,default:false},
-  approvalRequestId:{type:String,default:null},
-  approvalSaving:Boolean, approvalConflict:Boolean, approvalError:String,
   minAllowedDate: { type: Date, default: null },
   maxAllowedDate: { type: Date, default: null }
 });
 
-const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense','approval-save','reload-approval']);
+const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense']);
 
 const mainStore = useMainStore();
 const permissions = usePermissions();
@@ -69,7 +65,7 @@ const defaultProjectId = computed(() => {
     const p = mainStore.projects.find(x => x.name && x.name.trim().toLowerCase() === 'без проекта');
     return p ? p._id : null;
 });
-const description = ref(''), comment=ref(''), sendToDirector=ref(false);
+const description = ref(''), comment=ref('');
 
 const isSaving = ref(false);
 const errorMessage = ref('');
@@ -464,7 +460,7 @@ const projectedIncomeAfterOffset = computed(() => {
     return after < 0 ? 0 : after;
 });
 
-const isEditMode = computed(() => !!props.operationToEdit && !props.approvalRequest && !isCloneMode.value);
+const isEditMode = computed(() => !!props.operationToEdit && !isCloneMode.value);
 const isOffsetEditLocked = computed(() => isIncomeOffsetMode.value && isEditMode.value);
 
 // 🟢 PERMISSIONS
@@ -474,7 +470,6 @@ const isReadOnly = computed(() => !canEdit.value);
 
 // 🟢 ДИНАМИЧЕСКИЙ ЗАГОЛОВОК
 const title = computed(() => {
-    if(props.approvalRequest)return 'Заявка на расход';
     if (isCloneMode.value) return 'Копия: Расход';
     if (isEditMode.value) return 'Редактировать';
     
@@ -485,7 +480,6 @@ const title = computed(() => {
 });
 
 const buttonText = computed(() => {
-    if(props.approvalRequest)return 'Разместить заявку';
     if (isIncomeOffsetMode.value) return isEditMode.value ? 'Сохранить взаимозачет' : 'Создать взаимозачет';
     if (isEditMode.value) return 'Сохранить';
     if (isFutureDate.value) return 'Запланировать';
@@ -506,7 +500,6 @@ const projectedBalanceAfterExpense = computed(() => {
         ? mainStore.getBalanceAtDate(selectedAccountId.value, targetDate)
         : Number(mainStore.currentAccountBalances.find(acc => acc._id === selectedAccountId.value)?.balance || 0);
 
-    if(props.approvalRequest)currentBalance-=(useTeamChatStore().state.placements||[]).filter(r=>r._id!==props.approvalRequestId&&r.placement?.accountId===selectedAccountId.value&&r.dueDate<=editableDate.value&&!r.operationId).reduce((sum,r)=>sum+r.amountCents/100,0);
     const nextBalance = (!rawAmount || rawAmount <= 0)
         ? currentBalance
         : currentBalance - rawAmount;
@@ -524,7 +517,7 @@ const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccoun
     routes: [{ key: 'account', label: 'Счёт', accountId: selectedAccountId, ownerKey: selectedOwner, creating: isCreatingAccount }],
     ready: computed(() => !isInitialLoad.value),
     enabled: computed(() => canEdit.value && !isIncomeOffsetMode.value),
-    existing: computed(() => !!props.operationToEdit && !props.approvalRequest),
+    existing: computed(() => !!props.operationToEdit),
 });
 
 // --- LOGIC WATCHERS ---
@@ -685,7 +678,6 @@ const processSave = (preparedCategoryIds = []) => {
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
 
-    if(props.approvalRequest){emit('approval-save',{data:{...payload,dueDate:editableDate.value},submit:sendToDirector.value});return;}
     emit('save', {
         mode: isEditMode.value ? 'edit' : 'create',
         id: props.operationToEdit?._id,
@@ -699,7 +691,7 @@ const processSave = (preparedCategoryIds = []) => {
 
 
 const handleSave = async () => {
-    if (isSaving.value || isInlineSaving.value || props.approvalSaving || props.approvalConflict) return;
+    if (isSaving.value || isInlineSaving.value) return;
     
     if (isIncomeOffsetMode.value) {
         if (!selectedIncomeOpId.value || !selectedIncomeOp.value) { showError('Выберите операцию дохода'); return; }
@@ -732,7 +724,6 @@ const handleSave = async () => {
         }
     }
     lastPreparedCategoryIds.value = preparedCategoryIds;
-    if(props.approvalRequest){if(!preparedCategoryIds.length){showError('Укажите категорию расхода');return;}if(!selectedContractorValue.value){showError('Укажите контрагента');return;}processSave(preparedCategoryIds);return;}
     
     try {
         if (!isIncomeOffsetMode.value) await mainStore.saveAccountOwners([{ accountId: selectedAccountId.value, ownerKey: selectedOwner.value }]);
@@ -978,7 +969,7 @@ onMounted(async () => {
             selectedCategoryIds.value = [op.categoryId?._id || op.categoryId].filter(Boolean);
         }
         description.value = op.description || '';comment.value=op.comment||'';
-        if(op.date)editableDate.value=toInputDate(new Date(op.date));if(props.approvalRequest&&op.dueDate)editableDate.value=op.dueDate;
+        if(op.date)editableDate.value=toInputDate(new Date(op.date));
         if (op.companyId) selectedOwner.value = `company-${op.companyId._id || op.companyId}`;
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
         if (op.contractorId) selectedContractorValue.value = `contr_${op.contractorId._id || op.contractorId}`;
@@ -1029,11 +1020,11 @@ watch(defaultProjectId, (defId) => {
 </script>
 
 <template>
-  <div class="popup-overlay" :class="{'team-request-editor':approvalRequest}" @click.self="$emit('close')">
-    <div class="popup-content theme-expense" :class="{'request-draft-popup':approvalRequest}">
+  <div class="popup-overlay" @click.self="$emit('close')">
+    <div class="popup-content theme-expense">
       <div class="header-row">
-        <h3>{{ title }}</h3><button v-if="approvalRequest" type="button" class="request-close" aria-label="Закрыть заявку" @click="emit('close')"><UiIcon name="close"/></button>
-        <button v-if="!approvalRequest" class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
+        <h3>{{ title }}</h3>
+        <button class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
             <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="offset-label">Взаимовычет</span>
         </button>
@@ -1048,7 +1039,7 @@ watch(defaultProjectId, (defId) => {
       </div>
       
       <div v-if="projectedBalanceAfterExpense" class="validation-error" :class="{ 'validation-warning': !projectedBalanceAfterExpense.willBeNegative }">
-          {{approvalRequest?'С учётом заявок:':'После расхода:'}} {{ formatNumber(Math.round(projectedBalanceAfterExpense.nextBalance)) }} ₸
+          После расхода: {{ formatNumber(Math.round(projectedBalanceAfterExpense.nextBalance)) }} ₸
       </div>
 
       <div v-if="isIncomeOffsetMode && selectedIncomeOp" class="offset-hint">
@@ -1151,7 +1142,7 @@ watch(defaultProjectId, (defId) => {
                
                <!-- 🟢 Индикатор ПЛАН/ФАКТ -->
                <span class="date-badge" :class="isFutureDate ? 'plan-badge' : 'fact-badge'">
-                   {{ approvalRequest?'Заявка':(isFutureDate ? 'ПЛАН' : 'ФАКТ') }}
+                   {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                </span>
 
                <input type="date" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isReadOnly || isOffsetEditLocked" />
@@ -1163,17 +1154,14 @@ watch(defaultProjectId, (defId) => {
       
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
 
-      <div v-if="approvalError" class="request-save-error" role="alert">{{ approvalError }}<button v-if="approvalConflict" type="button" @click="emit('reload-approval')">Загрузить актуальные реквизиты</button></div>
-      <p v-if="approvalSaving" role="status">Сохранение заявки…</p>
       <!-- НИЖНЯЯ ПАНЕЛЬ ДЕЙСТВИЙ -->
       <div class="popup-actions-row">
-          <button v-if="approvalRequest&&canEdit" class="btn-submit btn-expense save-wide" :disabled="isSaving || approvalSaving || approvalConflict" @click="sendToDirector=true;handleSave()">Согласовано мной → руководителю</button>
-          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="sendToDirector=false;handleSave()" :disabled="isSaving || isInlineSaving || approvalSaving || approvalConflict">
+          <button v-if="canEdit" class="btn-submit btn-expense save-wide" @click="handleSave()" :disabled="isSaving || isInlineSaving">
               {{ buttonText }}
           </button>
           <div v-else class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
           
-          <div v-if="props.operationToEdit && !approvalRequest && !isCloneMode" class="icon-actions">
+          <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
               <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
               <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
@@ -1204,21 +1192,10 @@ watch(defaultProjectId, (defId) => {
 </template>
 
 <style scoped>
-:global(.request-draft-popup .btn-submit.btn-expense){background:#b7433b!important;color:#fff!important}
 
-.popup-overlay.team-request-editor{z-index:6500;box-sizing:border-box;padding:16px 0}.request-draft-popup{box-sizing:border-box!important;max-height:calc(100dvh - 32px - var(--safe-area-top) - var(--safe-area-bottom));overflow-y:auto!important;scrollbar-width:thin;margin:auto 16px!important}.request-draft-popup .popup-actions-row{flex-direction:column;align-items:stretch;gap:8px;margin-top:16px}.request-draft-popup .header-row{margin-bottom:16px}.request-draft-popup h3{margin-bottom:0;font-weight:500}.request-draft-popup .request-close{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--color-text)}
 
 .operation-comment{box-sizing:border-box;display:block;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px;min-height:64px}
 
-.request-draft-popup{--request-panel:#242424;--request-field:#1a1a1a;--request-text:#e7e7e7;--request-muted:#ababab;--request-border:var(--color-border,#444);background:var(--request-panel)!important;color:var(--request-text)}
-:global(html[data-theme="light"] .request-draft-popup){--request-panel:var(--light-canvas,#f4f6f5);--request-field:var(--light-surface,#fff);--request-text:var(--light-text,#263631);--request-muted:var(--light-secondary,#5c6863);--request-border:var(--light-border-strong,#c4cec9)}
-.request-draft-popup h3{color:inherit}
-.request-draft-popup .operation-comment,.request-draft-popup .custom-input-box,.request-draft-popup :deep(.select-trigger){background:var(--request-field)!important;color:var(--request-text)!important;border-color:var(--request-border)!important}
-.request-draft-popup .real-input,.request-draft-popup .date-value-text,.request-draft-popup :deep(.selected-text){color:var(--request-text)!important}
-.request-draft-popup .floating-label,.request-draft-popup :deep(.small-label),.request-draft-popup :deep(.sub-text),.request-draft-popup :deep(.right-text){color:var(--request-muted)!important}
-.request-draft-popup .operation-comment::placeholder{color:var(--request-muted);opacity:1}
-.request-save-error{font-size:13px;color:var(--color-danger);line-height:1.5;margin:12px 0}
-.request-save-error button{display:block;margin-top:8px;padding:8px 12px;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent;cursor:pointer}
 /* 🟢 CSS ПЕРЕМЕННЫЕ ДЛЯ РАСХОДА */
 .popup-content {
     --color-expense: #F36F3F; /* Оранжевый */
