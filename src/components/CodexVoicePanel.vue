@@ -18,7 +18,7 @@ defineEmits(['stop', 'mute', 'play']);
 </template>
 
 <style scoped>
-.codex-voice-panel { flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 18px 16px; border-top: 1px solid var(--codex-pane-border); background: var(--codex-pane-bg); color: var(--codex-pane-text); }
+.codex-voice-panel { flex: none; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 18px var(--chat-composer-bottom-space, 16px); border-top: 1px solid var(--codex-pane-border); background: var(--codex-pane-bg); color: var(--codex-pane-text); }
 .codex-voice-orb { width: 84px; height: 84px; display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #86b6fc, #4285d8 58%, #4261a5); box-shadow: 0 4px 24px #4285d825; }
 .codex-voice-orb span { display: block; width: 5px; height: calc(12px + var(--bar) * 3px); max-height: 32px; border-radius: 4px; background: #fff; opacity: .9; animation: codex-voice-wave 1.2s ease-in-out infinite; animation-delay: calc(var(--bar) * -150ms); }
 .thinking .codex-voice-orb, .connecting .codex-voice-orb { animation: codex-voice-pulse 1.6s ease-in-out infinite; }
@@ -33,6 +33,6 @@ defineEmits(['stop', 'mute', 'play']);
 .codex-voice-control:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 3px; }
 @keyframes codex-voice-wave { 0%, 100% { transform: scaleY(.55); } 50% { transform: scaleY(1); } }
 @keyframes codex-voice-pulse { 50% { opacity: .6; } }
-@container codex-window (max-height: 480px) { .codex-voice-panel { padding: 10px; gap: 6px; } .codex-voice-orb { width: 52px; height: 52px; } .codex-voice-caption { max-height: 38px; } }
+@container codex-window (max-height: 480px) { .codex-voice-panel { padding: 10px 10px var(--chat-composer-bottom-space, 10px); gap: 6px; } .codex-voice-orb { width: 52px; height: 52px; } .codex-voice-caption { max-height: 38px; } }
 @media (prefers-reduced-motion: reduce) { .codex-voice-orb, .codex-voice-orb span { animation: none !important; } }
 </style>

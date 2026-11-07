@@ -176,3 +176,10 @@ h3,.theme-saved-label { display:block; margin:16px 0 8px; font-size:12px; font-w
 @media(max-width:699px) { .theme-settings-panel { inset:auto 0 0; width:100%; height:48dvh; border-top:1px solid var(--settings-border); border-left:0; }.theme-panel-header { padding:6px 12px; }.theme-panel-footer { padding:8px 12px; } }
 @media(pointer:coarse) { .theme-settings-panel button { min-height:40px; }.theme-settings-panel input[type=range] { height:28px; }.theme-settings-panel input[type=text] { font-size:16px; } }
 </style>
+
+<style scoped>
+@media (max-width: 1024px), (pointer: coarse) {
+  .theme-panel-footer { padding-bottom: var(--safe-bottom-controls); }
+  .theme-panel-header { padding-top: calc(12px + var(--safe-area-top)); }
+}
+</style>

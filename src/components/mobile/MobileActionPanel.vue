@@ -86,19 +86,18 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
   border-top: 1px solid var(--widget-border, #e0e0e0);
   flex-shrink: 0;
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-area-bottom);
 }
 
 .chart-controls-row {
-  height: 88px;
+  height: 68px;
   display: grid;
   grid-template-columns:repeat(6,minmax(0,1fr));
   justify-items:center;
   justify-content: space-between;
   align-items: center;
-  padding: 0 12px;
-  padding-bottom: 24px;
-  gap: 8px;
+  padding: 0 calc(12px + var(--safe-area-right)) 0 calc(12px + var(--safe-area-left));
+  gap: 4px;
 }
 
 .month-nav {
@@ -182,5 +181,5 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
 </style>
 
 <style scoped>
-.icon-circle{border-color:var(--color-border);border-radius:10px;width:40px;height:40px;transition:background-color .15s,color .15s,border-color .15s}.icon-circle :deep(svg){width:20px;height:20px;display:block}.icon-circle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}.month-picker{position:absolute;bottom:calc(100% + 8px);left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;background:var(--color-background);color:var(--color-text);border:1px solid var(--color-border);border-radius:12px;box-shadow:0 4px 16px #0002}.month-text{font-weight:500}.team-chat-button{position:relative}.team-unread{position:absolute;right:-4px;top:-4px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--color-primary);color:white;font-size:10px;line-height:16px}.icon-circle:active{color:var(--color-text);background:var(--color-background-soft);border-color:var(--color-border)}
+.icon-circle{border-color:var(--color-border);border-radius:10px;width:44px;height:44px;transition:background-color .15s,color .15s,border-color .15s}.icon-circle :deep(svg){width:20px;height:20px;display:block}.icon-circle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}.month-picker{position:absolute;bottom:calc(100% + 8px);left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;background:var(--color-background);color:var(--color-text);border:1px solid var(--color-border);border-radius:12px;box-shadow:0 4px 16px #0002}.month-text{font-weight:500}.team-chat-button{position:relative}.team-unread{position:absolute;right:-4px;top:-4px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--color-primary);color:white;font-size:10px;line-height:16px}.icon-circle:active{color:var(--color-text);background:var(--color-background-soft);border-color:var(--color-border)}
 </style>

@@ -884,3 +884,6 @@
 @media(prefers-reduced-motion:reduce){.team-bubble{transition:none}}
 .team-account-forecast>summary>span:first-child{display:block;min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .team-account-forecast>summary>span:last-child{flex:none;white-space:nowrap}
+
+/* Bottom actions in requests, tasks and roles, independent of the message composer. */
+.team-scroll { padding-bottom: var(--chat-composer-bottom-space, 16px); }

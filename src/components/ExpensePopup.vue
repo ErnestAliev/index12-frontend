@@ -1206,7 +1206,7 @@ watch(defaultProjectId, (defId) => {
 <style scoped>
 :global(.request-draft-popup .btn-submit.btn-expense){background:#b7433b!important;color:#fff!important}
 
-.popup-overlay.team-request-editor{z-index:6500;box-sizing:border-box;padding:16px 0}.request-draft-popup{box-sizing:border-box!important;max-height:calc(100dvh - 32px);overflow-y:auto!important;scrollbar-width:thin;margin:auto 16px!important}.request-draft-popup .popup-actions-row{flex-direction:column;align-items:stretch;gap:8px;margin-top:16px}.request-draft-popup .header-row{margin-bottom:16px}.request-draft-popup h3{margin-bottom:0;font-weight:500}.request-draft-popup .request-close{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--color-text)}
+.popup-overlay.team-request-editor{z-index:6500;box-sizing:border-box;padding:16px 0}.request-draft-popup{box-sizing:border-box!important;max-height:calc(100dvh - 32px - var(--safe-area-top) - var(--safe-area-bottom));overflow-y:auto!important;scrollbar-width:thin;margin:auto 16px!important}.request-draft-popup .popup-actions-row{flex-direction:column;align-items:stretch;gap:8px;margin-top:16px}.request-draft-popup .header-row{margin-bottom:16px}.request-draft-popup h3{margin-bottom:0;font-weight:500}.request-draft-popup .request-close{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--color-text)}
 
 .operation-comment{box-sizing:border-box;display:block;width:100%;padding:12px;margin:0 0 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-background-soft);color:var(--color-text);font:inherit;resize:vertical;max-height:140px;min-height:64px}
 
@@ -1444,7 +1444,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 
 /* Keep operation forms within a phone viewport, including long account names. */
 @media (max-width: 600px) {
-  .popup-overlay { align-items: flex-start; padding: 16px 0; box-sizing: border-box; }
+  .popup-overlay { align-items: flex-start; padding: calc(16px + var(--safe-area-top)) var(--safe-area-right) calc(16px + var(--safe-area-bottom)) var(--safe-area-left); box-sizing: border-box; }
   .popup-content {
     box-sizing: border-box;
     width: calc(100% - 32px);

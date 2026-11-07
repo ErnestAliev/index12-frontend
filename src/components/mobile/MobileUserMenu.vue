@@ -173,7 +173,7 @@ async function logout() {
 
 .modal-sheet {
   width: 100%;
-  height: 100vh;
+  height: 100dvh;
   background: var(--color-background-soft, #282828);
   border-radius: 20px 20px 0 0;
   display: flex;
@@ -191,6 +191,7 @@ async function logout() {
   align-items: center;
   justify-content: space-between;
   padding: 20px;
+  padding-top: calc(20px + var(--safe-area-top));
   border-bottom: 1px solid var(--color-border, #444);
   flex-shrink: 0;
 }
@@ -222,6 +223,7 @@ async function logout() {
 
 .modal-body {
   padding: 20px;
+  padding-bottom: calc(20px + var(--safe-area-bottom));
   overflow-y: auto;
   flex: 1;
 }

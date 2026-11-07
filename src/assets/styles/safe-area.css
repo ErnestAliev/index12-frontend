@@ -1,0 +1,10 @@
+/* System insets are geometry supplied by the browser, never a device model guess.
+   Consume them on edge controls, not on html/body/#app (backgrounds stay full bleed). */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --mobile-control-gap: 12px;
+  --safe-bottom-controls: calc(var(--safe-area-bottom) + var(--mobile-control-gap));
+}

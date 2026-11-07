@@ -113,7 +113,7 @@ async function download(file) {
   catch (e) { error.value = businessError(e); }
 }
 async function remove() { if (busy.value) return; clearTimeout(timer); busy.value = true; try { await business.deleteTask(id, version); emit('close'); } catch (e) { error.value = businessError(e); } finally { busy.value = false; } }
-function updateViewport() { const v = window.visualViewport; viewport.value = v ? { inset: 'auto', left: `${v.offsetLeft}px`, top: `${v.offsetTop}px`, width: `${v.width}px`, height: `${v.height}px` } : {}; }
+function updateViewport() { const v = window.visualViewport; viewport.value = v ? { inset: 'auto', left: `${v.offsetLeft}px`, top: `${v.offsetTop}px`, width: `${v.width}px`, height: `${v.height}px`, '--dialog-safe-bottom': innerHeight - v.height > 120 ? '0px' : 'var(--safe-area-bottom)' } : {}; }
 function keyboard(event) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void close(); }
   if (event.key === 'Tab') {
@@ -156,7 +156,7 @@ defineExpose({ close });
   </div>
 </template>
 <style scoped>
-.task-dialog-backdrop { position:fixed; inset:0; z-index:3650; display:grid; place-items:center; padding:16px; box-sizing:border-box; background:#0004; }
+.task-dialog-backdrop { position:fixed; inset:0; z-index:3650; display:grid; place-items:center; padding:calc(16px + var(--safe-area-top)) calc(16px + var(--safe-area-right)) calc(16px + var(--dialog-safe-bottom, var(--safe-area-bottom))) calc(16px + var(--safe-area-left)); box-sizing:border-box; background:#0004; }
 .task-popover { display:flex; flex-direction:column; width:min(520px,100%); max-height:100%; overflow:hidden; box-sizing:border-box; background:var(--color-background); color:var(--color-text); border:1px solid var(--color-border); border-radius:12px; box-shadow:0 12px 48px #0005; font-size:13px; outline:0; }
 .task-popover header { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; min-height:48px; padding:8px 16px; box-sizing:border-box; }
 .popover-tools { display:flex; align-items:center; gap:4px; }

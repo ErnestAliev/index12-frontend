@@ -300,7 +300,7 @@ h3 {
 
 @media (max-width: 900px) {
   .popup-content {
-    height: 100vh;
+    height: 100dvh;
     width: 100vw;
     max-width: none;
     margin: 0;
@@ -318,5 +318,12 @@ h3 {
   .footer-actions {
     justify-content: flex-end;
   }
+}
+</style>
+
+<style scoped>
+@media (max-width: 900px) {
+  .popup-header { padding-top: calc(12px + var(--safe-area-top)); }
+  .popup-footer { padding-bottom: var(--safe-bottom-controls); }
 }
 </style>

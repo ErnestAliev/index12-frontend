@@ -565,7 +565,7 @@ onBeforeUnmount(() => {
 @media (max-width: 600px) {
   .team-message-menu-backdrop {
     align-items: flex-end;
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-bottom: var(--safe-bottom-controls);
   }
   .team-message-menu {
     width: 100%;

@@ -1126,7 +1126,7 @@ h3 { margin: 0; margin-bottom: 1.5rem; font-size: 22px; font-weight: 700; color:
 
 /* Keep operation forms within a phone viewport, including long account names. */
 @media (max-width: 600px) {
-  .popup-overlay { align-items: flex-start; padding: 16px 0; box-sizing: border-box; }
+  .popup-overlay { align-items: flex-start; padding: calc(16px + var(--safe-area-top)) var(--safe-area-right) calc(16px + var(--safe-area-bottom)) var(--safe-area-left); box-sizing: border-box; }
   .popup-content {
     box-sizing: border-box;
     width: calc(100% - 32px);

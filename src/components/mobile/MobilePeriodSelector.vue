@@ -621,7 +621,7 @@ onMounted(() => {
 .modal-footer {
   flex-shrink: 0;
   padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-bottom: calc(16px + var(--safe-area-bottom));
   background: var(--widget-background, #1c1c1e);
   border-top: 1px solid var(--widget-border, #333);
   display: flex;

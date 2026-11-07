@@ -1162,7 +1162,7 @@ watch(
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.68);
   display: flex;
   align-items: center;
@@ -1895,7 +1895,7 @@ tr.is-hidden .money-currency {
 @media (max-width: 768px) {
   .editor-modal {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     border-radius: 0;
   }
 
@@ -1957,5 +1957,12 @@ tr.is-hidden .money-currency {
     width: 13px;
     height: 13px;
   }
+}
+</style>
+
+<style scoped>
+@media (max-width: 768px) {
+  .modal-header { padding-top: calc(12px + var(--safe-area-top)); }
+  .modal-body { padding-bottom: var(--safe-bottom-controls); }
 }
 </style>

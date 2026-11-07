@@ -1206,6 +1206,7 @@ const dispatchTeamChat=()=>window.dispatchEvent(new Event('index12:open-team-cha
 }
 .main-content-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; width: 100%; height: 100%; }
 .fixed-header, .fixed-footer { flex-shrink: 0; }
+.fixed-header { padding-top: var(--safe-area-top); }
 .layout-body { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; position: relative; }
 .section-widgets { width: 100%; flex-shrink: 0; flex-basis: auto; max-height: 60vh; overflow-y: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .section-widgets.expanded-widgets { flex: 1 1 0px; min-height: 0; height: auto; max-height: none; padding-bottom: 80px; }

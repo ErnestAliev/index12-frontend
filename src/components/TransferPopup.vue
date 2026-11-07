@@ -888,7 +888,7 @@ h3 { color: #1a1a1a; margin-top: 0; margin-bottom: 2rem; text-align: left; font-
 
 /* Keep operation forms within a phone viewport, including long account names. */
 @media (max-width: 600px) {
-  .popup-overlay { align-items: flex-start; padding: 16px 0; box-sizing: border-box; }
+  .popup-overlay { align-items: flex-start; padding: calc(16px + var(--safe-area-top)) var(--safe-area-right) calc(16px + var(--safe-area-bottom)) var(--safe-area-left); box-sizing: border-box; }
   .popup-content {
     box-sizing: border-box;
     width: calc(100% - 32px);

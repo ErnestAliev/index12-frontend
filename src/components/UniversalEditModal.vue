@@ -352,7 +352,7 @@ const closeModal = () => {
   top: 0;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;
@@ -568,7 +568,7 @@ const closeModal = () => {
 @media (max-width: 768px) {
   .universal-edit-modal {
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     border-radius: 0;
   }
   
@@ -625,5 +625,12 @@ const closeModal = () => {
   opacity: 0.9;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(40, 184, 160, 0.3);
+}
+</style>
+
+<style scoped>
+@media (max-width: 768px) {
+  .modal-header { padding-top: calc(12px + var(--safe-area-top)); }
+  .modal-footer { padding-bottom: var(--safe-bottom-controls); }
 }
 </style>

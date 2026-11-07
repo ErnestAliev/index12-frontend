@@ -206,17 +206,17 @@ export async function verifyStaffComposer({
     assert.equal(await field.inputValue(), "Следующий черновик");
     await field.fill("");
     await field.blur();
-    await frame.evaluate((el) =>
-      el.style.setProperty("--chat-composer-bottom-space", "34px"),
+    await page.evaluate(() =>
+      document.documentElement.style.setProperty("--safe-area-bottom", "34px"),
     );
     const bounds = await frame.boundingBox(),
       pill = await wrapper.boundingBox();
     assert.ok(
-      Math.abs(bounds.y + bounds.height - pill.y - pill.height - 34) < 2,
-      "Composer respects the home indicator inset",
+      Math.abs(bounds.y + bounds.height - pill.y - pill.height - 46) < 2,
+      "Composer clears the system safe area plus its own 12px margin",
     );
-    await frame.evaluate((el) =>
-      el.style.removeProperty("--chat-composer-bottom-space"),
+    await page.evaluate(() =>
+      document.documentElement.style.removeProperty("--safe-area-bottom"),
     );
     await field.focus();
     await page.evaluate(() => {

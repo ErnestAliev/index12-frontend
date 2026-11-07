@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--codex-pane-muted);
 }
 .compact {
-  --chat-composer-bottom-space: max(12px, env(safe-area-inset-bottom, 0px));
+  --chat-composer-bottom-space: var(--safe-bottom-controls);
   right: auto;
   bottom: auto;
   margin: 0;
@@ -417,16 +417,16 @@ onBeforeUnmount(() => {
 }
 .compact .codex-window-header {
   box-sizing: border-box;
-  min-height: calc(44px + env(safe-area-inset-top, 0px));
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-left: max(12px, env(safe-area-inset-left, 0px));
-  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  min-height: calc(44px + var(--safe-area-top));
+  padding-top: var(--safe-area-top);
+  padding-left: max(12px, var(--safe-area-left));
+  padding-right: max(12px, var(--safe-area-right));
 }
 .compact :deep(.desktop-assistant) {
   box-sizing: border-box;
   border-radius: 0;
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
 }
 .keyboard-open {
   --chat-composer-bottom-space: 10px;

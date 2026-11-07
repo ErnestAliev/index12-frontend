@@ -8,11 +8,20 @@ const emit = defineEmits(["close"]),
 let previous;
 function resize() {
   const v = window.visualViewport;
+  const style = getComputedStyle(document.documentElement),
+    inset = (edge) =>
+      parseFloat(style.getPropertyValue(`--safe-area-${edge}`)) || 0,
+    width = v?.width || innerWidth,
+    height = v?.height || innerHeight,
+    top = inset("top"),
+    bottom = innerHeight - height > 120 ? 0 : inset("bottom"),
+    left = inset("left"),
+    right = inset("right");
   bounds.value = {
-    left: `${(v?.offsetLeft || 0) + (v?.width || innerWidth) / 2}px`,
-    top: `${(v?.offsetTop || 0) + (v?.height || innerHeight) / 2}px`,
-    maxHeight: `${Math.max(160, (v?.height || innerHeight) - 24)}px`,
-    width: `${Math.min(440, (v?.width || innerWidth) - 24)}px`,
+    left: `${(v?.offsetLeft || 0) + left + (width - left - right) / 2}px`,
+    top: `${(v?.offsetTop || 0) + top + (height - top - bottom) / 2}px`,
+    maxHeight: `${Math.max(160, height - top - bottom - 24)}px`,
+    width: `${Math.min(440, width - left - right - 24)}px`,
   };
   nextTick(() => {
     if (dialog.value?.contains(document.activeElement))
