@@ -27,6 +27,7 @@ import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
   creating: Boolean,
   taskId: String,
+  parentTaskId: String,
   notifications: Boolean,
   mobile: Boolean,
 });
@@ -65,6 +66,14 @@ const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
 const active = computed(() => (props.creating ? draft.value : task.value));
+const subtasks = computed(() => (chat.state.tasks || [])
+  .filter(t => t.parentTaskId === props.taskId)
+  .sort((a, b) => (a.status === 'done') - (b.status === 'done') || a.createdAt.localeCompare(b.createdAt)));
+const parentTask = computed(() => chat.state.tasks.find(t => t._id === (props.creating ? props.parentTaskId : task.value?.parentTaskId)));
+function openTask(id) {
+  chat.requestedTaskMessageId = null;
+  chat.requestedTaskId = id;
+}
 const taskCreatedLabel = computed(() => {
   if (!task.value?.createdAt) return '';
   const date = new Date(task.value.createdAt);
@@ -248,16 +257,20 @@ async function update(changes) {
 }
 async function create() {
   if (busy.value || uploading.value) return;
+  const g = generation;
   busy.value = true;
   error.value = "";
   voice.stop();
   try {
-    await chat.action("/tasks", {
+    const result = await chat.action("/tasks", {
       ...draft.value,
+      ...(props.parentTaskId ? { parentTaskId: props.parentTaskId } : {}),
       fileIds: draft.value.attachments.map((f) => f.fileId),
     });
+    if (g !== generation || !result?.task) return;
     await chat.refresh();
-    emit("created");
+    if (g !== generation) return;
+    emit("created", result.task);
   } catch (e) {
     error.value = teamError(e);
   } finally {
@@ -393,7 +406,7 @@ function composerFocus() {
     detailsOpen.value = false;
 }
 watch(
-  () => [props.taskId, props.creating],
+  () => [props.taskId, props.creating, props.parentTaskId],
   async () => {
     const g = ++generation;
     error.value = "";
@@ -423,7 +436,7 @@ watch(
   { immediate: true },
 );
 watch(task, (value, previous) => {
-  if (previous && !value && props.taskId) emit("close");
+  if (previous && !value && props.taskId && chat.requestedTaskId === props.taskId) emit("close");
 });
 onMounted(() => {
   viewport();
@@ -467,7 +480,7 @@ onBeforeUnmount(() => {
       <button aria-label="Назад" :disabled="busy || uploading" @click="close">
         <UiIcon name="back" />
       </button>
-      <span v-if="creating" class="creation-title">Новая задача</span>
+      <span v-if="creating" class="creation-title">{{ parentTaskId ? 'Новая подзадача' : 'Новая задача' }}</span>
       <button
         v-else
         class="task-heading-title"
@@ -477,7 +490,7 @@ onBeforeUnmount(() => {
         @click="detailsOpen = !detailsOpen"
       >
         <span>{{
-          detailsCollapsed ? task?.description || "Задача" : "Задача"
+          detailsCollapsed ? task?.description || "Задача" : task?.parentTaskId ? "Подзадача" : "Задача"
         }}</span
         ><UiIcon :name="detailsCollapsed ? 'chevron-down' : 'chevron-up'" />
       </button>
@@ -723,7 +736,7 @@ onBeforeUnmount(() => {
           :disabled="busy || uploading || !draft.description.trim()"
           @click="create"
         >
-          Поставить задачу
+          {{ parentTaskId ? 'Поставить подзадачу' : 'Поставить задачу' }}
         </button>
       </div>
     </div>
@@ -731,6 +744,7 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status">
+          <button v-if="task.parentTaskId" class="task-parent-link" @click="openTask(task.parentTaskId)"><UiIcon name="back" /><span>{{ parentTask?.description || 'Родительская задача' }}</span></button>
           <div class="task-summary">
             <div class="task-summary-header">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
@@ -773,6 +787,12 @@ onBeforeUnmount(() => {
               <UiIcon name="attach" />{{ f.name }}
             </button>
           </div>
+          <section v-if="editing !== 'description'" class="task-subtasks" aria-label="Подзадачи">
+            <header><span>Подзадачи<span v-if="subtasks.length"> · {{ subtasks.length }}</span></span><button type="button" aria-label="Добавить подзадачу" @click="emit('new', task._id)"><UiIcon name="plus" /></button></header>
+            <button v-for="child in subtasks" :key="child._id" type="button" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" @click="openTask(child._id)">
+              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><span>{{ child.description }}</span><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}</small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
+            </button>
+          </section>
         </div>
         <TeamChatConversation
           :active="editing !== 'description'"
@@ -784,7 +804,7 @@ onBeforeUnmount(() => {
           :mobile="mobile"
           class="task-discussion"
           @composer-focus="composerFocus"
-          @new="emit('new')"
+          @new="emit('new', $event)"
         />
       </template>
     </template>
@@ -908,7 +928,7 @@ onBeforeUnmount(() => {
               t.status === "done" ? "✓" : ""
             }}</span></button
           ><button class="list-content" @click="chat.requestedTaskId = t._id">
-            <span :title="t.description">{{ t.description }}</span
+            <span :title="t.description">{{ t.parentTaskId ? '↳ ' : '' }}{{ t.description }}</span
             ><span>{{ t.assignees.map((p) => p.name).join(", ") }}</span
             ><span
               >{{ taskDate(t) }}<b v-if="t.unreadCount"> {{ t.unreadCount }}</b

@@ -18,6 +18,7 @@ const chat = useTeamChatStore(),
 const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
+const subtaskCount = computed(() => (chat.state.tasks || []).filter(t => t.parentTaskId === props.taskId).length);
 const canEdit = computed(
   () =>
     task.value &&
@@ -81,7 +82,7 @@ async function done() {
         <span class="cover-divider" aria-hidden="true">/</span>
         <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => p.name).join(', ')}`">Кому: {{ task.assignees.map((p) => p.name).join(", ") }}</span>
         <span class="cover-due">/ Когда: {{ taskDate(task) }}</span>
-      </span><span v-if="task.attachments.length" class="cover-files"
+      </span><button v-if="subtaskCount" type="button" class="cover-subtasks" :aria-label="`Подзадачи: ${subtaskCount}`" @pointerdown.stop @click.stop="emit('open')">↳ {{ subtaskCount }}</button><span v-if="task.attachments.length" class="cover-files"
         ><UiIcon name="attach" />{{ task.attachments.length }}</span
       ><button
         class="cover-check"
@@ -217,6 +218,7 @@ async function done() {
 .cover-divider {
   flex: none;
 }
+.task-cover .cover-subtasks { flex: none; padding: 0 4px; min-height: 24px; border: 0; background: transparent; color: var(--codex-pane-muted); font: inherit; font-size: 11px; }
 .cover-files {
   display: flex;
   align-items: center;

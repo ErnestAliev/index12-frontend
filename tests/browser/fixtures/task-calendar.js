@@ -27,6 +27,13 @@ const snapshot = () => ({ tasks: tasks.filter(task => !task.deletedAt), people, 
 teamApi.defaults.adapter = async config => {
   if (config.url.startsWith('/files/')) return { status: 200, data: new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII='), ch => ch.charCodeAt(0))], { type: 'image/png' }) };
   if (config.url === '/state') return { status: 200, data: snapshot() };
+  if (config.url === '/tasks' && config.method === 'post') {
+    const input = JSON.parse(config.data);
+    const task = { ...input, _id: input.id, workspaceId: 'workspace', creatorId: 'owner:actor', creatorName: 'Эрнест', version: 0, createdAt: new Date().toISOString(), attachments: input.attachments || [], assignees: input.assigneeIds.map(id => ({ actorId: id, name: people.find(p => p._id === id).name })) };
+    tasks.push(task);
+    if (!task.parentTaskId) messages.push({ _id: task._id, taskId: task._id, kind: 'task', authorId: task.creatorId, authorName: task.creatorName, createdAt: task.createdAt, text: '', attachments: [] });
+    return { status: 201, data: { task } };
+  }
   if (config.url === '/messages') return { status: 200, data: { messages: [], hasMore: false } };
   if (config.url.endsWith('/restore')) {
     const task = tasks.find(t => t._id === config.url.split('/')[2]); delete task.deletedAt; task.version++;

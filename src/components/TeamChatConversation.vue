@@ -380,7 +380,7 @@ function readVisibilityChanged() {
 }
 const acknowledgedReads = new Set();
 function startTask() {
-  emit("new");
+  emit("new", props.taskId || null);
 }
 function openTask(id) {
   chat.requestedTaskMessageId = null;
@@ -1275,6 +1275,7 @@ watch(
             </div> </template
           ><template #leading
             ><TeamChatAddMenu
+              :subtask="!!taskId"
               :disabled="uploading"
               @task="startTask"
               @file="input.click()" /></template

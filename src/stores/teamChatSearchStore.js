@@ -38,6 +38,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     result.value = null;
     error.value = "";
     chat.creatingTask = false;
+    chat.creatingTaskParentId = null;
     chat.taskNotifications = false;
     chat.requestedTaskId = null;
     chat.tab = "messages";

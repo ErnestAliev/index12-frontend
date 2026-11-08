@@ -18,15 +18,27 @@ const panelOpen = computed(
     chat.taskNotifications ||
     chat.tab === "tasks",
 );
-function startTask() {
+function startTask(parentTaskId = null) {
+  chat.creatingTaskParentId = parentTaskId;
   chat.creatingTask = true;
   chat.requestedTaskId = null;
 }
 function closePanel() {
+  const parentTaskId = chat.creatingTask
+    ? chat.creatingTaskParentId
+    : chat.state.tasks.find(t => t._id === chat.requestedTaskId)?.parentTaskId;
   chat.creatingTask = false;
-  chat.requestedTaskId = null;
+  chat.creatingTaskParentId = null;
+  chat.requestedTaskId = parentTaskId || null;
   chat.requestedTaskMessageId = null;
   chat.taskNotifications = false;
+}
+function createdTask(task) {
+  chat.creatingTask = false;
+  chat.creatingTaskParentId = null;
+  chat.requestedTaskMessageId = null;
+  chat.requestedTaskId = task.parentTaskId || null;
+  chat.tab = "messages";
 }
 function notification(event) {
   const data = event.data;
@@ -78,13 +90,11 @@ onBeforeUnmount(() => {
       v-if="panelOpen"
       :mobile="mobile"
       :creating="chat.creatingTask"
+      :parent-task-id="chat.creatingTaskParentId"
       :task-id="chat.requestedTaskId"
       :notifications="chat.taskNotifications"
       @close="closePanel"
-      @created="
-        chat.creatingTask = false;
-        chat.tab = 'messages';
-      "
+      @created="createdTask"
       @new="startTask"
     />
     <div

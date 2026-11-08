@@ -119,6 +119,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     olderMessageIds = ref([]);
   const taskNotifications = ref(false);
   const creatingTask = ref(false);
+  const creatingTaskParentId = ref(null);
   const requestedTaskMessageId = ref(null);
   const tab = ref("messages"),
     requestedTaskId = ref(null);
@@ -170,6 +171,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     requestedTaskMessageId.value = null;
     taskNotifications.value = false;
     creatingTask.value = false;
+    creatingTaskParentId.value = null;
     unread.value = 0;
     busy.value = false;
     error.value = "";
@@ -407,6 +409,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         }
       }
       if (data.deletedTaskId) {
+        const parentTaskId = state.value.tasks.find(t => t._id === data.deletedTaskId)?.parentTaskId;
         state.value.tasks = state.value.tasks.filter(
           (t) => t._id !== data.deletedTaskId,
         );
@@ -418,7 +421,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
           (m) => m.taskId !== data.deletedTaskId,
         );
         if (requestedTaskId.value === data.deletedTaskId) {
-          requestedTaskId.value = null;
+          requestedTaskId.value = parentTaskId || null;
           requestedTaskMessageId.value = null;
         }
       }
@@ -553,6 +556,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     requestedTaskMessageId,
     taskNotifications,
     creatingTask,
+    creatingTaskParentId,
     state,
     error,
     open,
