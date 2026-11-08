@@ -3,9 +3,13 @@ import { computed, ref } from "vue";
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useTaskHold } from "@/composables/useTaskHold";
 import UiIcon from "./UiIcon.vue";
+import TeamSearchText from "./TeamSearchText.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import { taskDate } from "@/utils/teamTasks";
-const props = defineProps({ taskId: String });
+const props = defineProps({
+  taskId: String,
+  highlight: { type: String, default: "" },
+});
 const emit = defineEmits(["open"]);
 const chat = useTeamChatStore(),
   menu = ref(false),
@@ -61,7 +65,7 @@ async function done() {
     >
       <span class="cover-title-text"
         >{{ task.status === "done" ? "Готово · " : ""
-        }}{{ task.description }}</span
+        }}<TeamSearchText :text="task.description" :query="highlight" /></span
       ><span
         v-if="task.latest && task.status !== 'done'"
         class="cover-inline-preview"

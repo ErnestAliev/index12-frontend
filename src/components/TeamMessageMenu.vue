@@ -123,10 +123,8 @@ function save() {
   );
 }
 function remove() {
-  return run(async () => {
-    await chat.action(`/messages/${props.message._id}`, {}, "delete");
-    emit("deleted", props.message._id);
-  });
+  chat.deleteMessage(props.message);
+  emit("close");
 }
 async function edit() {
   mode.value = "edit";

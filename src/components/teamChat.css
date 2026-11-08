@@ -701,3 +701,12 @@
   width: 16px;
   height: 16px;
 }
+
+.team-message-meta { margin-top: 4px; align-items: center; flex-wrap: nowrap; }
+.team-delete-error { display:flex; flex:none; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 12px; font-size:12px; color:var(--codex-pane-danger); }
+.team-pane .team-delete-error button { padding:6px 8px; min-height:36px; background:transparent; }
+
+.team-message.search-current .team-bubble { box-shadow:0 0 0 1px var(--codex-pane-accent); }
+.team-search-notice { flex:none; padding:10px 12px; color:var(--codex-pane-muted); font-size:12px; display:flex; align-items:center; gap:10px; }
+
+:deep(.team-search-match) { background:color-mix(in srgb,var(--codex-pane-accent) 24%,var(--codex-pane-surface)); color:inherit; border-radius:2px; }

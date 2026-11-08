@@ -8,6 +8,10 @@ import {
   onBeforeUnmount,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import TeamSearchText from "./TeamSearchText.vue";
+import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
+const search = useTeamChatSearchStore();
+let searchScroll = 0;
 import { chatDateKey, chatDateLabel } from "@/utils/teamChatDates";
 const calendarNow = ref(new Date());
 let calendarTimer;
@@ -219,7 +223,8 @@ async function startReply(row) {
   composeArea.value?.querySelector("textarea")?.focus({ preventScroll: true });
 }
 function displayQuote(quote) {
-  return thread.value.deletedMessageIds?.includes(quote.messageId)
+  return chat.messageDeletions[quote.messageId] ||
+    thread.value.deletedMessageIds?.includes(quote.messageId)
     ? { ...quote, deleted: true }
     : quote;
 }
@@ -279,7 +284,8 @@ async function reactToMessage(row, reaction) {
     }),
   );
 }
-const messageStatus = (row) => (row.readCount > 0 ? "Просмотрено" : "Доставлено");
+const messageStatus = (row) =>
+  row.readCount > 0 ? "Просмотрено" : "Доставлено";
 const mentionChoices = computed(() =>
   (chat.state.people || []).filter(
     (p) =>
@@ -410,7 +416,7 @@ watch(tab, (value) => {
   if (value !== "messages") dictation.stop();
   chat.schedule();
 });
-const shownMessages = computed(() =>
+const normalMessages = computed(() =>
   [
     ...older.value.filter(
       (m) => !thread.value.messages.some((n) => n._id === m._id),
@@ -424,6 +430,7 @@ const shownMessages = computed(() =>
     .filter(
       (m) =>
         !m.deletedAt &&
+        !chat.messageDeletions[m._id] &&
         m.kind !== "request" &&
         (props.taskId
           ? m.taskId === props.taskId && m.kind !== "task"
@@ -436,6 +443,47 @@ const shownMessages = computed(() =>
       (a, b) =>
         a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
     ),
+);
+const shownMessages = computed(() => {
+  const rows =
+    search.open &&
+    search.result?.messageId &&
+    (search.result.taskId || null) === (props.taskId || null)
+      ? search.result.messages
+      : normalMessages.value;
+  return rows.filter((m) => !m.deletedAt && !chat.messageDeletions[m._id]);
+});
+watch(
+  () => search.open,
+  async (open) => {
+    if (open) searchScroll = feed.value?.scrollTop || 0;
+    else {
+      await nextTick();
+      if (feed.value) feed.value.scrollTop = searchScroll;
+    }
+  },
+);
+watch(
+  [() => search.result, () => props.active, shownMessages],
+  async () => {
+    if (
+      !search.open ||
+      !props.active ||
+      (search.result?.taskId || null) !== (props.taskId || null)
+    )
+      return;
+    await nextTick();
+    const target = [
+      ...(feed.value?.querySelectorAll("[data-message-id]") || []),
+    ].find((el) => el.dataset.messageId === search.result?.messageId);
+    if (target && feed.value) {
+      const rect = target.getBoundingClientRect(),
+        box = feed.value.getBoundingClientRect();
+      feed.value.scrollTop +=
+        rect.top - box.top - (box.height - rect.height) / 2;
+    }
+  },
+  { flush: "post" },
 );
 const shownMediaFiles = computed(() =>
   shownMessages.value
@@ -717,6 +765,7 @@ function scrollFeed() {
   }, 80);
 }
 async function loadOlder() {
+  if (search.open) return;
   if (olderLoading.value || !historyMore.value || !historyReady.value) return;
   const first = shownMessages.value.find((m) => !m._delivery);
   if (!first) return;
@@ -873,11 +922,12 @@ watch(
             class="team-file"
             @click="download(file)"
           >
-            <UiIcon name="attach" />{{ file.name }}
-          </button></template
-        >
-      </div></TeamChatDialog
-    >
+            <UiIcon name="attach" /><TeamSearchText
+              :text="file.name"
+              :query="search.open ? search.query.trim() : ''"
+            /></button
+        ></template></div
+    ></TeamChatDialog>
     <div v-if="chat.notice" class="team-notice" role="status">
       <span>{{ chat.notice }}</span
       ><button
@@ -913,7 +963,7 @@ watch(
         @scroll="scrollFeed"
       >
         <button
-          v-if="historyMore && !historyLoading"
+          v-if="historyMore && !historyLoading && !search.open"
           class="team-history"
           :disabled="olderLoading"
           @click="loadOlder"
@@ -952,7 +1002,7 @@ watch(
             }}</time>
           </div>
           <button
-            v-if="gaps.some((gap) => gap.before === m._id)"
+            v-if="!search.open && gaps.some((gap) => gap.before === m._id)"
             class="team-history"
             :data-gap-before="m._id"
             :disabled="!!loadingGap"
@@ -971,6 +1021,8 @@ watch(
               'task-message': m.kind === 'task',
               self: m.authorId === chat.me.actorId,
               'reply-target': highlightedMessage === m._id,
+              'search-current':
+                search.open && search.result?.messageId === m._id,
               swiping: swipe.id === m._id,
             }"
           >
@@ -1000,24 +1052,7 @@ watch(
               @keydown="messageKeys($event, m)"
             >
               <header v-if="m.kind !== 'task'">
-                <strong>{{ m.authorName }}</strong
-                ><span class="team-message-stamp"
-                  ><time :datetime="m.createdAt">{{
-                    new Date(m.createdAt).toLocaleTimeString("ru-RU", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  }}</time
-                  ><span
-                    v-if="m.authorId === chat.me.actorId && !m._delivery"
-                    class="team-read-receipt"
-                    :class="{ read: m.readCount > 0 }"
-                    role="img"
-                    :aria-label="messageStatus(m)"
-                    :title="messageStatus(m)"
-                    ><UiIcon
-                      :name="m.readCount > 0 ? 'checks' : 'check'" /></span
-                ></span>
+                <strong>{{ m.authorName }}</strong>
               </header>
               <TeamReplyQuote
                 v-if="m.replyTo"
@@ -1030,11 +1065,13 @@ watch(
               <TeamTaskCover
                 v-if="m.kind === 'task'"
                 :task-id="m.taskId"
+                :highlight="search.open ? search.query.trim() : ''"
                 @open="openTask(m.taskId)"
               />
               <CodexMessageText
                 v-if="m.text && m.kind !== 'task'"
                 :text="m.text"
+                :highlight="search.open ? search.query.trim() : ''"
                 class="team-message-content"
               />
               <button
@@ -1045,7 +1082,10 @@ watch(
                 :disabled="!!m._delivery"
                 @click="download(file)"
               >
-                <UiIcon name="attach" />{{ file.name }}
+                <UiIcon name="attach" /><TeamSearchText
+                  :text="file.name"
+                  :query="search.open ? search.query.trim() : ''"
+                />
               </button>
               <div
                 v-if="m._delivery"
@@ -1079,17 +1119,61 @@ watch(
                   {{ reaction.emoji }} <span>{{ reaction.count }}</span>
                 </button>
               </div>
-              <div
-                v-if="m.editedAt && !m._delivery && m.kind !== 'task'"
-                class="team-message-meta"
-              >
-                <span>изменено</span>
-              </div>
+              <footer v-if="m.kind !== 'task'" class="team-message-meta">
+                <span v-if="m.editedAt">изменено</span>
+                <span class="team-message-stamp"
+                  ><time :datetime="m.createdAt">{{
+                    new Date(m.createdAt).toLocaleTimeString("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  }}</time
+                  ><span
+                    v-if="m.authorId === chat.me.actorId && !m._delivery"
+                    class="team-read-receipt"
+                    :class="{ read: m.readCount > 0 }"
+                    role="img"
+                    :aria-label="messageStatus(m)"
+                    :title="messageStatus(m)"
+                    ><UiIcon
+                      :name="m.readCount > 0 ? 'checks' : 'check'" /></span
+                ></span>
+              </footer>
             </div>
           </article>
         </template>
       </div>
       <div
+        v-for="(entry, id) in chat.failedMessageDeletions"
+        :key="id"
+        class="team-delete-error"
+        role="alert"
+      >
+        <span :title="entry.error">Не удалось удалить сообщение</span>
+        <button type="button" @click="chat.deleteMessage(entry)">
+          Повторить
+        </button>
+        <button type="button" @click="chat.restoreMessage(id)">Вернуть</button>
+      </div>
+      <div
+        v-if="search.open && search.error"
+        class="team-search-notice"
+        role="alert"
+      >
+        {{ search.error
+        }}<button type="button" @click="search.find()">Повторить</button>
+      </div>
+      <div
+        v-else-if="
+          search.open && search.hasQuery && !search.busy && !search.total
+        "
+        class="team-search-notice"
+        role="status"
+      >
+        Ничего не найдено
+      </div>
+      <div
+        v-show="!search.open"
         ref="composeArea"
         class="team-compose-area"
         @focusin="emit('composer-focus')"

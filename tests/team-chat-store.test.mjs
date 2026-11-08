@@ -409,3 +409,55 @@ test('task deletion removes its cover, cached discussion and pending comments wi
  await s.action('/tasks/task',{expectedVersion:0},'delete');
  assert.deepEqual(s.state.tasks,[]);assert.equal(s.state.messages[0]._id,'normal');assert.equal(s.state.messages.length,1);assert.equal(s.threads.task,undefined);assert.equal(s.requestedTaskId,null);s.stop();
 });
+
+test("optimistic deletion hides immediately, survives stale snapshots and retries without restoring the message", async () => {
+  const s = fixture();
+  s.me = { actorId: "a", workspaceId: "w", status: "active", owner: true };
+  const row = { _id: "delete-me", authorId: "a", text: "remove", createdAt: new Date().toISOString() };
+  s.state.messages = [row];
+  let rejectDelete, finishDelete;
+  teamApi.defaults.adapter = config => config.method === "delete" ? new Promise((resolve, reject) => { rejectDelete = reject; finishDelete = () => resolve({ data: { deletedMessageId: row._id }, status: 200 }); }) : Promise.resolve({ data: { ...empty(), messages: [row] }, status: 200 });
+  s.deleteMessage(row);
+  assert.equal(s.messageDeletions[row._id].status, "pending");
+  assert.equal(s.busy, false);
+  await s.refresh();
+  assert.equal(s.messageDeletions[row._id].status, "pending");
+  rejectDelete(Error("offline")); await tick();
+  assert.equal(s.failedMessageDeletions[row._id].status, "failed");
+  s.deleteMessage(row); finishDelete(); await tick();
+  assert.equal(s.messageDeletions[row._id].status, "done");
+  await s.refresh();
+  assert.equal(s.messageDeletions[row._id].status, "done", "stale refresh must not lift a tombstone");
+  s.stop(); assert.deepEqual(s.messageDeletions, {});
+});
+test("an old deletion response never affects another workspace", async () => {
+  const s = fixture(); s.me = { actorId: "a", workspaceId: "w", status: "active", owner: true };
+  let finish;
+  teamApi.defaults.adapter = () => new Promise(resolve => { finish = () => resolve({data:{},status:200}); });
+  s.deleteMessage({ _id: "old", authorId: "a" }); s.stop();
+  s.me = { actorId: "b", workspaceId: "other", status: "active" };
+  finish(); await tick(); assert.deepEqual(s.messageDeletions, {});
+});
+
+test("pending deletion resumes after reopening the same identity, never for another actor", async () => {
+  const s = fixture(), storage = new Map();
+  globalThis.localStorage = { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) };
+  const id = "11111111-1111-4111-8111-111111111111";
+  s.me = { actorId: "a", workspaceId: "w", status: "active", owner: true };
+  let finish, calls = 0;
+  teamApi.defaults.adapter = config => {
+    if (config.method === "delete") { calls++; return new Promise(resolve => { finish = () => resolve({data:{},status:200}); }); }
+    return Promise.resolve({ status: 200, data: config.url === "/me" ? {actorId:"a",workspaceId:"w",status:"active",owner:true} : empty() });
+  };
+  try {
+    s.deleteMessage({_id:id,authorId:"a"});
+    assert.ok(storage.get("index12-chat-deletions:w:a").includes(id));
+    s.stop(); finish(); await tick();
+    await s.start("w");
+    assert.equal(calls,2,"authenticated identity resumes its pending command");
+    assert.equal(s.messageDeletions[id].status,"pending");
+    finish(); await tick();
+    assert.equal(s.messageDeletions[id].status,"done");
+    assert.equal(storage.get("index12-chat-deletions:w:a"),"[]");
+  } finally { s.stop(); delete globalThis.localStorage; }
+});

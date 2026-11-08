@@ -15,6 +15,102 @@ export const teamError = (e) =>
   e.response?.data?.message || e.message || "Не удалось связаться с чатом";
 export const useTeamChatStore = defineStore("teamChat", () => {
   const outbox = ref([]);
+  const messageDeletions = ref({});
+  const failedMessageDeletions = computed(() =>
+    Object.fromEntries(
+      Object.entries(messageDeletions.value).filter(
+        ([, entry]) => entry.status === "failed",
+      ),
+    ),
+  );
+  const deletionKey = () =>
+    me.value
+      ? `index12-chat-deletions:${me.value.workspaceId}:${me.value.actorId}`
+      : null;
+  function persistDeletions() {
+    try {
+      const key = deletionKey();
+      if (key)
+        localStorage.setItem(
+          key,
+          JSON.stringify(
+            Object.values(messageDeletions.value).filter(
+              (row) => row.status !== "done",
+            ),
+          ),
+        );
+    } catch {
+      /* The in-memory queue still protects this session if storage is unavailable. */
+    }
+  }
+  function resumeDeletions() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(deletionKey()) || "[]");
+      if (!Array.isArray(saved)) return;
+      for (const row of saved) {
+        if (
+          !/^[a-f\d-]{36}$/i.test(row?._id || "") ||
+          typeof row.authorId !== "string" ||
+          !["pending", "failed"].includes(row.status)
+        )
+          continue;
+        messageDeletions.value[row._id] = { ...row, status: "failed" };
+        if (row.status === "pending") deleteMessage(row);
+      }
+    } catch {
+      /* Storage is optional. */
+    }
+  }
+  function restoreMessage(id) {
+    if (messageDeletions.value[id]?.status === "failed")
+      delete messageDeletions.value[id];
+    persistDeletions();
+  }
+  function deleteMessage(row) {
+    if (
+      !me.value ||
+      me.value.status !== "active" ||
+      (!isOwner.value && row.authorId !== me.value.actorId)
+    )
+      return;
+    const id = row._id;
+    if (!id || ["pending", "done"].includes(messageDeletions.value[id]?.status))
+      return;
+    const g = generation;
+    messageDeletions.value[id] = {
+      _id: id,
+      authorId: row.authorId,
+      status: "pending",
+      error: "",
+    };
+    persistDeletions();
+    void teamApi
+      .delete(`/messages/${id}`)
+      .then(() => {
+        if (g !== generation) return;
+        ++ticket;
+        messageDeletions.value[id].status = "done";
+        persistDeletions();
+        state.value.messages = state.value.messages.filter((m) => m._id !== id);
+        for (const thread of Object.values(threads.value)) {
+          thread.messages = thread.messages.filter((m) => m._id !== id);
+          thread.deletedMessageIds = [
+            ...new Set([...(thread.deletedMessageIds || []), id]),
+          ];
+        }
+        schedule();
+      })
+      .catch((e) => {
+        if (g !== generation) return;
+        messageDeletions.value[id] = {
+          _id: id,
+          authorId: row.authorId,
+          status: e.response?.status === 404 ? "done" : "failed",
+          error: teamError(e),
+        };
+        persistDeletions();
+      });
+  }
   const threads = ref({});
   const threadTickets = new Map();
   const historyLoading = ref(false),
@@ -82,6 +178,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     historyReady.value = false;
     lastMessage = "";
     outbox.value = [];
+    messageDeletions.value = {};
     threads.value = {};
     threadTickets.clear();
     messageQueue = Promise.resolve();
@@ -202,6 +299,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
       me.value = data;
+      if (data.status === "active") resumeDeletions();
       window.addEventListener("focus", wake);
       document.addEventListener("visibilitychange", wake);
       timer = setInterval(() => {
@@ -437,6 +535,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    messageDeletions,
+    failedMessageDeletions,
+    deleteMessage,
+    restoreMessage,
     historyLoading,
     historyReady,
     outbox,

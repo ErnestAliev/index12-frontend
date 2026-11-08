@@ -1,8 +1,34 @@
 <script setup>
-import { computed } from 'vue';
-import { renderCodexMarkdown } from '@/utils/codexMarkdown.js';
-const props = defineProps({ text: { type: String, default: '' }, plain: Boolean });
-const html = computed(() => props.plain ? '' : renderCodexMarkdown(props.text));
+import { computed } from "vue";
+import { searchTextParts } from "@/utils/teamSearchText";
+import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
+const props = defineProps({
+  text: { type: String, default: "" },
+  plain: Boolean,
+  highlight: { type: String, default: "" },
+});
+const html = computed(() => {
+  if (props.plain) return "";
+  const rendered = renderCodexMarkdown(props.text);
+  if (!props.highlight || typeof document === "undefined") return rendered;
+  const container = document.createElement("div");
+  container.innerHTML = rendered;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT),
+    nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const parts = searchTextParts(node.textContent, props.highlight);
+    if (!parts.some(part => part.match)) continue;
+    const fragment = document.createDocumentFragment();
+    for (const part of parts) {
+      if (!part.match) { fragment.append(part.text); continue; }
+      const mark = document.createElement("mark");
+      mark.className = "team-search-match"; mark.textContent = part.text; fragment.append(mark);
+    }
+    node.replaceWith(fragment);
+  }
+  return container.innerHTML;
+});
 </script>
 
 <template>
