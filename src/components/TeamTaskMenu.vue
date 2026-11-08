@@ -12,7 +12,7 @@ const props = defineProps({
 const openingGesture = useOpeningGestureGuard(props.suppressOpeningTouch);
 const emit = defineEmits(["close", "open", "deleted"]);
 const chat = useTeamChatStore(),
-  confirm = ref(props.confirmOnly),
+  confirm = computed(() => props.confirmOnly),
   busy = ref(false),
   error = ref("");
 const canDelete = computed(
@@ -64,7 +64,7 @@ async function remove() {
           "
         >
           Открыть</button
-        ><button v-if="canDelete" class="danger" @click="confirm = true">
+        ><button v-if="canDelete" class="danger" :disabled="busy" @click="remove">
           <UiIcon name="trash" />Удалить
         </button></template
       >
