@@ -78,10 +78,10 @@ onBeforeUnmount(() => {
   transform: translate(-50%, -50%);
   max-width: none;
   box-sizing: border-box;
-  border: 1px solid var(--codex-pane-border);
+  border: 1px solid var(--codex-pane-border, var(--color-border, #454545));
   border-radius: 12px;
-  background: var(--codex-pane-bg);
-  color: var(--codex-pane-text);
+  background: var(--codex-pane-bg, var(--color-background, #191919));
+  color: var(--codex-pane-text, var(--color-text, #ededed));
   font:
     14px/1.4 system-ui,
     sans-serif;
@@ -102,7 +102,7 @@ header {
   flex: none;
   min-height: 44px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--codex-pane-border);
+  border-bottom: 1px solid var(--codex-pane-border, var(--color-border, #454545));
 }
 strong {
   font-size: 14px;
@@ -128,7 +128,7 @@ header button {
   box-shadow: none !important;
 }
 header button:focus-visible {
-  outline: 2px solid var(--codex-pane-focus);
+  outline: 2px solid var(--codex-pane-focus, var(--color-primary, #3b6763));
   outline-offset: -4px;
 }
 </style>

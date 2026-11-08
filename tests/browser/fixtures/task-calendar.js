@@ -15,6 +15,7 @@ const people = [
   { _id: 'employee', name: 'Валентина', role: 'employee' },
 ];
 const day = dayAt(), view = ref('chat');
+const manualTasks = [];
 const tasks = [
   { _id: '11111111-1111-4111-8111-111111111111', description: 'Моя задача', assigneeIds: ['owner:actor'], dueDate: day, dueTime: null },
   { _id: '22222222-2222-4222-8222-222222222222', description: 'Задача Валентины', assigneeIds: ['employee'], dueDate: day, dueTime: '18:05' },
@@ -46,8 +47,8 @@ teamApi.defaults.adapter = async config => {
 businessApi.defaults.adapter = async config => {
   if (config.url === '/status') return { status: 200, data: { actorId: 'actor' } };
   if (config.url === '/tasks/deleted') return { status: 200, data: { tasks: tasks.filter(t => t.deletedAt).map(project) } };
-  if (config.url === '/tasks') return { status: 200, data: { tasks: projected(), people } };
-  if (config.url.startsWith('/tasks/')) return { status: 200, data: { task: projected().find(t => t._id === config.url.slice(7)) } };
+  if (config.url === '/tasks') return { status: 200, data: { tasks: [...projected(), ...manualTasks], people } };
+  if (config.url.startsWith('/tasks/')) return { status: 200, data: { task: [...projected(), ...manualTasks].find(t => t._id === config.url.slice(7)) } };
   return { status: 200, data: {} };
 };
 const pinia = createPinia(), chat = useTeamChatStore(pinia), business = useBusinessStore(pinia);
@@ -57,4 +58,4 @@ const app = createApp({ render: () => view.value === 'calendar'
   ? h(Calendar, { onClose: () => { view.value = 'chat'; } })
   : h(Frame, { open: true, mobile: true, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: true }, { heading: () => h(Header), default: () => h(Pane, { mobile: true }) }) });
 app.use(pinia); app.mount('#app');
-window.taskCalendar = { chat, business, tasks, people, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };
+window.taskCalendar = { chat, business, tasks, people, manualTasks, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };

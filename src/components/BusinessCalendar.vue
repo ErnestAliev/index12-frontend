@@ -1,5 +1,6 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
+import { useInputModality } from '@/composables/useInputModality';
 import { useTeamChatStore, teamApi } from '@/stores/teamChatStore';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useBusinessStore } from '@/stores/businessStore';
@@ -9,6 +10,7 @@ import { dayAt, monthDays, shiftTask, statusLabels, taskState, taskOnDay, timeAt
 import CalendarTaskPopover from './CalendarTaskPopover.vue';
 import CalendarDeletedTasks from './CalendarDeletedTasks.vue';
 const emit = defineEmits(['close']);
+const keyboardNavigation = useInputModality();
 const business = useBusinessStore(), main = useMainStore(), chat = useTeamChatStore();
 const employee = ref('all'), filterOpen = ref(false), deletedOpen = ref(false), agendaUndated = ref(false);
 const now = ref(Date.now()), month = ref(dayAt().slice(0, 7)), selected = ref(dayAt()), query = ref(''), party = ref(''), statuses = ref(Object.keys(statusLabels)), error = ref(''), dropDate = ref(null), popover = ref(null), editor = ref(null);
@@ -80,7 +82,7 @@ onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock)
 </script>
 <template>
   <div class="calendar-overlay" @click.self="closeCalendar">
-    <section class="calendar-window" role="dialog" aria-modal="true" aria-label="Календарь задач">
+    <section class="calendar-window" :data-keyboard="keyboardNavigation" role="dialog" aria-modal="true" aria-label="Календарь задач">
       <header class="calendar-header"><h2>Календарь</h2><button type="button" class="today-button" @click="goToday">Сегодня</button><div class="calendar-navigation"><button type="button" aria-label="Предыдущий месяц" @click="moveMonth(-1)" class="ui-icon-button"><UiIcon name="chevron-left" /></button><button type="button" aria-label="Следующий месяц" @click="moveMonth(1)" class="ui-icon-button"><UiIcon name="chevron-right" /></button></div><strong class="calendar-month-label">{{ monthLabel }}</strong><div class="calendar-search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input v-model="query" type="search" aria-label="Поиск задач" placeholder="Поиск задач" /></div><button type="button" class="calendar-filter-toggle ui-icon-button" aria-label="Фильтры календаря" :aria-expanded="filterOpen" @click="filterOpen = !filterOpen"><UiIcon name="filter" /></button><button type="button" class="calendar-deleted-button" aria-label="Удалённые задачи" title="Удалённые задачи" @click="deletedOpen = true; filterOpen = false"><UiIcon name="trash" /><span>Удалённые</span></button><button type="button" class="notification-button" :class="{ enabled: business.notificationsEnabled }" :aria-pressed="business.notificationsEnabled" :aria-label="business.notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления'" :title="business.notificationsEnabled ? 'Уведомления включены' : 'Включить уведомления'" @click="business.toggleNotifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button><button type="button" class="calendar-close ui-icon-button" aria-label="Закрыть календарь" @click="closeCalendar"><UiIcon name="close" /></button></header>
       <div v-if="error || business.error" class="calendar-error" role="alert">{{ error || business.error }}</div><div v-if="business.truncated" class="calendar-error" role="status">Показаны первые 2000 задач периода</div>
       <div v-if="filterOpen" class="calendar-filter-backdrop" @click.stop="filterOpen = false" />
@@ -231,4 +233,14 @@ onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock)
   .calendar-grid { grid-column: 1; grid-row: 2; height: 100%; }
   .mobile-agenda { grid-column: 2; grid-row: 1/3; border-top: 0; border-left: 1px solid var(--color-border); }
 }
+</style>
+
+<style scoped>
+.calendar-window .calendar-search input { border: 0 !important; border-radius: 0; outline: none !important; box-shadow: none !important; padding: 0; background: transparent !important; font: inherit; font-size: 13px; }
+.calendar-window .calendar-filter-fields select { height: 34px; min-height: 34px; padding: 6px 8px; font-size: 13px; color: var(--color-text); }
+.calendar-window:not([data-keyboard="true"]) :is(button,input,select):focus { outline: none !important; box-shadow: none !important; }
+.calendar-window:not([data-keyboard="true"]) .calendar-filter-fields select:focus { border-color: var(--color-border) !important; }
+.calendar-window[data-keyboard="true"] :is(button,select):focus-visible { outline: 1px solid var(--color-primary) !important; outline-offset: 2px; }
+.calendar-window[data-keyboard="true"] .calendar-search input:focus-visible { box-shadow: inset 0 -1px var(--color-primary) !important; }
+@media (max-width:1000px) { .calendar-window .calendar-search input { font-size: 16px; } }
 </style>

@@ -1,5 +1,6 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
+import { useInputModality } from '@/composables/useInputModality';
 import TeamTaskRecipientPicker from './TeamTaskRecipientPicker.vue';
 import TeamMediaPreview from './TeamMediaPreview.vue';
 import { useTeamMedia } from '@/composables/useTeamMedia';
@@ -12,6 +13,7 @@ import { addDays, dayAt, timeAt, localInstant, statusLabels, taskState, defaultS
 const props = defineProps({ task: { type: Object, default: null }, date: { type: String, required: true } });
 const emit = defineEmits(['close', 'saved', 'reload', 'open-chat']);
 const business = useBusinessStore();
+const keyboardNavigation = useInputModality();
 const isChat = props.task?.source === 'team-chat';
 const recipientOpen = ref(false);
 const chatStatuses = [{ id: 'progress', label: 'В процессе' }, { id: 'delayed', label: 'Не успеваю' }, { id: 'done', label: 'Готово' }];
@@ -152,7 +154,7 @@ defineExpose({ close });
 <template>
   <TeamMediaPreview v-if="media.preview.value" :media="media.preview.value" @close="media.closePreview" @retry="media.retryPreview" />
   <div class="task-dialog-backdrop" :style="viewport" @click.self="close">
-    <section ref="panel" class="task-popover" role="dialog" aria-modal="true" aria-label="Карточка задачи" tabindex="-1" @keydown="keyboard">
+    <section ref="panel" class="task-popover" :data-keyboard="keyboardNavigation" role="dialog" aria-modal="true" aria-label="Карточка задачи" tabindex="-1" @keydown="keyboard">
       <header><span class="task-state" :data-status="currentStatus"><i></i>{{ statusLabels[currentStatus] }}</span><div class="popover-tools"><span v-if="busy" class="save-state" role="status">Сохранение…</span><span v-else-if="saved" class="save-state" role="status">Сохранено</span><button v-if="id" type="button" class="ui-icon-button" aria-label="Удалить задачу" title="Удалить задачу" :disabled="busy" @click="remove"><UiIcon name="trash" /></button><button type="button" class="ui-icon-button" aria-label="Закрыть карточку задачи" @click="close"><UiIcon name="close" /></button></div></header>
       <div v-if="error" class="task-error" role="alert">{{ error }}<button v-if="conflict" type="button" title="Отменить локальные правки и загрузить актуальную задачу" @click="reload">Загрузить актуальную версию</button><button v-else-if="id" type="button" @click="error = ''; save()">Повторить</button></div>
       <form id="calendar-task-form" class="task-form-body" novalidate @submit.prevent="save" @input="changed" @change="changed">
@@ -165,9 +167,11 @@ defineExpose({ close });
         </template>
         <template v-else>
         <input v-model="draft.title" class="task-title-input" aria-label="Название задачи" aria-required="true" placeholder="Название задачи" maxlength="300" />
-        <div class="task-date-row"><label>Дата<input v-model="draft.date" type="date" aria-label="Дата задачи" @change="datesChanged" /></label><label class="all-day"><input v-model="draft.allDay" type="checkbox" />Весь день</label></div>
-        <div v-if="!draft.allDay" class="task-time-row"><label>Начало<input v-model="draft.start" type="time" aria-label="Время начала" @change="startChanged" /></label><span>—</span><label>Окончание<input v-model="draft.end" type="time" aria-label="Время окончания" /></label><label>Дата окончания<input v-model="draft.endDate" type="date" aria-label="Дата окончания" /></label></div>
-        <div class="timezone">Алматы · UTC+5</div>
+        <div class="task-schedule">
+          <div class="task-date-row" :class="{ 'is-all-day': draft.allDay }"><label>{{ draft.allDay ? 'Дата' : 'Начало' }}<input v-model="draft.date" type="date" aria-label="Дата задачи" @change="datesChanged" /></label><label v-if="!draft.allDay">Окончание<input v-model="draft.endDate" type="date" aria-label="Дата окончания" /></label></div>
+          <div v-if="!draft.allDay" class="task-time-row"><input v-model="draft.start" type="time" aria-label="Время начала" @change="startChanged" /><input v-model="draft.end" type="time" aria-label="Время окончания" /></div>
+          <div class="task-schedule-meta"><label class="all-day"><input v-model="draft.allDay" type="checkbox" />Весь день</label><span class="timezone">Алматы · UTC+5</span></div>
+        </div>
         <label class="field-label">Контрагент</label><CalendarPartySelect v-model="draft.party" :fallback-name="original.partyName" @update:model-value="changed" />
         <label class="field-label" for="calendar-description">Описание</label><textarea id="calendar-description" v-model="draft.description" aria-label="Описание задачи" placeholder="Описание" maxlength="10000" rows="2"></textarea>
         <div class="reminder-heading"><label class="field-label" :title="draft.allDay ? 'Для задач на весь день — до 09:00 по Алматы' : 'До начала задачи'">Напоминания</label><button type="button" class="custom-reminder-toggle" :aria-expanded="customOpen" @click="customOpen = !customOpen">Дата и время</button></div>
@@ -202,19 +206,25 @@ defineExpose({ close });
 .task-popover .ui-icon-button:hover { background:var(--color-background-soft); }
 .task-popover .ui-icon-button :deep(svg),.link-row :deep(svg) { display:block; width:16px; height:16px; flex:none; }
 .task-form-body { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:0 20px 20px; scrollbar-width:thin; }
-.task-popover .task-title-input { display:block; width:100%; margin:4px 0 20px; padding:10px 12px; border:0; border-radius:8px; background:var(--color-background-soft); font-size:22px; line-height:1.4; }
+.task-popover .task-title-input { display:block; width:100%; margin:4px 0 20px; padding:10px 12px; border:0; border-radius:8px; background:var(--color-background-soft); font-size:16px; line-height:1.4; }
 .task-popover .task-title-input:focus,.task-popover .task-title-input:focus-visible { outline:none; box-shadow:none; border:0; }
 .task-state { display:flex; align-items:center; gap:6px; font-size:11px; white-space:nowrap; }
 .task-state i { width:6px; height:6px; border-radius:50%; background:#89929e; }
 .task-state[data-status=today] i { background:#81aef3; }.task-state[data-status=overdue] i { background:#ee8c83; }.task-state[data-status=done] i { background:#60bc95; }
 .save-state { font-size:11px; opacity:.6; }
-.task-date-row { display:flex; gap:16px; align-items:end; }.task-date-row>label:first-child { flex:1; }
-.task-date-row label,.task-time-row label { display:flex; flex-direction:column; gap:4px; font-size:11px; min-width:0; }
-.task-date-row input,.task-time-row input { width:100%; font-size:13px; }
-.task-date-row .all-day { display:flex; flex-direction:row; align-items:center; gap:6px; font-size:12px; padding:8px 0; }.all-day input { width:auto; }
-.task-time-row { display:grid; grid-template-columns:1fr 12px 1fr 1.4fr; gap:8px; align-items:end; margin-top:12px; }.task-time-row>span { padding-bottom:10px; text-align:center; opacity:.4; }
-.timezone { font-size:10px; opacity:.45; margin:6px 0 16px; }.field-label { display:block; font-size:11px; opacity:.65; margin:16px 0 6px; }.timezone+.field-label { margin-top:0; }
-.task-popover textarea { width:100%; resize:vertical; min-height:60px; max-height:160px; line-height:1.5; }
+.task-popover textarea { display: block; width: 100%; resize: vertical; min-height: 60px; max-height: 160px; line-height: 1.5; }
+.task-schedule { display: grid; gap: 8px; }
+.task-date-row,.task-time-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; align-items: end; }
+.task-date-row.is-all-day { grid-template-columns: minmax(0,1fr); }
+.task-date-row label { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--color-text); }
+.task-date-row input,.task-time-row input { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin: 0; padding: 6px 8px; font-size: 14px; line-height: 22px; text-align: left; }
+.task-popover input:is([type=date],[type=time])::-webkit-date-and-time-value { text-align: left; }
+.task-popover input:is([type=date],[type=time])::-webkit-datetime-edit { padding: 0; font: inherit; }
+.task-schedule-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.all-day { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
+.task-popover .all-day input { width: 14px; height: 14px; margin: 0; padding: 0; flex: none; }
+.timezone { font-size: 11px; color: var(--color-text); opacity: .6; white-space: nowrap; }
+.field-label { display: block; font-size: 12px; opacity: .65; margin: 12px 0 6px; }
 .reminder-heading,.attachment-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:16px; }.reminder-heading .field-label,.attachment-heading .field-label { margin:0; }
 .task-popover .custom-reminder-toggle { padding:4px 0; background:transparent; border:0; font-size:11px; }
 .reminder-presets { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }.reminder-presets button { display:inline-flex; align-items:center; gap:4px; padding:6px 10px; min-height:32px; font-size:12px; background:transparent; }.reminder-presets button[aria-pressed=true] { background:color-mix(in srgb,var(--color-primary,#10b981) 12%,var(--color-background-soft)); border-color:var(--color-primary,#10b981); }.reminder-presets :deep(svg) { width:12px; height:12px; }
@@ -229,7 +239,7 @@ defineExpose({ close });
 .completion { display:flex; align-items:center; gap:8px; font-size:12px; }.task-popover .save-button { background:var(--color-primary,#10b981); border:0; color:#fff; padding:9px 12px; }
 .task-error { color:var(--color-danger,#e48b86); font-size:12px; padding:8px 20px; flex-shrink:0; }.task-error button { font-size:11px; margin-left:8px; }
 :global(:root[data-theme=light]) .task-popover input:is([type=date],[type=time],[type=datetime-local]) { color-scheme:light; }
-@media(max-width:540px) { .task-dialog-backdrop { padding:12px; }.task-form-body { padding:0 16px 16px; }.task-popover footer { padding:12px 16px; }.task-time-row { grid-template-columns:1fr 12px 1fr; }.task-time-row label:last-child { grid-column:1/-1; }.reminder-presets { gap:6px; }.reminder-presets button { flex:1 0 27%; justify-content:center; } }
+@media(max-width:540px) { .task-dialog-backdrop { padding:12px; }.task-form-body { padding:0 16px 16px; }.task-popover footer { padding:12px 16px; }.reminder-presets { gap:6px; }.reminder-presets button { flex:1 0 27%; justify-content:center; } }
 </style>
 
 <style scoped>
@@ -251,4 +261,12 @@ defineExpose({ close });
   .task-popover input,.task-popover textarea { font-size: 16px; }
   .task-popover .ui-icon-button { width: 44px; height: 44px; }
 }
+</style>
+
+<style scoped>
+.task-popover .task-title-input { font-size: 16px; line-height: 24px; padding: 8px 10px; margin: 0 0 12px; }
+.task-popover .task-date-row input,.task-popover .task-time-row input { font-size: 14px; }
+.task-popover:not([data-keyboard="true"]) :is(input,textarea,select,button):focus { outline: none !important; box-shadow: none !important; }
+.task-popover:not([data-keyboard="true"]) :is(input,textarea,select):focus { border-color: var(--color-border); }
+.task-popover[data-keyboard="true"] :is(input,textarea,select,button):focus-visible { outline: 1px solid var(--color-primary) !important; outline-offset: 2px; }
 </style>

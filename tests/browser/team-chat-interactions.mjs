@@ -27,6 +27,7 @@ try {
     hasTouch: true,
     isMobile: true,
   });
+  context.setDefaultTimeout(10000);
   const page = await context.newPage(),
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
