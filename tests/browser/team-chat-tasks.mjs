@@ -115,7 +115,7 @@ try {
   await panel
     .getByRole("textbox", { name: "Описание задачи", exact: true })
     .fill("Договор проверен — забрать документы" + suffix);
-  await page.locator("dialog.task-text-editor").click({ position: { x: -5, y: -5 }, force: true });
+  await page.locator(".task-header").click();
   await panel
     .locator(".task-description")
     .filter({ hasText: "Договор проверен — забрать документы" + suffix })

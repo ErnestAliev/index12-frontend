@@ -438,10 +438,10 @@ onBeforeUnmount(() => {
       wizard: creating,
       'task-details-collapsed': detailsCollapsed,
       'task-is-editing': !!editing,
+      'task-text-editing': editing === 'description',
     }"
     @keydown.esc.stop.prevent="close"
   >
-    <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
     <TeamMediaPreview
       v-if="preview"
       :media="preview"
@@ -728,7 +728,9 @@ onBeforeUnmount(() => {
           <div class="task-summary">
             <div class="task-summary-title">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
+              <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
               <button
+                v-else
                 class="task-description"
                 :disabled="!canEdit"
                 @click="editDescription"

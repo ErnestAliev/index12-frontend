@@ -691,3 +691,10 @@
   .task-summary .task-from-label { grid-column: 1; grid-row: 4; padding-block: 4px; }
   .task-summary .task-from-value { grid-column: 2; grid-row: 4; }
 }
+
+.task-text-editing::after { content: ""; position: absolute; inset: 0; z-index: 20; background: #0006; pointer-events: none; }
+.task-text-editing .task-overview { position: relative; z-index: 21; }
+.task-text-editing .task-summary { display: block; }
+.task-text-editing .task-summary-title { display: flex; flex-direction: column; gap: 8px; }
+.task-text-editing .task-summary > :not(.task-summary-title),.task-text-editing .task-status-select,.task-text-editing .task-files { opacity: .4; }
+.task-text-editing .task-discussion { display: none; }

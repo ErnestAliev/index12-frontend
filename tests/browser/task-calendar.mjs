@@ -9,6 +9,7 @@ try {
   await server.listen();
   browser = useWebkit ? await webkit.launch() : await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), errors = [];
+  const capture = options => process.env.INDEX12_NO_SCREENSHOTS ? Promise.resolve() : page.screenshot(options);
   page.setDefaultTimeout(10000);
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:5201/tests/browser/fixtures/task-calendar.html');
@@ -21,7 +22,7 @@ try {
     assert.ok(tones.every(t => t.border === '1px' && t.whiteSpace === 'nowrap'));
     assert.equal(new Set(tones.map(t => t.bg)).size, 3);
     assert.ok(await panel.locator('.task-choice-chip').first().evaluate(el => el.getBoundingClientRect().height - 14 <= 32));
-    await page.screenshot({ path: `output/playwright/task-chips-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await capture({ path: `output/playwright/task-chips-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
   }
   for (const width of [320, 375, 736, 390]) {
     await page.setViewportSize({ width, height: width === 736 ? 390 : 844 });
@@ -37,7 +38,7 @@ try {
   await panel.getByRole('option', { name: 'Валентина', exact: true }).tap();
   assert.equal(await panel.getByRole('button', { name: 'Срочно', exact: true }).getAttribute('data-tone'), 'urgent');
   assert.equal(await panel.locator('.inline-choices .task-choice-chip > .task-chip-label').count(), 3, 'all chip labels paint above the tinted surface');
-  await page.screenshot({ path: `output/playwright/task-timing-chips-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/task-timing-chips-${useWebkit ? 'webkit' : 'chromium'}.png` });
   const deadline = await panel.getByRole('button', { name: 'К сроку', exact: true }).boundingBox();
   await page.touchscreen.tap(deadline.x + deadline.width / 2, deadline.y + 3);
   await panel.getByRole('dialog', { name: 'Выберите дату' }).waitFor();
@@ -68,7 +69,7 @@ try {
   assert.ok(drawer.x >= 20 && drawer.x + drawer.width <= 370);
   assert.ok(drawer.y >= 20 && drawer.y + drawer.height <= 844 - 34);
   assert.ok(drawer.y <= (await page.locator('.calendar-header').boundingBox()).y + (await page.locator('.calendar-header').boundingBox()).height + 12);
-  await page.screenshot({ path: `output/playwright/calendar-filters-mobile-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-filters-mobile-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await page.touchscreen.tap(30, 140);
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'a tap on the header dismisses filters too');
   await toggle.tap();
@@ -85,7 +86,7 @@ try {
   assert.equal(await page.locator('.mobile-agenda-task').count(), 2);
   await page.touchscreen.tap(10, 700);
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
-  await page.screenshot({ path: `output/playwright/calendar-chat-mobile-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-chat-mobile-${useWebkit ? 'webkit' : 'chromium'}.png` });
   assert.equal(await page.locator('.calendar-event:visible').count(), 0, 'mobile day cells have no task buttons');
   assert.ok((await page.locator('.mobile-agenda').boundingBox()).height > 300, 'agenda receives the remaining screen space');
   await page.getByRole('button', { name: 'Без даты', exact: true }).tap();
@@ -106,14 +107,14 @@ try {
   await page.getByRole('button', { name: 'Закрыть снимок.png', exact: true }).tap();
   await card.getByRole('combobox', { name: 'Статус задачи', exact: true }).selectOption('progress');
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'progress');
-  await page.screenshot({ path: `output/playwright/calendar-task-inline-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-task-inline-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await card.getByRole('button', { name: 'Удалить задачу', exact: true }).tap();
   await card.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Удалённые задачи', exact: true }).tap();
   const trash = page.getByRole('dialog', { name: 'Удалённые задачи', exact: true });
   await trash.getByRole('searchbox', { name: 'Поиск удалённых задач' }).tap();
   assert.equal(await trash.getByRole('searchbox').evaluate(el => getComputedStyle(el).outlineStyle), 'none');
-  await page.screenshot({ path: `output/playwright/calendar-deleted-tasks-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-deleted-tasks-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await trash.getByRole('button', { name: 'Восстановить Изменено из календаря', exact: true }).tap();
   await trash.getByText('Нет удалённых задач', { exact: true }).waitFor();
   await trash.getByRole('button', { name: 'Закрыть удалённые задачи', exact: true }).tap();
@@ -127,17 +128,17 @@ try {
   const list = page.locator('.mobile-agenda-list');
   assert.ok(await list.evaluate(el => el.scrollHeight > el.clientHeight));
   await list.evaluate(el => { el.scrollTop = el.scrollHeight; });
-  await page.screenshot({ path: `output/playwright/calendar-ten-tasks-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-ten-tasks-${useWebkit ? 'webkit' : 'chromium'}.png` });
   for (const dimensions of [{ width: 320, height: 568 }, { width: 736, height: 390 }]) {
     await page.setViewportSize(dimensions);
     const agenda = await page.locator('.mobile-agenda').boundingBox();
     assert.ok(agenda.width > 100 && agenda.height > 140, 'short screens keep a usable agenda');
     assert.equal(await page.locator('.calendar-event:visible').count(), 0);
-    await page.screenshot({ path: `output/playwright/calendar-${dimensions.width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await capture({ path: `output/playwright/calendar-${dimensions.width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
   }
   await page.setViewportSize({ width: 1280, height: 900 });
   await employee.selectOption('employee');
-  await page.screenshot({ path: `output/playwright/calendar-chat-desktop-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  await capture({ path: `output/playwright/calendar-chat-desktop-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await employee.selectOption('all');
   const next = await page.evaluate(() => new Date(Date.parse(window.taskCalendar.tasks[1].dueDate + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10));
   const transfer = await page.evaluateHandle(() => { const data = new DataTransfer(); data.setData('application/x-index12-task', 'chat:22222222-2222-4222-8222-222222222222'); return data; });
@@ -183,7 +184,7 @@ try {
         assert.ok(Math.abs(layout.labels[i].y - layout.values[i].y) < 5, 'label and value share a row');
       }
       if (layout.width >= 350) assert.ok(layout.values[0].right <= layout.text.x, 'task text occupies the third column');
-      await page.screenshot({ path: `output/playwright/task-columns-${description.length < 30 ? 'short' : 'long'}-${theme}-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+      await capture({ path: `output/playwright/task-columns-${description.length < 30 ? 'short' : 'long'}-${theme}-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
     }
   }
   await status.selectOption('open');
@@ -192,31 +193,32 @@ try {
   assert.ok((await status.boundingBox()).width > newWidth, 'chip width follows the selected status without moving metadata columns');
   await panel.locator('.task-description').click();
   await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).fill('Отредактировано в новой сетке');
-  await page.locator('dialog.task-text-editor').click({ position: { x: -5, y: -5 }, force: true });
+  await page.locator('.task-text-editor').evaluate(() => document.querySelector('.task-header').click());
   await panel.locator('.task-description').filter({ hasText: 'Отредактировано в новой сетке' }).waitFor();
-  assert.equal(await page.locator('dialog.task-text-editor').count(), 0);
+  assert.equal(await page.locator('.task-text-editor').count(), 0);
   assert.equal(await status.evaluate(el => getComputedStyle(el).borderTopWidth), '0px');
   assert.equal(await status.evaluate(el => getComputedStyle(el).opacity), '0');
   for (const theme of ['light','dark']) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
     await panel.locator('.task-description').tap();
-    const editor = page.locator('dialog.task-text-editor'), input = editor.getByRole('textbox');
+    const editor = page.locator('.task-text-editor'), input = editor.getByRole('textbox');
     await input.waitFor();
-    assert.equal(await editor.locator('button, header').count(), 0, 'editing is just the text field');
+    assert.equal(await editor.locator('button:visible, header').count(), 0, 'mobile editing is just the text field');
     assert.equal(await input.evaluate(el => el === document.activeElement), true);
     await input.fill('Длинный текст. '.repeat(30));
     const styles = await input.evaluate(el => { const s = getComputedStyle(el); return [s.fontSize,s.outlineStyle,s.boxShadow]; });
     assert.deepEqual(styles, ['16px','none','none'], 'touch and typing never add a heavy focus frame');
-    const shade = await editor.evaluate(el => getComputedStyle(el, '::backdrop').backgroundColor);
+    assert.equal(await page.locator('dialog.task-text-editor').count(), 0);
+    const shade = await panel.evaluate(el => getComputedStyle(el, '::after').backgroundColor);
     assert.notEqual(shade, 'rgba(0, 0, 0, 0)');
-    await page.screenshot({ path: `output/playwright/task-editor-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await capture({ path: `output/playwright/task-editor-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
     await page.setViewportSize({ width: 390, height: 390 });
-    await page.waitForFunction(() => { const r = document.querySelector('dialog.task-text-editor').getBoundingClientRect(); return r.y >= 12 && r.bottom <= innerHeight - 12; });
+    await page.waitForFunction(() => { const r = document.querySelector('.task-text-editor textarea').getBoundingClientRect(); return r.height >= 100 && r.height <= innerHeight * .6; });
     const r = await editor.boundingBox();
-    assert.ok(r.y >= 12 && r.y + r.height <= 378, 'editor fits the reduced viewport with keyboard space');
+    assert.ok(r.height >= 100 && r.height <= 234, 'inline editor stays usable in the reduced viewport');
     await input.fill('');
-    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.evaluate(() => document.querySelector('.task-header').click());
     await editor.getByRole('alert').waitFor();
     assert.equal(await editor.isVisible(), true, 'an empty edit cannot erase the task');
     await input.fill('Изменено касанием снаружи ' + theme);
@@ -227,10 +229,10 @@ try {
         return adapter(config);
       };
     });
-    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.evaluate(() => document.querySelector('.task-header').click());
     await editor.getByRole('alert').filter({ hasText: 'Нет соединения' }).waitFor();
     assert.equal(await input.inputValue(), 'Изменено касанием снаружи ' + theme, 'failed save keeps the draft');
-    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.evaluate(() => document.querySelector('.task-header').click());
     await editor.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => window.taskCalendar.chat.error), '', 'retry removes the error from the successful save');
     await panel.locator('.task-description').filter({ hasText: 'Изменено касанием снаружи ' + theme }).waitFor();
@@ -251,8 +253,25 @@ try {
     assert.notEqual(colors.find(c => c.state === 'open').left, colors.find(c => c.state === 'open').right, 'active task has a visible tinted accent');
     assert.notEqual(colors.find(c => c.state === 'progress').left, colors.find(c => c.state === 'progress').right, 'in-progress task keeps its accent');
     assert.equal(colors.find(c => c.state === 'done').left, colors.find(c => c.state === 'done').right, 'completed tasks stay quiet');
-    await page.screenshot({ path: `output/playwright/task-cover-accent-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await capture({ path: `output/playwright/task-cover-accent-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
   }
+
+  const desktop = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await desktop.goto('http://127.0.0.1:5201/tests/browser/fixtures/task-calendar.html');
+  await desktop.waitForFunction(() => window.taskCalendar);
+  await desktop.evaluate(() => { const f = window.taskCalendar; f.chat.creatingTask = false; f.chat.requestedTaskId = f.tasks[0]._id; });
+  await desktop.locator('.task-description').click();
+  const desktopInput = desktop.getByRole('textbox', { name: 'Описание задачи', exact: true });
+  await desktopInput.fill('Первая строка'); await desktopInput.press('Shift+Enter'); await desktopInput.pressSequentially('Вторая строка');
+  assert.match(await desktopInput.inputValue(), /Первая строка\nВторая строка/);
+  await desktopInput.press('Enter');
+  await desktop.locator('.task-text-editor').waitFor({ state: 'hidden' });
+  await desktop.locator('.task-description').click();
+  await desktopInput.fill('Сохранено кнопкой');
+  await desktop.getByRole('button', { name: 'Готово', exact: true }).click();
+  await desktop.locator('.task-text-editor').waitFor({ state: 'hidden' });
+  assert.equal(await desktop.locator('.task-description').innerText(), 'Сохранено кнопкой');
+  await desktop.close();
 
   assert.deepEqual(errors, []);
   console.log(`PASS (${useWebkit ? 'webkit' : 'chromium'}): role/timing chips, touch recipient search, outside filter dismiss/reset, compact calendar/filter, day-only selection, 10-task agenda, inline chat editing, deletion/restore and explicit chat navigation`);
