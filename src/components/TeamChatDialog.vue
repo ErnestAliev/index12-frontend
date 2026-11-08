@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
+import { useInputModality } from "@/composables/useInputModality";
+const keyboardNavigation = useInputModality();
 defineProps({ title: String, busy: Boolean });
 const emit = defineEmits(["close"]),
   dialog = ref(null),
@@ -47,6 +49,7 @@ onBeforeUnmount(() => {
   <dialog
     ref="dialog"
     class="team-create-dialog"
+    :class="{ 'keyboard-navigation': keyboardNavigation }"
     :style="bounds"
     :aria-label="title"
     @keydown.stop
@@ -108,13 +111,24 @@ strong {
 header button {
   display: grid !important;
   place-items: center;
-  width: 36px;
-  height: 40px;
-  min-width: 36px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
   color: inherit;
   cursor: pointer;
+}
+.team-create-dialog:not(.keyboard-navigation) :deep(button:focus-visible),
+.team-create-dialog:not(.keyboard-navigation)
+  :deep(.zoom-image-stage:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+header button:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
+  outline-offset: -4px;
 }
 </style>

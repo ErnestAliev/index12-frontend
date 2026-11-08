@@ -62,11 +62,98 @@ try {
       JSON.stringify(geometry),
     );
     assert.ok(
-      geometry.dialog.y >= 0 && geometry.controls.b <= geometry.viewport - 12,
+      geometry.dialog.y >= 0 && geometry.stage.b <= geometry.viewport - 12,
       JSON.stringify(geometry),
     );
   }
   await geometry();
+  assert.equal(
+    await page.locator(".image-zoom-controls").isVisible(),
+    false,
+    "touch uses gestures without a toolbar",
+  );
+  const closeButton = page.getByRole("button", {
+    name: "Закрыть фото.png",
+    exact: true,
+  });
+  const closeBox = await closeButton.boundingBox();
+  assert.ok(closeBox.width >= 44 && closeBox.height >= 44);
+  async function noPointerFrame() {
+    for (const selector of [
+      ".media-preview-dialog header button",
+      ".zoom-image-stage",
+    ]) {
+      const visual = await page.locator(selector).evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { outline: s.outlineStyle, shadow: s.boxShadow };
+      });
+      assert.equal(visual.outline, "none");
+      assert.equal(visual.shadow, "none");
+    }
+  }
+  await noPointerFrame();
+  const stage = page.locator(".zoom-image-stage"),
+    image = page.locator(".zoom-image");
+  const r = await stage.boundingBox(),
+    x = r.x + r.width / 2,
+    y = r.y + r.height / 2;
+  const cdp = await context.newCDPSession(page);
+  const touch = (type, points) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  const scale = () =>
+    image.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+  await touch("touchStart", [
+    { x: x - 30, y, id: 1 },
+    { x: x + 30, y, id: 2 },
+  ]);
+  await touch("touchMove", [
+    { x: x - 75, y, id: 1 },
+    { x: x + 75, y, id: 2 },
+  ]);
+  await touch("touchEnd", []);
+  assert.ok((await scale()) > 2, "pinch zoom remains available");
+  await touch("touchStart", [{ x, y, id: 3 }]);
+  await touch("touchMove", [{ x: x + 45, y: y + 20, id: 3 }]);
+  await touch("touchEnd", []);
+  assert.ok(
+    (await image.evaluate(
+      (el) => new DOMMatrix(getComputedStyle(el).transform).e,
+    )) > 0,
+    "touch pans an enlarged photo",
+  );
+  for (let i = 0; i < 2; i++) {
+    await touch("touchStart", [{ x, y, id: 4 }]);
+    await touch("touchEnd", []);
+    if (!i) await page.waitForTimeout(80);
+  }
+  assert.equal(await scale(), 1, "double tap resets zoom");
+  await noPointerFrame();
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (theme) => (document.documentElement.dataset.theme = theme),
+      theme,
+    );
+    await page.screenshot({
+      path: `output/playwright/media-touch-${theme}.png`,
+    });
+  }
+  await page.setViewportSize({ width: 736, height: 390 });
+  await page.evaluate(() => {
+    for (const edge of ["left", "right"])
+      document.documentElement.style.setProperty(`--safe-area-${edge}`, "20px");
+    document.documentElement.style.setProperty("--safe-area-bottom", "34px");
+    window.dispatchEvent(new Event("resize"));
+  });
+  await page.waitForTimeout(70);
+  await geometry();
+  await noPointerFrame();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+    for (const edge of ["left", "right", "bottom"])
+      document.documentElement.style.setProperty(`--safe-area-${edge}`, "0px");
+    window.dispatchEvent(new Event("resize"));
+  });
   await page.screenshot({ path: "output/playwright/media-repair-phone.png" });
   await page
     .getByRole("button", { name: "Закрыть фото.png", exact: true })
@@ -129,16 +216,14 @@ try {
     });
     window.visualViewport.dispatchEvent(new Event("resize"));
   });
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "Own.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "Own.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await page.locator(".upload-state").waitFor();
   const uploadRect = await page.locator(".upload-state").boundingBox();
   assert.ok(
@@ -160,16 +245,14 @@ try {
     .getByRole("button", { name: "Закрыть фото.png", exact: true })
     .click();
   await page.evaluate(() => (window.mediaMode.value = "chat"));
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "Own.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "Own.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await page.locator(".team-upload-state").waitFor();
   const up = await page.locator(".team-upload-state").boundingBox(),
     composer = await page.locator(".codex-input-container").boundingBox();
@@ -239,6 +322,53 @@ try {
     () => document.querySelector(".zoom-image")?.naturalWidth === 1200,
   );
   await denied.close();
+  const desktop = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  const mouse = await desktop.newPage();
+  await mouse.goto(url);
+  await mouse.evaluate(() => window.releaseMedia());
+  await mouse.getByRole("button", { name: "Фото.png", exact: true }).click();
+  await mouse.waitForFunction(
+    () => document.querySelector(".zoom-image")?.naturalWidth === 1200,
+  );
+  assert.equal(await mouse.locator(".image-zoom-controls").isVisible(), true);
+  await mouse.getByRole("button", { name: "Увеличить", exact: true }).click();
+  assert.ok(
+    (await mouse
+      .locator(".zoom-image")
+      .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)) > 1,
+  );
+  await mouse
+    .getByRole("button", { name: "Закрыть фото.png", exact: true })
+    .focus();
+  await mouse.keyboard.press("Tab");
+  assert.equal(
+    await mouse
+      .locator(".zoom-image-stage")
+      .evaluate((el) => document.activeElement === el),
+    true,
+  );
+  assert.notEqual(
+    await mouse
+      .locator(".zoom-image-stage")
+      .evaluate((el) => getComputedStyle(el).boxShadow),
+    "none",
+    "keyboard focus remains visible",
+  );
+  await mouse.keyboard.press("+");
+  await mouse.keyboard.press("0");
+  await mouse.keyboard.press("Shift+Tab");
+  assert.equal(
+    await mouse
+      .locator(".media-preview-dialog header button")
+      .evaluate((el) => getComputedStyle(el).outlineStyle),
+    "solid",
+  );
+  await mouse.screenshot({
+    path: "output/playwright/media-keyboard-desktop.png",
+  });
+  await desktop.close();
   console.log(
     "PASS: visible geometry, immediate loading, persisted cache without repeat downloads, upload seeding, identity isolation, error/retry, storage fallback and upload indicators above the composer/safe area",
   );

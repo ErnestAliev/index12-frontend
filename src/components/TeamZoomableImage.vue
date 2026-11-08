@@ -119,7 +119,7 @@ function down(event) {
   if (!ready.value || (event.pointerType === "mouse" && event.button !== 0))
     return;
   if (event.pointerType === "touch") lastTouchAt = performance.now();
-  stage.value.focus({ preventScroll: true });
+  if (event.pointerType === "mouse") stage.value.focus({ preventScroll: true });
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   try {
     stage.value.setPointerCapture(event.pointerId);
@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  background: var(--codex-pane-surface-soft);
+  background: transparent;
   cursor: zoom-in;
   outline: none;
 }
@@ -398,5 +398,10 @@ onBeforeUnmount(() => {
   text-align: center;
   font-size: 13px;
   background: var(--codex-pane-bg);
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .image-zoom-controls {
+    display: none;
+  }
 }
 </style>
