@@ -35,12 +35,12 @@ onBeforeUnmount(() => {
   </div>
 </template>
 <style scoped>
-.task-text-editor { width: 100%; min-width: 0; }
+.task-text-editor { position: relative; z-index: 22; isolation: isolate; width: 100%; min-width: 0; }
 .task-text-editor textarea[aria-label] { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 120px; max-height: min(360px,45dvh); margin: 0; padding: 10px; resize: none; border: 1px solid var(--codex-pane-accent,var(--color-primary)) !important; border-radius: 8px; outline: none !important; box-shadow: none !important; background: var(--codex-pane-surface,var(--color-background)); color: var(--codex-pane-text,var(--color-text)); font: inherit; font-size: 16px; line-height: 24px; }
 .task-text-editor textarea[aria-label]:focus { outline: none !important; box-shadow: none !important; }
 .task-text-editor .editor-save { display: none; margin: 4px 0 0 auto; min-height: 32px; align-items: center; gap: 4px; padding: 4px 0 4px 8px; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--codex-pane-accent,var(--color-primary)); cursor: pointer; }
 .editor-save .ui-icon { width: 14px; height: 14px; }
 @media (hover:hover) and (pointer:fine) { .task-text-editor .editor-save { display: flex; } }
-@media (max-width:767px), (pointer:coarse) { .task-text-editor .editor-save { display: flex; width: fit-content; min-width: 44px; min-height: 44px; margin: 4px auto 0 0; padding: 4px 8px 4px 0; } }
+@media (max-width:767px), (pointer:coarse) { .task-text-editor .editor-save { position: sticky; bottom: 0; z-index: 1; display: flex; width: fit-content; min-width: 44px; min-height: 44px; margin: 4px auto 0 0; padding: 4px 8px 4px 0; background: var(--codex-pane-surface,var(--color-background)); } }
 .task-text-editor p { margin: 0; padding: 8px 0; color: var(--color-danger,#b24f45); font-size: 12px; }
 </style>
