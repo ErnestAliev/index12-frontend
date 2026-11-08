@@ -149,6 +149,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     debounce,
     running = false,
     again = false,
+    chatOnlySession = false,
     workspace = "",
     lastMessage = "",
     messageQueue = Promise.resolve(),
@@ -177,6 +178,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     error.value = "";
     loaded = false;
     historyLoading.value = false;
+    chatOnlySession = false;
     historyReady.value = false;
     lastMessage = "";
     outbox.value = [];
@@ -192,6 +194,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     again = false;
   }
   function acceptSnapshot(data) {
+    if (loaded && data.identity?.owner) {
+      const joined = (data.members || []).filter(member => member.status === 'active' && state.value.members?.some(old => old._id === member._id && old.status === 'invited'));
+      if (joined.length) notice.value = joined.map(member => member.name).join(', ') + ' в системе';
+    }
     const newest = data.messages.at(-1)?._id || "";
     if (loaded && !open.value && newest !== lastMessage) unread.value++;
     lastMessage = newest;
@@ -276,7 +282,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     try {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
-      if (data.status === "active") await start(workspace);
+      if (data.status === "active") await start(workspace, { chatOnly: chatOnlySession });
       else me.value = data;
     } catch (e) {
       if (g === generation) {
@@ -291,12 +297,13 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       else schedule();
     }
   }
-  async function start(id = "") {
+  async function start(id = "", options = {}) {
     stop();
     workspace = id;
+    chatOnlySession = options.chatOnly === true || !id;
     const g = generation;
     if (id) teamApi.defaults.headers.common["x-index12-workspace-id"] = id;
-    else teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
+    if (chatOnlySession) teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
     try {
       const { data } = await teamApi.get("/me");
       if (g !== generation) return;
@@ -314,7 +321,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       await refresh();
       if (g !== generation) return;
       source = new EventSource(
-        `${base}/team-chat/events?workspaceId=${encodeURIComponent(data.workspaceId)}${id ? "" : "&chatOnly=1"}`,
+        `${base}/team-chat/events?workspaceId=${encodeURIComponent(data.workspaceId)}${chatOnlySession ? "&chatOnly=1" : ""}`,
         { withCredentials: true },
       );
       source.addEventListener("changed", schedule);

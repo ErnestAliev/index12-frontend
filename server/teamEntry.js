@@ -28,6 +28,9 @@ export function renderTeamEntry(html, token) {
       event.preventDefault();
       window.index12InstallPrompt = event;
     });
+    window.addEventListener('appinstalled', function () {
+      window.index12ChatInstalled = true;
+    });
   </script>
 </head>`,
     );

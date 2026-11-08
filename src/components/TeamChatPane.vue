@@ -8,7 +8,7 @@ let clearSearchFocus;
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskPanel from "./TeamTaskPanel.vue";
-import TeamChatMembers from "./TeamChatMembers.vue";
+import TeamChatAccess from "./TeamChatAccess.vue";
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
 const panelOpen = computed(
@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
       v-if="chat.tab === 'members' && chat.isOwner && !panelOpen"
       class="team-scroll"
     >
-      <TeamChatMembers />
+      <TeamChatAccess />
     </div>
     <TeamChatSearchBar ref="searchBar" />
   </div>

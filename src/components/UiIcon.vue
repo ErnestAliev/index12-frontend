@@ -1,6 +1,8 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  ban: "M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0M6.4 6.4l11.2 11.2",
+  view: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
   minus: "M5 12h14",
   "chevron-up": "m6 15 6-6 6 6",
   back: "m15 6-6 6 6 6",

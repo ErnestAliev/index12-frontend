@@ -41,10 +41,11 @@ const menuId = useId();
 const sections = computed(() => [
   { value: "messages", label: "Чат" },
   { value: "tasks", label: "Задачи" },
+  ...(chat.isOwner ? [{ value: "members", label: "Доступы и роли" }] : []),
 ]);
 const label = computed(
   () =>
-    ({ members: "Роли" })[props.modelValue] ||
+    ({ members: "Доступы и роли" })[props.modelValue] ||
     sections.value.find((s) => s.value === props.modelValue)?.label ||
     "Чат",
 );

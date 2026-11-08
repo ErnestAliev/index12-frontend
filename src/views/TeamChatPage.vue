@@ -1,11 +1,12 @@
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "@/components/TeamChatPane.vue";
 import TeamChatSetup from "@/components/TeamChatSetup.vue";
+import TeamChatInstallGate from "@/components/TeamChatInstallGate.vue";
 import UiIcon from "@/components/UiIcon.vue";
 import { nationalPhone, phoneInput, phoneBeforeInput } from "@/utils/teamPhone";
 import {
@@ -35,6 +36,9 @@ const name = ref(""),
     typeof route.query.reset === "string" ? route.query.reset : "",
   ),
   resetName = ref("");
+const accessToken = ref(typeof route.query.access === 'string' ? route.query.access : '');
+const namedLogin = computed(() => invitation.value?.namedLogin === true || !!accessToken.value);
+const startSession = () => chat.start(invitation.value.workspaceId, { chatOnly: namedLogin.value });
 const originalTitle = document.title,
   viewportHeight = ref(window.visualViewport?.height || window.innerHeight);
 function resizeEntry() {
@@ -78,9 +82,16 @@ onMounted(async () => {
     ]);
     invitation.value = responses[0].data;
     valid.value = true;
-    register.value = invitation.value.joinable !== false;
+    register.value = !namedLogin.value && invitation.value.joinable !== false;
     if ("serviceWorker" in navigator) void chatWorker().catch(() => {});
-    if (resetToken.value) {
+    if (accessToken.value) {
+      mode.value = 'join';
+      try {
+        const { data } = await teamApi.get('/access/invitations/' + encodeURIComponent(accessToken.value));
+        if (data.workspaceId !== invitation.value.workspaceId) throw Error('Приглашение относится к другому чату');
+        name.value = data.name;
+      } catch (e) { mode.value = 'invalid'; valid.value = false; error.value = teamError(e); }
+    } else if (resetToken.value) {
       if (responses[1].error) {
         mode.value = "recovery";
         error.value = teamError(responses[1].error);
@@ -90,7 +101,7 @@ onMounted(async () => {
         mode.value = "reset";
         resetName.value = responses[1].data.name;
       }
-    } else await chat.start(invitation.value.workspaceId);
+    } else await startSession();
   } catch (e) {
     error.value = teamError(e);
   } finally {
@@ -108,6 +119,27 @@ function switchMode(value) {
   success.value = "";
   password.value = "";
   confirmPassword.value = "";
+}
+async function regularLogin() {
+  accessToken.value = '';
+  mode.value = 'auth'; valid.value = true; error.value = '';
+  await router.replace({ path: route.path, query: {} });
+}
+async function submitNamed() {
+  if (busy.value) return;
+  busy.value = true; error.value = '';
+  try {
+    if (mode.value === 'join') {
+      await teamApi.post('/access/invitations/' + encodeURIComponent(accessToken.value) + '/claim', { name: name.value, password: password.value });
+      accessToken.value = '';
+      await router.replace({ path: route.path, query: {} });
+    } else await teamApi.post('/access/login', { token: route.params.token, name: name.value, password: password.value });
+    password.value = ''; mode.value = 'auth';
+    await startSession();
+  } catch (e) {
+    error.value = teamError(e);
+    if (e.response?.status === 410) { mode.value = 'invalid'; valid.value = false; }
+  } finally { busy.value = false; }
 }
 async function submit() {
   if (busy.value) return;
@@ -148,7 +180,7 @@ async function submit() {
       register: register.value,
     });
     password.value = "";
-    await chat.start(invitation.value.workspaceId);
+    await startSession();
   } catch (e) {
     if (e.response?.data?.code === "PHONE_REGISTERED") {
       register.value = false;
@@ -193,6 +225,17 @@ const closedText = (status) =>
           : "Подключаемся к чату…"
       }}</span>
     </section>
+    <form v-else-if="namedLogin && (!chat.me || mode !== 'auth')" @submit.prevent="submitNamed">
+      <h1>{{ mode === 'join' ? 'Вход сотрудника' : 'Вход в Chat' }}</h1>
+      <div class="team-invite-context"><strong>{{ invitation?.name }}</strong></div>
+      <p v-if="error" role="alert">{{ error }}</p>
+      <template v-if="valid">
+        <label>Имя<input v-model="name" aria-label="Имя сотрудника" autocomplete="username" maxlength="100" required /></label>
+        <label>Пароль<div class="team-password"><input v-model="password" aria-label="Пароль" :type="visible ? 'text' : 'password'" autocomplete="current-password" maxlength="128" required /><button type="button" :aria-label="visible ? 'Скрыть пароль' : 'Показать пароль'" @click="visible = !visible"><UiIcon name="view" /></button></div></label>
+        <button type="submit" class="team-login-primary" :disabled="busy">{{ busy ? 'Входим…' : 'Войти' }}</button>
+      </template>
+      <button v-else-if="invitation" type="button" @click="regularLogin">Войти по имени и паролю</button>
+    </form>
     <form v-else-if="!chat.me || mode !== 'auth'" @submit.prevent="submit">
       <h1>
         {{
@@ -330,6 +373,7 @@ const closedText = (status) =>
         </button>
       </template>
     </form>
+    <TeamChatInstallGate v-else-if="chat.me.status === 'installation_required'" :identity="chat.me" @installed="startSession" />
     <section v-else-if="chat.me.status !== 'active'" class="team-wait">
       <h1>
         {{
@@ -369,7 +413,7 @@ const closedText = (status) =>
       ><TeamChatPane mobile
     /></ChatWindowFrame>
     <TeamChatSetup
-      v-if="valid && !booting && mode === 'auth'"
+      v-if="valid && !booting && mode === 'auth' && chat.me?.status !== 'installation_required'"
       ref="setup"
       :token="String(route.params.token)"
       :workspace-id="invitation?.workspaceId"
