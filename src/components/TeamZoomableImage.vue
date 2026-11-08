@@ -26,11 +26,6 @@ const fit = computed(() => {
   const factor = Math.min(size.value.w / w, size.value.h / h, 1);
   return { w: w * factor, h: h * factor };
 });
-const frameHeight = computed(() =>
-  ready.value && size.value.w
-    ? `min(60dvh, 560px, ${Math.max(120, Math.min(natural.value.h, (size.value.w * natural.value.h) / natural.value.w))}px)`
-    : "min(60dvh,560px)",
-);
 const imageStyle = computed(() => ({
   width: fit.value.w + "px",
   height: fit.value.h + "px",
@@ -246,7 +241,6 @@ onBeforeUnmount(() => {
     <div
       ref="stage"
       class="zoom-image-stage"
-      :style="{ height: frameHeight, flexBasis: frameHeight }"
       :class="{ zoomed: scale > 1, dragging }"
       tabindex="0"
       role="group"
@@ -322,9 +316,8 @@ onBeforeUnmount(() => {
 }
 .zoom-image-stage {
   position: relative;
-  flex: 1 1 min(60dvh, 560px);
-  height: min(60dvh, 560px);
-  min-height: 80px;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
   touch-action: none;
   overscroll-behavior: contain;

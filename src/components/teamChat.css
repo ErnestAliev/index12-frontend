@@ -665,3 +665,12 @@
 .team-chat-conversation{--chat-composer-inline-start:max(12px,var(--safe-area-left,0px));--chat-composer-inline-end:max(12px,var(--safe-area-right,0px))}
 
 .team-bubble,.team-bubble :deep(*){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+.team-upload-state {
+  display: block;
+  flex: none;
+  padding: 4px 12px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--codex-pane-muted);
+}

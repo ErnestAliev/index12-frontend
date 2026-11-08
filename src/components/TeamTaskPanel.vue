@@ -19,6 +19,7 @@ import UiIcon from "./UiIcon.vue";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
+import { useTeamMedia } from "@/composables/useTeamMedia";
 import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
@@ -278,11 +279,12 @@ async function toggleList(t) {
     error.value = teamError(e);
   }
 }
-const preview = ref(null);
-function closePreview() {
-  if (preview.value) URL.revokeObjectURL(preview.value.url);
-  preview.value = null;
-}
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } =
+  useTeamMedia({
+    onError: (e) => {
+      error.value = teamError(e);
+    },
+  });
 async function upload(event) {
   const files = [...event.target.files];
   event.target.value = "";
@@ -312,6 +314,7 @@ async function upload(event) {
         },
       });
       if (g !== generation) return;
+      cacheUpload(data.file, file);
       target.push(data.file);
     }
   } catch (e) {
@@ -320,36 +323,7 @@ async function upload(event) {
     if (g === generation) uploading.value = false;
   }
 }
-async function download(file) {
-  const g = generation;
-  try {
-    const { data } = await teamApi.get(`/files/${file.fileId}`, {
-      responseType: "blob",
-    });
-    if (g !== generation) return;
-    if (
-      /^(image\/(png|jpeg|gif|webp)|application\/pdf)$/.test(
-        file.mimeType || "",
-      )
-    ) {
-      closePreview();
-      preview.value = {
-        url: URL.createObjectURL(new Blob([data], { type: file.mimeType })),
-        name: file.name,
-        mimeType: file.mimeType,
-      };
-      return;
-    }
-    const url = URL.createObjectURL(data),
-      a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  } catch (e) {
-    error.value = teamError(e);
-  }
-}
+
 async function editDescription() {
   if (!canEdit.value) return;
   text.value = task.value.description;
@@ -423,6 +397,11 @@ watch(
   },
   { immediate: true },
 );
+watch(
+  () => task.value?.attachments,
+  (files) => prefetch(files || []),
+  { immediate: true },
+);
 watch(task, (value, previous) => {
   if (previous && !value && props.taskId) emit("close");
 });
@@ -448,7 +427,12 @@ onBeforeUnmount(() => {
     }"
     @keydown.esc.stop.prevent="close"
   >
-    <TeamMediaPreview v-if="preview" :media="preview" @close="closePreview" />
+    <TeamMediaPreview
+      v-if="preview"
+      :media="preview"
+      @close="closePreview"
+      @retry="retryPreview"
+    />
     <input ref="fileInput" type="file" multiple hidden @change="upload" />
     <TeamTaskMenu
       v-if="menuTask"
@@ -656,6 +640,9 @@ onBeforeUnmount(() => {
             maxlength="10000"
           />
           <div class="description-tools">
+            <span v-if="uploading" class="upload-state" role="status"
+              >Загрузка…</span
+            >
             <button
               aria-label="Прикрепить файл"
               :disabled="uploading"
@@ -979,7 +966,6 @@ onBeforeUnmount(() => {
         <p v-if="!shownTasks.length" class="task-empty">Нет задач</p>
       </div>
     </template>
-    <span v-if="uploading" class="upload-state" role="status">Загрузка…</span>
   </section>
 </template>
 <style scoped src="./teamTasks.css"></style>

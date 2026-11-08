@@ -16,6 +16,7 @@ import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
 import TeamChatDialog from "./TeamChatDialog.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
+import { useTeamMedia } from "@/composables/useTeamMedia";
 import { useChatDictation } from "@/composables/useChatDictation";
 const props = defineProps({
   mobile: Boolean,
@@ -68,11 +69,12 @@ const historyLoading = computed(() =>
 );
 const watchedIds = ref([]);
 let disposed = false;
-const preview = ref(null);
-function closePreview() {
-  if (preview.value) URL.revokeObjectURL(preview.value.url);
-  preview.value = null;
-}
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } =
+  useTeamMedia({
+    onError: (e) => {
+      localError.value = teamError(e);
+    },
+  });
 async function refreshConversation() {
   try {
     if (props.taskId) await chat.refreshThread(props.taskId, watchedIds.value);
@@ -103,6 +105,7 @@ let holdTimer,
   highlightTimer,
   feedObserver;
 let pinnedToBottom = true;
+
 function resetSwipe() {
   gesture = null;
   swipe.value = { id: null, x: 0 };
@@ -374,6 +377,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true;
   feedObserver?.disconnect();
+  mediaObserver?.disconnect();
   closePreview();
   clearTimeout(noticeTimer);
   clearTimeout(highlightTimer);
@@ -413,6 +417,37 @@ const shownMessages = computed(() =>
       (a, b) =>
         a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id),
     ),
+);
+const shownMediaFiles = computed(() =>
+  shownMessages.value
+    .filter((m) => !m._delivery)
+    .flatMap((m) => m.attachments || []),
+);
+let mediaObserver;
+watch(
+  [shownMediaFiles, () => props.active, feed],
+  async () => {
+    await nextTick();
+    mediaObserver?.disconnect();
+    if (!feed.value || !props.active) return;
+    mediaObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries)
+          if (entry.isIntersecting) {
+            const file = shownMediaFiles.value.find(
+              (f) => f.fileId === entry.target.dataset.mediaFileId,
+            );
+            if (file) prefetch([file]);
+            mediaObserver.unobserve(entry.target);
+          }
+      },
+      { root: feed.value },
+    );
+    feed.value
+      .querySelectorAll("[data-media-file-id]")
+      .forEach((el) => mediaObserver.observe(el));
+  },
+  { flush: "post" },
 );
 watch(
   () => [thread.value.deletedMessageIds, thread.value.messageUpdates],
@@ -556,40 +591,14 @@ async function attach(event) {
         timeout: 60000,
       });
       if (disposed || workspace !== chat.me?.workspaceId) return;
+      cacheUpload(data.file, file);
       files.value.push(data.file);
     }
   });
   event.target.value = "";
   uploading.value = false;
 }
-async function download(file) {
-  const workspace = chat.me?.workspaceId;
-  await run(async () => {
-    const { data } = await teamApi.get(`/files/${file.fileId}`, {
-      responseType: "blob",
-    });
-    if (disposed || workspace !== chat.me?.workspaceId) return;
-    if (
-      /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(
-        file.mimeType || "",
-      )
-    ) {
-      closePreview();
-      preview.value = {
-        name: file.name,
-        mimeType: file.mimeType,
-        url: URL.createObjectURL(new Blob([data], { type: file.mimeType })),
-      };
-      return;
-    }
-    const url = URL.createObjectURL(data),
-      a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  });
-}
+
 function scheduleReads() {
   clearTimeout(readTimer);
   if (
@@ -814,7 +823,12 @@ watch(
 </script>
 <template>
   <div class="team-pane team-chat-conversation" style="position: relative">
-    <TeamMediaPreview v-if="preview" :media="preview" @close="closePreview" />
+    <TeamMediaPreview
+      v-if="preview"
+      :media="preview"
+      @close="closePreview"
+      @retry="retryPreview"
+    />
     <TeamMessageMenu
       v-if="selectedMessage"
       :message="selectedMessage"
@@ -983,6 +997,7 @@ watch(
               <button
                 v-for="file in m.attachments"
                 :key="file.fileId"
+                :data-media-file-id="file.fileId"
                 class="team-file"
                 :disabled="!!m._delivery"
                 @click="download(file)"
@@ -1068,6 +1083,9 @@ watch(
           composing
           @cancel="replyDraft = null"
         />
+        <span v-if="uploading" class="team-upload-state" role="status"
+          >Загрузка файла…</span
+        >
         <input
           ref="input"
           type="file"
@@ -1104,8 +1122,8 @@ watch(
             ><TeamChatAddMenu
               :disabled="uploading"
               @task="startTask"
-              @file="input.click()" /></template></CodexComposer
-        ><span v-if="uploading" role="status">Загрузка файла…</span>
+              @file="input.click()" /></template
+        ></CodexComposer>
       </div>
     </template>
   </div>
