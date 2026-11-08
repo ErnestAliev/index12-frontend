@@ -187,8 +187,12 @@
   flex: none;
 }
 .task-overview {
+  margin: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--codex-pane-border);
+  border: 1px solid var(--codex-pane-border);
+  border-left: 3px solid var(--task-status-color, var(--codex-pane-accent));
+  border-radius: 10px;
+  background: var(--codex-pane-surface);
   flex: none;
   max-height: 45%;
   overflow: auto;
@@ -686,6 +690,8 @@
 .task-meta-add::after { content: ""; position: absolute; inset: -6px; }
 .task-meta-add .ui-icon { width: 12px; height: 12px; }
 .task-summary .task-description { text-align: left; min-width: 0; line-height: 22px; }
+.task-overview[data-task-status="done"] { background: color-mix(in srgb,var(--codex-pane-muted) 8%,var(--codex-pane-bg)); }
+.task-summary .task-description:enabled { cursor: text; }
 
 .task-text-editing::after { content: ""; position: absolute; inset: 0; z-index: 20; background: #0006; pointer-events: none; }
 .task-text-editing .task-overview { position: relative; z-index: 21; }

@@ -730,7 +730,7 @@ onBeforeUnmount(() => {
     <template v-else-if="taskId">
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
-        <div v-show="!detailsCollapsed" class="task-overview">
+        <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status">
           <div class="task-summary">
             <div class="task-summary-header">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
