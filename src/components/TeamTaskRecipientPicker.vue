@@ -9,10 +9,12 @@ import {
   watch,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import TeamChatAccess from "./TeamChatAccess.vue";
 const props = defineProps({
   people: { type: Array, default: () => [] },
   actorId: String,
   disabled: Boolean,
+  canCreate: Boolean,
 });
 const emit = defineEmits(["select", "cancel"]);
 const searching = ref(false),
@@ -22,12 +24,15 @@ const searching = ref(false),
   active = ref(0),
   bounds = ref({});
 const listId = useId();
+const creator = ref(null);
+function addPerson() { field.value?.blur(); creator.value?.openForm(query.value.trim()); }
+function personCreated(person) { searching.value = false; query.value = ''; choose(person); }
 const initial = computed(() => props.people.slice(0, 12));
 const results = computed(() =>
   query.value.trim()
     ? props.people
         .filter((p) =>
-          p.name
+          (p.name + ' ' + (p.position || ''))
             .toLocaleLowerCase()
             .includes(query.value.trim().toLocaleLowerCase()),
         )
@@ -136,7 +141,7 @@ onBeforeUnmount(() => {
           :key="p._id"
           class="task-choice-chip"
           :data-tone="p.role || 'employee'"
-          :title="p.name"
+          :title="[p.name, p.position].filter(Boolean).join(' · ')"
           type="button"
           :disabled="disabled"
           @click="choose(p)"
@@ -155,6 +160,8 @@ onBeforeUnmount(() => {
         <UiIcon :name="searching ? 'close' : 'search'" />
       </button>
     </div>
+    <button v-if="canCreate" type="button" class="recipient-create" :disabled="disabled" aria-label="Добавить сотрудника" title="Добавить сотрудника" @click="addPerson"><UiIcon name="plus" /></button>
+    <TeamChatAccess v-if="canCreate" ref="creator" form-only @created="personCreated" />
     <div
       v-if="searching && results.length"
       :id="listId"
@@ -167,6 +174,7 @@ onBeforeUnmount(() => {
         v-for="(p, i) in results"
         :id="listId + '-' + i"
         :key="p._id"
+        :title="[p.name, p.position].filter(Boolean).join(' · ')"
         type="button"
         role="option"
         :aria-selected="active === i"
@@ -201,6 +209,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   font-size: 14px;
 }
+.recipient-line .recipient-create { display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
+.recipient-create .ui-icon { width: 16px; height: 16px; }
 .recipient-choice {
   position: relative;
   display: grid;

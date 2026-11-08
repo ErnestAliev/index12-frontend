@@ -5,7 +5,7 @@ import TeamTaskStatusSelect from './TeamTaskStatusSelect.vue';
 import TeamTaskRecipientPicker from './TeamTaskRecipientPicker.vue';
 import TeamMediaPreview from './TeamMediaPreview.vue';
 import { useTeamMedia } from '@/composables/useTeamMedia';
-import { teamApi } from '@/stores/teamChatStore';
+import { teamApi, useTeamChatStore } from '@/stores/teamChatStore';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import CalendarPartySelect from './CalendarPartySelect.vue';
 import { useBusinessStore } from '@/stores/businessStore';
@@ -14,6 +14,7 @@ import { addDays, dayAt, timeAt, localInstant, statusLabels, taskState, defaultS
 const props = defineProps({ task: { type: Object, default: null }, date: { type: String, required: true } });
 const emit = defineEmits(['close', 'saved', 'reload', 'open-chat']);
 const business = useBusinessStore();
+const chat = useTeamChatStore();
 const keyboardNavigation = useInputModality();
 const isChat = props.task?.source === 'team-chat';
 const recipientOpen = ref(false);
@@ -35,7 +36,7 @@ const media = useTeamMedia({
     return (await businessApi.get(`/tasks/${id}/files/${file.fileId}`, { responseType: 'blob', signal })).data;
   },
 });
-function chooseAssignee(person) { if (!draft.assigneeIds.includes(person._id)) draft.assigneeIds.push(person._id); recipientOpen.value = false; changed(); }
+function chooseAssignee(person) { if (!business.people.some(row => row._id === person._id)) business.people.push(person); if (!draft.assigneeIds.includes(person._id)) draft.assigneeIds.push(person._id); recipientOpen.value = false; changed(); }
 const assigneeName = id => business.people.find(p => p._id === id)?.name || original.assignees?.find(p => p.actorId === id)?.name || id;
 const presets = [{ minutes: 10, label: '10 мин' }, { minutes: 30, label: '30 мин' }, { minutes: 60, label: '1 ч' }, { minutes: 1440, label: '1 день' }, { minutes: 4320, label: '3 дня' }, { minutes: 10080, label: '1 неделя' }];
 const legacyOffsets = computed(() => draft.reminderOffsets.filter(minutes => !presets.some(p => p.minutes === minutes)));
@@ -168,7 +169,7 @@ defineExpose({ close });
           <textarea v-model="draft.title" class="chat-task-text" aria-label="Текст задачи" maxlength="10000" rows="3" />
           <div class="chat-task-date"><input v-model="draft.date" type="date" aria-label="Дата задачи" /><input v-model="draft.dueTime" type="time" aria-label="Время задачи" :disabled="!draft.date" /><button v-if="draft.date" type="button" class="ui-icon-button" aria-label="Убрать срок" @click="draft.date = ''; draft.dueTime = ''; changed()"><UiIcon name="close" /></button></div>
           <div class="chat-task-people"><span>Кому:</span><span v-for="person in draft.assigneeIds" :key="person" class="chat-person-chip">{{ assigneeName(person) }}<button type="button" :aria-label="`Убрать ответственного ${assigneeName(person)}`" @click="draft.assigneeIds = draft.assigneeIds.filter(id => id !== person); changed()"><UiIcon name="close" /></button></span><button type="button" class="ui-icon-button" aria-label="Добавить ответственного" :aria-expanded="recipientOpen" @click="recipientOpen = !recipientOpen"><UiIcon name="plus" /></button></div>
-          <TeamTaskRecipientPicker v-if="recipientOpen" :people="business.people" @select="chooseAssignee" />
+          <TeamTaskRecipientPicker :can-create="chat.isOwner" v-if="recipientOpen" :people="business.people" @select="chooseAssignee" />
           <div class="chat-source-tools"><button type="button" class="chat-source-link" aria-label="Перейти в рабочий чат" @click="openChat"><UiIcon name="external" />Рабочий чат</button><button type="button" class="ui-icon-button" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button></div>
         </template>
         <template v-else>

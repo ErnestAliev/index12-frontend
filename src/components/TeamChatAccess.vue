@@ -4,14 +4,24 @@ import { teamApi, teamError, useTeamChatStore } from '@/stores/teamChatStore';
 import TeamChatDialog from './TeamChatDialog.vue';
 import TeamChatRoleSelect from './TeamChatRoleSelect.vue';
 import UiIcon from './UiIcon.vue';
+const props = defineProps({ formOnly: Boolean });
+const emit = defineEmits(['created']);
 const chat = useTeamChatStore();
+const position = ref(''), createdMember = ref(null), editingMember = ref(null), profile = ref({ name: '', position: '', role: 'employee' });
 const formOpen = ref(false), name = ref(''), password = ref(''), role = ref('employee'), link = ref(''), visible = ref(false), creating = ref(false), error = ref(''), notice = ref(''), pending = ref(new Set());
 let active = true;
 onBeforeUnmount(() => { active = false; password.value = ''; });
-const members = computed(() => chat.state.members || []);
+const members = computed(() => {
+  const rows = chat.state.members || [];
+  if (rows.some(member => member.owner) || !chat.me?.owner) return rows;
+  return [{ _id: chat.me.actorId, name: chat.me.displayName, position: chat.me.position || '', role: chat.me.role, status: 'active', owner: true }, ...rows];
+});
+function openProfile(member) { editingMember.value = member; profile.value = { name: member.name, position: member.position || '', role: member.role }; error.value = ''; }
+async function saveProfile() { const member = editingMember.value; if (member && await change(member, profile.value)) editingMember.value = null; }
+defineExpose({ openForm });
 const statusLabel = member => ({ invited: 'Ожидает входа', active: 'В системе', pending: 'Ожидает подтверждения', revoked: 'Заблокирован', rejected: 'Заблокирован' })[member.status] || member.status;
-function openForm() { name.value = ''; password.value = ''; role.value = 'employee'; link.value = ''; error.value = ''; notice.value = ''; formOpen.value = true; }
-function closeForm() { if (creating.value) return; formOpen.value = false; password.value = ''; visible.value = false; }
+function openForm(initialName = '') { name.value = typeof initialName === 'string' ? initialName : ''; position.value = ''; password.value = ''; role.value = 'employee'; link.value = ''; error.value = ''; notice.value = ''; createdMember.value = null; formOpen.value = true; }
+function closeForm() { if (creating.value) return; formOpen.value = false; password.value = ''; visible.value = false; const member = createdMember.value; createdMember.value = null; if (member) emit('created', member); }
 async function copy() {
   try { await navigator.clipboard.writeText(link.value); notice.value = 'Ссылка скопирована'; }
   catch { notice.value = ''; error.value = 'Не удалось скопировать автоматически. Выделите и скопируйте ссылку.'; }
@@ -19,7 +29,7 @@ async function copy() {
 async function createEmployee() {
   if (creating.value || link.value) return;
   creating.value = true; error.value = ''; notice.value = '';
-  const request = teamApi.post('/access/employees', { name: name.value, password: password.value, role: role.value });
+  const request = teamApi.post('/access/employees', { name: name.value, position: position.value, password: password.value, role: role.value });
   let copied;
   // Start the clipboard operation within the tap, including Safari's user gesture.
   if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -29,9 +39,11 @@ async function createEmployee() {
   try {
     const { data } = await request;
     if (!active) return;
-    link.value = data.url; password.value = '';
+    link.value = data.url; password.value = ''; createdMember.value = data.member;
     const index = chat.state.members.findIndex(member => member._id === data.member._id);
     if (index < 0) chat.state.members.unshift(data.member); else chat.state.members[index] = data.member;
+    chat.state.people ||= [];
+    if (!chat.state.people.some(person => person._id === data.member._id)) chat.state.people.push(data.member);
     const ok = copied ? await copied : false;
     if (!active) return;
     if (ok) notice.value = 'Ссылка скопирована'; else await copy();
@@ -41,8 +53,16 @@ async function createEmployee() {
 async function change(member, values, event) {
   if (pending.value.has(member._id)) return;
   pending.value.add(member._id); error.value = '';
-  try { await chat.action('/access/employees/' + member._id, { role: member.role, expectedVersion: member.version, ...values }, 'patch'); }
-  catch (e) { if (active) { error.value = teamError(e); if (event) event.target.value = member.role; } }
+  try {
+    if (member.owner) await chat.action('/settings', {
+      ownerRole: values.role || member.role,
+      ...(values.name !== undefined ? { ownerName: values.name } : {}),
+      ...(values.position !== undefined ? { ownerPosition: values.position } : {}),
+    }, 'patch');
+    else await chat.action('/access/employees/' + member._id, { role: member.role, expectedVersion: member.version, ...values }, 'patch');
+    return true;
+  }
+  catch (e) { if (active) { error.value = teamError(e); if (event) event.target.value = member.role; } return false; }
   finally { pending.value.delete(member._id); }
 }
 async function allow(member) {
@@ -61,20 +81,33 @@ async function remove(member) {
 }
 </script>
 <template>
-  <section class="team-access" aria-label="Доступы и роли">
+  <section class="team-access" :class="{ 'access-form-only': props.formOnly }" aria-label="Доступы и роли">
+    <template v-if="!props.formOnly">
     <button type="button" class="access-add" @click="openForm"><UiIcon name="plus" />Добавить сотрудника</button>
-    <p v-if="error && !formOpen" role="alert">{{ error }}</p>
+    <p v-if="error && !formOpen && !editingMember" role="alert">{{ error }}</p>
     <p v-if="chat.notice" role="status">{{ chat.notice }}</p>
     <div v-for="member in members" :key="member._id" class="access-row">
-      <span class="access-name" :title="member.name + ' · ' + statusLabel(member)"><i :data-status="member.status" :aria-label="statusLabel(member)" /><span>{{ member.name }}</span></span>
+      <button type="button" class="access-name" :title="[member.name, member.position, statusLabel(member)].filter(Boolean).join(' · ')" :aria-label="`Редактировать ${member.name}`" @click="openProfile(member)"><i :data-status="member.status" :aria-label="statusLabel(member)" /><span>{{ member.name }}{{ member.position ? ' · ' + member.position : '' }}</span></button>
       <TeamChatRoleSelect :value="member.role" :roles="chat.me.roles" :label="`Роль ${member.name}`" :disabled="pending.has(member._id)" @change="change(member, { role: $event.target.value }, $event)" />
-      <button v-if="member.status === 'pending'" type="button" :disabled="pending.has(member._id)" :aria-label="`Открыть доступ ${member.name}`" title="Открыть доступ" @click="allow(member)"><UiIcon name="check" /></button>
+      <button v-if="member.owner" type="button" :disabled="pending.has(member._id)" aria-label="Редактировать свой профиль" title="Редактировать" @click="openProfile(member)"><UiIcon name="edit" /></button>
+      <button v-else-if="member.status === 'pending'" type="button" :disabled="pending.has(member._id)" :aria-label="`Открыть доступ ${member.name}`" title="Открыть доступ" @click="allow(member)"><UiIcon name="check" /></button>
       <button v-else type="button" :disabled="pending.has(member._id)" :aria-label="`${['revoked','rejected'].includes(member.status) ? 'Вернуть доступ' : 'Заблокировать'} ${member.name}`" :title="['revoked','rejected'].includes(member.status) ? 'Вернуть доступ' : 'Заблокировать'" @click="change(member, { blocked: !['revoked','rejected'].includes(member.status) })"><UiIcon :name="['revoked','rejected'].includes(member.status) ? 'undo' : 'ban'" /></button>
-      <button type="button" class="access-danger" :disabled="pending.has(member._id)" :aria-label="`Удалить сотрудника ${member.name}`" title="Удалить" @click="remove(member)"><UiIcon name="trash" /></button>
+      <button v-if="!member.owner" type="button" class="access-danger" :disabled="pending.has(member._id)" :aria-label="`Удалить сотрудника ${member.name}`" title="Удалить" @click="remove(member)"><UiIcon name="trash" /></button>
     </div>
+    </template>
+    <TeamChatDialog v-if="editingMember" :title="editingMember.owner ? 'Мой профиль в чате' : 'Профиль сотрудника'" :busy="pending.has(editingMember._id)" @close="editingMember = null">
+      <form class="access-form" @submit.prevent="saveProfile">
+        <label>Имя<input v-model="profile.name" aria-label="Имя в чате" :title="editingMember.loginKey ? 'Это имя используется для входа сотрудника' : undefined" maxlength="100" required /></label>
+        <label>Должность<input v-model="profile.position" aria-label="Должность" maxlength="160" /></label>
+        <label>Роль<TeamChatRoleSelect :value="profile.role" :roles="chat.me.roles" label="Роль в чате" :disabled="pending.has(editingMember._id)" @change="profile.role = $event.target.value" /></label>
+        <p v-if="error" role="alert">{{ error }}</p>
+        <button type="submit" :disabled="pending.has(editingMember._id)">Сохранить</button>
+      </form>
+    </TeamChatDialog>
     <TeamChatDialog v-if="formOpen" title="Добавить сотрудника" :busy="creating" @close="closeForm">
       <form class="access-form" @submit.prevent="createEmployee">
         <label>Имя сотрудника<input v-model="name" aria-label="Имя сотрудника" autocomplete="off" maxlength="100" required :readonly="creating || !!link" /></label>
+        <label>Должность<input v-model="position" aria-label="Должность нового сотрудника" maxlength="160" :readonly="creating || !!link" /></label>
         <label v-if="!link">Пароль<div class="access-password"><input v-model="password" aria-label="Пароль сотрудника" :type="visible ? 'text' : 'password'" autocomplete="new-password" minlength="10" maxlength="128" required :readonly="creating" /><button type="button" :aria-label="visible ? 'Скрыть пароль' : 'Показать пароль'" @click="visible = !visible"><UiIcon name="view" /></button></div></label>
         <label>Роль<TeamChatRoleSelect :value="role" :roles="chat.me.roles" label="Роль нового сотрудника" :disabled="creating || !!link" @change="role = $event.target.value" /></label>
         <label v-if="link">Одноразовая ссылка<div class="access-link"><input :value="link" readonly aria-label="Одноразовая ссылка" @focus="$event.target.select()" /><button type="button" aria-label="Скопировать ссылку" @click="copy"><UiIcon name="copy" /></button></div></label>
@@ -86,6 +119,8 @@ async function remove(member) {
   </section>
 </template>
 <style scoped>
+.access-form-only { display: contents; }
+.team-access .access-row > .access-name { display: flex; justify-content: flex-start; gap: 6px; width: 100%; min-width: 0; padding: 0; font: inherit; text-align: left; }
 .team-access { min-width: 0; font-size: 13px; }
 .team-access .access-add { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-bottom: 8px; padding: 6px 10px; font-size: 13px; }
 .access-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(84px,104px) 44px 44px; align-items: center; gap: 2px; min-height: 48px; border-bottom: 1px solid var(--codex-pane-border); }

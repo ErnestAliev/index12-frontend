@@ -639,6 +639,7 @@ onBeforeUnmount(() => {
           v-if="step === 'who'"
           :people="directory"
           :actor-id="chat.me.actorId"
+          :can-create="chat.isOwner"
           :disabled="busy"
           @select="choosePerson"
         />
@@ -761,6 +762,7 @@ onBeforeUnmount(() => {
             :key="editing"
             :people="directory"
             :actor-id="chat.me.actorId"
+            :can-create="chat.isOwner"
             :disabled="busy"
             @select="choosePerson"
           />

@@ -438,11 +438,19 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         );
         if (at >= 0) state.value.members[at] = data.member;
         else state.value.members.unshift(data.member);
+        state.value.people ||= [];
+        const personIndex = state.value.people.findIndex(person => person._id === data.member._id);
+        if (['active', 'invited'].includes(data.member.status)) {
+          if (personIndex < 0) state.value.people.push(data.member);
+          else state.value.people[personIndex] = data.member;
+        } else if (personIndex >= 0) state.value.people.splice(personIndex, 1);
       }
-      if (data.deletedMemberId)
+      if (data.deletedMemberId) {
         state.value.members = state.value.members.filter(
           (m) => m._id !== data.deletedMemberId,
         );
+        state.value.people = (state.value.people || []).filter(person => person._id !== data.deletedMemberId);
+      }
       schedule();
       return data;
     } catch (e) {

@@ -283,7 +283,7 @@ const messageStatus = (row) =>
   row.readCount > 0 ? "Просмотрено" : "Отправлено";
 const mentionChoices = computed(() =>
   (chat.state.people || []).filter(
-    (p) =>
+    (p) => p.status !== "invited" &&
       p._id !== chat.me?.actorId &&
       p.name
         .toLocaleLowerCase("ru")
