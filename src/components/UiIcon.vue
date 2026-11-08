@@ -28,6 +28,7 @@ const paths = {
   info: "M12 8h.01M11 12h1v5h1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
   edit: "m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z",
   check: "m5 12 4 4L19 6",
+  checks: "M18 6 7 17l-5-5M22 6 11 17l-2-2",
   undo: "M9 4 4 9l5 5M4 9h9a6 6 0 0 1 0 12",
   plus: "M12 5v14M5 12h14",
   attach:

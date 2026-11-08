@@ -674,3 +674,30 @@
   line-height: 18px;
   color: var(--codex-pane-muted);
 }
+
+.team-day-separator {
+  flex: none;
+  text-align: center;
+  color: var(--codex-pane-muted);
+  font-size: 12px;
+  line-height: 18px;
+  padding: 2px 0;
+}
+.team-message-stamp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--codex-pane-muted);
+}
+.team-read-receipt {
+  display: inline-flex;
+  align-items: center;
+}
+.team-read-receipt.read {
+  color: var(--codex-pane-accent);
+}
+.team-pane .team-read-receipt .ui-icon {
+  width: 16px;
+  height: 16px;
+}

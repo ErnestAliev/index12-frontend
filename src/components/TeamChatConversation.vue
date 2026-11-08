@@ -8,6 +8,19 @@ import {
   onBeforeUnmount,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import { chatDateKey, chatDateLabel } from "@/utils/teamChatDates";
+const calendarNow = ref(new Date());
+let calendarTimer;
+function syncCalendarDay() {
+  calendarNow.value = new Date();
+  clearTimeout(calendarTimer);
+  const midnight = new Date(calendarNow.value);
+  midnight.setHours(24, 0, 0, 0);
+  calendarTimer = setTimeout(
+    syncCalendarDay,
+    midnight.getTime() - Date.now() + 1000,
+  );
+}
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
@@ -266,7 +279,7 @@ async function reactToMessage(row, reaction) {
     }),
   );
 }
-const messageStatus = (row) => (row.readCount ? "Просмотрено" : "Доставлено");
+const messageStatus = (row) => (row.readCount > 0 ? "Просмотрено" : "Доставлено");
 const mentionChoices = computed(() =>
   (chat.state.people || []).filter(
     (p) =>
@@ -358,6 +371,9 @@ watch(
   { immediate: true },
 );
 onMounted(async () => {
+  syncCalendarDay();
+  window.addEventListener("focus", syncCalendarDay);
+  document.addEventListener("visibilitychange", syncCalendarDay);
   await nextTick();
   if (feed.value && typeof ResizeObserver !== "undefined") {
     feedObserver = new ResizeObserver(() => {
@@ -376,6 +392,9 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   disposed = true;
+  clearTimeout(calendarTimer);
+  window.removeEventListener("focus", syncCalendarDay);
+  document.removeEventListener("visibilitychange", syncCalendarDay);
   feedObserver?.disconnect();
   mediaObserver?.disconnect();
   closePreview();
@@ -918,7 +937,20 @@ watch(
         <div v-else-if="!shownMessages.length && !taskId" class="team-empty">
           Сообщения сотрудников появятся здесь
         </div>
-        <template v-for="m in shownMessages" :key="m._id">
+        <template v-for="(m, index) in shownMessages" :key="m._id">
+          <div
+            v-if="
+              chatDateKey(m.createdAt) &&
+              (index === 0 ||
+                chatDateKey(m.createdAt) !==
+                  chatDateKey(shownMessages[index - 1].createdAt))
+            "
+            class="team-day-separator"
+          >
+            <time :datetime="chatDateKey(m.createdAt)">{{
+              chatDateLabel(m.createdAt, calendarNow)
+            }}</time>
+          </div>
           <button
             v-if="gaps.some((gap) => gap.before === m._id)"
             class="team-history"
@@ -969,12 +1001,23 @@ watch(
             >
               <header v-if="m.kind !== 'task'">
                 <strong>{{ m.authorName }}</strong
-                ><time>{{
-                  new Date(m.createdAt).toLocaleTimeString("ru-RU", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                }}</time>
+                ><span class="team-message-stamp"
+                  ><time :datetime="m.createdAt">{{
+                    new Date(m.createdAt).toLocaleTimeString("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  }}</time
+                  ><span
+                    v-if="m.authorId === chat.me.actorId && !m._delivery"
+                    class="team-read-receipt"
+                    :class="{ read: m.readCount > 0 }"
+                    role="img"
+                    :aria-label="messageStatus(m)"
+                    :title="messageStatus(m)"
+                    ><UiIcon
+                      :name="m.readCount > 0 ? 'checks' : 'check'" /></span
+                ></span>
               </header>
               <TeamReplyQuote
                 v-if="m.replyTo"
@@ -1037,13 +1080,10 @@ watch(
                 </button>
               </div>
               <div
-                v-if="!m._delivery && m.kind !== 'task'"
+                v-if="m.editedAt && !m._delivery && m.kind !== 'task'"
                 class="team-message-meta"
               >
-                <span v-if="m.editedAt">изменено</span
-                ><span v-if="m.authorId === chat.me.actorId">{{
-                  messageStatus(m)
-                }}</span>
+                <span>изменено</span>
               </div>
             </div>
           </article>
