@@ -670,8 +670,10 @@
 .task-summary { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .task-summary-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
 .task-created { flex: none; font-size: 10px; line-height: 16px; white-space: nowrap; color: var(--codex-pane-muted); opacity: .55; }
-.task-metadata { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; min-width: 0; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); }
-.task-meta-group { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
+.task-metadata { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; min-width: 0; overflow: hidden; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); }
+.task-meta-group { position: relative; display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
+/* Separators sit in the gap; at a wrapped row start they fall outside the clipping edge. */
+.task-meta-group + .task-meta-group::before { content: "/"; position: absolute; left: -8px; top: 0; pointer-events: none; }
 .task-meta-label { flex: none; }
 .task-panel .task-metadata button { display: inline; min-height: 28px; max-width: 100%; margin: 0; padding: 0; font-size: inherit; line-height: inherit; color: inherit; white-space: normal; text-align: left; overflow-wrap: anywhere; vertical-align: baseline; }
 .task-panel .task-metadata .task-assignee { min-width: 0; }
