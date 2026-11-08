@@ -1588,7 +1588,7 @@ const handleRefundDelete = async (op) => {
           </div>
         </div>
         <div class="divider-placeholder"></div>
-        <button class="employee-chat-launcher" type="button" aria-label="Открыть чат сотрудников" title="Чат сотрудников" :aria-expanded="teamChat.open" @click.stop="teamChat.show()"><UiIcon name="chat"/><span v-if="teamChat.unread||teamChat.pending.length||teamChat.actionable" class="team-unread">{{teamChat.unread+teamChat.pending.length+teamChat.actionable}}</span></button>
+        <button class="employee-chat-launcher" type="button" :aria-label="teamChat.open ? 'Скрыть чат сотрудников' : 'Открыть чат сотрудников'" title="Чат сотрудников" :aria-expanded="teamChat.open" @click.stop="teamChat.open ? (teamChat.open = false) : teamChat.show()"><UiIcon name="chat"/><span v-if="teamChat.unread||teamChat.pending.length||teamChat.actionable" class="team-unread">{{teamChat.unread+teamChat.pending.length+teamChat.actionable}}</span></button>
         <YAxisPanel :yLabels="yAxisLabels" ref="yAxisPanelRef" class="y-axis-wrapper-flex" />
       </aside>
       <main class="home-main-content" ref="mainContentRef" data-graph-workspace :aria-busy="isDataLoading">
