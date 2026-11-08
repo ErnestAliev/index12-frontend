@@ -618,8 +618,8 @@ onBeforeUnmount(() => {
         <div v-else-if="step === 'when'" class="task-input-line">
           <span>Когда:</span>
           <div class="inline-choices">
-            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
-            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
+            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')"><span class="task-chip-label">Срочно</span></button
+            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')"><span class="task-chip-label">К сроку</span></button
             ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')"><span class="task-chip-label">Без срока</span></button>
           </div>
         </div>
@@ -712,80 +712,59 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview">
-          <TeamTaskStatusSelect :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
-          <div v-if="editing === 'description'" class="edit-description">
-            <textarea
-              ref="field"
-              v-model="text"
-              aria-label="Описание задачи"
-              maxlength="10000"
-            /><button
-              :disabled="busy"
-              aria-label="Сохранить"
-              @click="
-                update({ description: text }).then((ok) => {
-                  if (ok) {
+          <div class="task-summary" :class="{ 'is-editing': editing === 'description' }">
+            <div class="task-summary-title">
+              <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
+              <div v-if="editing === 'description'" class="edit-description">
+                <textarea
+                  ref="field"
+                  v-model="text"
+                  aria-label="Описание задачи"
+                  maxlength="10000"
+                /><button
+                  :disabled="busy"
+                  aria-label="Сохранить"
+                  @click="
+                    update({ description: text }).then((ok) => {
+                      if (ok) {
+                        editing = '';
+                        text = '';
+                      }
+                    })
+                  "
+                >
+                  ✓</button
+                ><button
+                  aria-label="Отменить"
+                  @click="
                     editing = '';
                     text = '';
-                  }
-                })
-              "
-            >
-              ✓</button
-            ><button
-              aria-label="Отменить"
-              @click="
-                editing = '';
-                text = '';
-              "
-            >
-              ×
-            </button>
-          </div>
-          <button
-            v-else
-            class="task-description"
-            :disabled="!canEdit"
-            @click="editDescription"
-          >
-            {{ task.description }}
-          </button>
-          <div class="task-details">
-            <button
-              :disabled="!canEdit"
-              @click="
-                editing = 'who';
-                query = '';
-              "
-            >
-              Кому: {{ selectedNames }}</button
-            ><button
-              :disabled="!canEdit"
-              @click="
-                editing = 'add';
-                query = '';
-              "
-              aria-label="Добавить ответственного"
-            >
-              +
-            </button>
-          </div>
-          <div class="task-details">
-            <button :disabled="!canEdit" @click="editing = 'when'">
-              Когда:</button
-            ><button
-              :disabled="!canEdit"
-              @click="task.dueDate ? openCalendar() : (editing = 'when')"
-            >
-              {{ taskDate(task) }}</button
-            ><button
-              v-if="task.dueDate"
-              :disabled="!canEdit"
-              aria-label="Указать время"
-              @click="openClock"
-            >
-              <UiIcon name="clock" />
-            </button>
+                  "
+                >
+                  ×
+                </button>
+              </div>
+              <button
+                v-else
+                class="task-description"
+                :disabled="!canEdit"
+                @click="editDescription"
+              >
+                {{ task.description }}
+              </button>
+            </div>
+            <span class="task-field-label task-who-label">Кому:</span>
+            <div class="task-field-value task-who-value">
+              <button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :title="selectedNames" :disabled="!canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button>
+              <button :disabled="!canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button>
+            </div>
+            <button class="task-field-label task-when-label" :disabled="!canEdit" @click="editing = 'when'">Когда:</button>
+            <div class="task-field-value task-when-value">
+              <button class="task-due" :title="taskDate(task)" :disabled="!canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button>
+              <button v-if="task.dueDate" :disabled="!canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button>
+            </div>
+            <span class="task-field-label task-from-label">От:</span>
+            <span class="task-field-value task-from-value" :title="task.creatorName">{{ task.creatorName }}</span>
           </div>
           <TeamTaskRecipientPicker
             v-if="['who', 'add'].includes(editing)"
@@ -796,8 +775,8 @@ onBeforeUnmount(() => {
             @select="choosePerson"
           />
           <div v-if="editing === 'when'" class="inline-choices">
-            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
-            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
+            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')"><span class="task-chip-label">Срочно</span></button
+            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')"><span class="task-chip-label">К сроку</span></button
             ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')"><span class="task-chip-label">Без срока</span></button>
           </div>
           <div v-if="editing === 'urgent'" class="inline-choices">
@@ -813,7 +792,6 @@ onBeforeUnmount(() => {
               <UiIcon name="attach" />{{ f.name }}
             </button>
           </div>
-          <div class="task-creator">От: {{ task.creatorName }}</div>
         </div>
         <TeamChatConversation
           v-show="editing !== 'description'"

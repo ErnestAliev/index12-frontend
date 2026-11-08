@@ -36,6 +36,7 @@ try {
   await recipient.fill('Вален');
   await panel.getByRole('option', { name: 'Валентина', exact: true }).tap();
   assert.equal(await panel.getByRole('button', { name: 'Срочно', exact: true }).getAttribute('data-tone'), 'urgent');
+  assert.equal(await panel.locator('.inline-choices .task-choice-chip > .task-chip-label').count(), 3, 'all chip labels paint above the tinted surface');
   await page.screenshot({ path: `output/playwright/task-timing-chips-${useWebkit ? 'webkit' : 'chromium'}.png` });
   const deadline = await panel.getByRole('button', { name: 'К сроку', exact: true }).boundingBox();
   await page.touchscreen.tap(deadline.x + deadline.width / 2, deadline.y + 3);
@@ -160,13 +161,39 @@ try {
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'delayed');
   await status.selectOption('done');
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'done');
-  for (const width of [320,390,1280]) {
+  for (const theme of ['light','dark']) for (const width of [320,390,1280]) {
     await page.setViewportSize({ width, height: 844 });
-    await page.evaluate(() => { window.taskCalendar.chat.state.tasks.find(t => t._id.startsWith('2222')).description = 'Длинная задача: подготовить договор, забрать документы и передать сотруднику для проверки'.repeat(3); });
-    const bounds = await status.boundingBox();
-    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height <= 36);
-    await page.screenshot({ path: `output/playwright/task-status-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    for (const description of ['Приступить немедленно', 'Длинная задача: подготовить договор, забрать документы и передать сотруднику для проверки. '.repeat(3)]) {
+      await page.evaluate(description => { window.taskCalendar.chat.state.tasks.find(t => t._id.startsWith('2222')).description = description; }, description);
+      const bounds = await status.boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height <= 26);
+      assert.ok(bounds.width < 90, 'the completed-status chip sizes to its label');
+      const layout = await panel.locator('.task-summary').evaluate(el => {
+        const box = selector => el.querySelector(selector).getBoundingClientRect().toJSON();
+        return { colors: ['.task-who-label','.task-when-label','.task-from-label'].map(s => getComputedStyle(el.querySelector(s)).color), width: el.getBoundingClientRect().width, chip: box('.task-status-select'), text: box('.task-description'), labels: ['.task-who-label','.task-when-label','.task-from-label'].map(box), values: ['.task-who-value','.task-when-value','.task-from-value'].map(box), overflow: el.scrollWidth > el.clientWidth };
+      });
+      assert.ok(Math.abs(layout.chip.y - layout.text.y) < 5, 'status and description start on the same line');
+      assert.ok(layout.chip.right <= layout.text.x, 'status appears immediately before the task text');
+      assert.equal(layout.overflow, false);
+      assert.equal(new Set(layout.colors).size, 1, 'all metadata labels share the same text style');
+      for (let i = 0; i < 3; i++) {
+        assert.equal(layout.labels[i].x, layout.labels[0].x, 'labels share one column');
+        assert.equal(layout.values[i].x, layout.values[0].x, 'values share a separate column');
+        assert.ok(Math.abs(layout.labels[i].y - layout.values[i].y) < 5, 'label and value share a row');
+      }
+      if (layout.width >= 350) assert.ok(layout.values[0].right <= layout.text.x, 'task text occupies the third column');
+      await page.screenshot({ path: `output/playwright/task-columns-${description.length < 30 ? 'short' : 'long'}-${theme}-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    }
   }
+  await status.selectOption('open');
+  const newWidth = (await status.boundingBox()).width;
+  await status.selectOption('progress');
+  assert.ok((await status.boundingBox()).width > newWidth, 'chip width follows the selected status without moving metadata columns');
+  await panel.locator('.task-description').click();
+  await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).fill('Отредактировано в новой сетке');
+  await panel.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await panel.locator('.task-description').filter({ hasText: 'Отредактировано в новой сетке' }).waitFor();
 
   assert.deepEqual(errors, []);
   console.log(`PASS (${useWebkit ? 'webkit' : 'chromium'}): role/timing chips, touch recipient search, outside filter dismiss/reset, compact calendar/filter, day-only selection, 10-task agenda, inline chat editing, deletion/restore and explicit chat navigation`);
