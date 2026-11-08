@@ -2,12 +2,18 @@
 import { ref } from "vue";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 import UiIcon from "./UiIcon.vue";
+import { useInputModality } from "@/composables/useInputModality";
+const keyboard = useInputModality();
 const search = useTeamChatSearchStore();
 const bar = ref(null),
   field = ref(null);
 function focus() {
   // Keep focus in the user gesture so the iOS keyboard opens on the first tap.
   if (bar.value) bar.value.style.display = "flex";
+  field.value?.focus({ preventScroll: true });
+}
+function navigate(direction) {
+  search.move(direction);
   field.value?.focus({ preventScroll: true });
 }
 defineExpose({ focus });
@@ -17,6 +23,7 @@ defineExpose({ focus });
     ref="bar"
     v-show="search.open"
     class="team-search-bar"
+    :data-keyboard="keyboard"
     role="search"
     aria-label="Поиск в чатах"
     @submit.prevent="search.find()"
@@ -53,8 +60,8 @@ defineExpose({ focus });
       type="button"
       aria-label="Предыдущее совпадение"
       :disabled="search.busy || search.index <= 0"
-      @pointerdown.prevent
-      @click="search.move(-1)"
+      @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
+      @click="navigate(-1)"
     >
       <UiIcon name="chevron-up" />
     </button>
@@ -64,8 +71,8 @@ defineExpose({ focus });
       :disabled="
         search.busy || search.index < 0 || search.index >= search.total - 1
       "
-      @pointerdown.prevent
-      @click="search.move(1)"
+      @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
+      @click="navigate(1)"
     >
       <UiIcon name="chevron-down" />
     </button>
@@ -79,7 +86,15 @@ defineExpose({ focus });
   width: 100%;
   align-items: center;
   gap: 2px;
-  grid-column: 1/-1;
+  box-sizing: border-box;
+  flex: none;
+  padding: 10px max(12px, var(--safe-area-right, 0px))
+    var(--chat-composer-bottom-space, var(--safe-bottom-controls, 12px))
+    max(12px, var(--safe-area-left, 0px));
+  background: var(--codex-pane-bg);
+  color: var(--codex-pane-text);
+  border: 0;
+  margin: 0;
 }
 .team-search-bar > input {
   flex: 1;
@@ -87,7 +102,11 @@ defineExpose({ focus });
   width: 0;
   height: 44px;
   padding: 0 6px;
-  border: 0;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  appearance: none;
+  -webkit-appearance: none;
   background: transparent;
   color: var(--codex-pane-text);
   font: inherit;
@@ -125,11 +144,14 @@ defineExpose({ focus });
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.team-search-bar > input:focus-visible {
-  outline: 0;
-  box-shadow: inset 0 -1px var(--codex-pane-focus);
+.team-search-bar > button:focus {
+  outline: none;
+  box-shadow: none;
 }
-.team-search-bar > button:focus-visible {
+.team-search-bar[data-keyboard="true"] > input:focus-visible {
+  box-shadow: inset 0 -1px var(--codex-pane-focus) !important;
+}
+.team-search-bar[data-keyboard="true"] > button:focus-visible {
   outline: 2px solid var(--codex-pane-focus);
   outline-offset: -3px;
 }

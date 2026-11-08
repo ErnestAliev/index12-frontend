@@ -6,8 +6,12 @@ function pointer() {
   keyboardNavigation.value = false;
 }
 function keyboard(event) {
-  if (!event.metaKey && !event.ctrlKey && !event.altKey)
-    keyboardNavigation.value = true;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  // Typing after pointer autofocus is text entry, not keyboard navigation.
+  const editing = event.target?.closest?.(
+    'input,textarea,[contenteditable="true"]',
+  );
+  if (event.key === "Tab" || !editing) keyboardNavigation.value = true;
 }
 if (typeof window !== "undefined") {
   window.addEventListener("pointerdown", pointer, true);

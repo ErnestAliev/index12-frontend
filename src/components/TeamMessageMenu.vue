@@ -2,7 +2,9 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import UiIcon from "./UiIcon.vue";
+import { useOpeningGestureGuard } from "@/composables/useOpeningGestureGuard";
 const props = defineProps({ message: Object, suppressOpeningTouch: Boolean });
+const openingGesture = useOpeningGestureGuard(props.suppressOpeningTouch);
 const emit = defineEmits(["close", "deleted", "reply"]);
 const chat = useTeamChatStore(),
   panel = ref(null),
@@ -26,17 +28,6 @@ const title = computed(
 );
 const bounds = ref({});
 let previousFocus;
-let waitingForRelease = false;
-function releaseOpeningTouch(event) {
-  if (!waitingForRelease) return;
-  if (event.type === "touchend") {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  waitingForRelease = false;
-  document.removeEventListener("touchend", releaseOpeningTouch, true);
-  document.removeEventListener("touchcancel", releaseOpeningTouch, true);
-}
 function clearMenuSelection() {
   if (
     document.activeElement?.matches('input,textarea,[contenteditable="true"]')
@@ -159,14 +150,6 @@ function keys(event) {
 onMounted(async () => {
   window.getSelection()?.removeAllRanges();
   document.addEventListener("selectionchange", clearMenuSelection);
-  waitingForRelease = props.suppressOpeningTouch;
-  if (waitingForRelease) {
-    document.addEventListener("touchend", releaseOpeningTouch, {
-      capture: true,
-      passive: false,
-    });
-    document.addEventListener("touchcancel", releaseOpeningTouch, true);
-  }
   previousFocus = document.activeElement;
   if (previousFocus?.matches("input,textarea")) previousFocus.blur();
   viewport();
@@ -179,8 +162,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("selectionchange", clearMenuSelection);
   clearMenuSelection();
-  document.removeEventListener("touchend", releaseOpeningTouch, true);
-  document.removeEventListener("touchcancel", releaseOpeningTouch, true);
   window.visualViewport?.removeEventListener("resize", viewport);
   window.visualViewport?.removeEventListener("scroll", viewport);
   window.removeEventListener("resize", viewport);
@@ -191,6 +172,11 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div
+      @pointerdown.capture="openingGesture.down"
+      @pointermove.capture="openingGesture.move"
+      @pointercancel.capture="openingGesture.cancel"
+      @keydown.capture="openingGesture.keys"
+      @click.capture="openingGesture.click"
       class="team-message-menu-backdrop"
       :style="bounds"
       @pointerdown.self="close"

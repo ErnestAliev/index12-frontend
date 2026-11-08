@@ -1,5 +1,10 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref, onMounted, onBeforeUnmount } from "vue";
+import TeamChatSearchBar from "./TeamChatSearchBar.vue";
+import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
+const search = useTeamChatSearchStore(),
+  searchBar = ref(null);
+let clearSearchFocus;
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskPanel from "./TeamTaskPanel.vue";
@@ -38,6 +43,7 @@ function notification(event) {
   }
 }
 onMounted(() => {
+  clearSearchFocus = search.registerFocus(() => searchBar.value?.focus());
   navigator.serviceWorker?.addEventListener("message", notification);
   const query = new URLSearchParams(location.search);
   if (query.has("task"))
@@ -50,12 +56,17 @@ onMounted(() => {
       },
     });
 });
-onBeforeUnmount(() =>
-  navigator.serviceWorker?.removeEventListener("message", notification),
-);
+onBeforeUnmount(() => {
+  clearSearchFocus?.();
+  navigator.serviceWorker?.removeEventListener("message", notification);
+});
 </script>
 <template>
-  <div class="team-pane team-workspace" style="position: relative">
+  <div
+    class="team-pane team-workspace"
+    :class="{ 'team-searching': search.open }"
+    style="position: relative"
+  >
     <TeamChatConversation
       v-if="chat.me?.status === 'active'"
       v-show="!panelOpen && chat.tab === 'messages'"
@@ -82,6 +93,15 @@ onBeforeUnmount(() =>
     >
       <TeamChatMembers />
     </div>
+    <TeamChatSearchBar ref="searchBar" />
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>
+
+<style scoped>
+.team-searching :deep(.task-panel) {
+  position: relative;
+  inset: auto;
+  flex: 1;
+}
+</style>

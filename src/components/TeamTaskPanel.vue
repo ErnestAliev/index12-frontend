@@ -1,6 +1,4 @@
 <script setup>
-import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
-const search = useTeamChatSearchStore();
 import {
   ref,
   computed,
@@ -444,7 +442,7 @@ onBeforeUnmount(() => {
       @close="menuTask = null"
       @open="chat.requestedTaskId = menuTask._id"
     />
-    <header v-if="(creating || taskId) && !search.open" class="task-header">
+    <header v-if="creating || taskId" class="task-header">
       <button aria-label="Назад" :disabled="busy || uploading" @click="close">
         <UiIcon name="back" />
       </button>

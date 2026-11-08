@@ -1,13 +1,15 @@
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
+import { computed, ref } from "vue";
 import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
 import TeamChatDialog from "./TeamChatDialog.vue";
 import UiIcon from "./UiIcon.vue";
+import { useOpeningGestureGuard } from "@/composables/useOpeningGestureGuard";
 const props = defineProps({
   task: Object,
   confirmOnly: Boolean,
   suppressOpeningTouch: Boolean,
 });
+const openingGesture = useOpeningGestureGuard(props.suppressOpeningTouch);
 const emit = defineEmits(["close", "open", "deleted"]);
 const chat = useTeamChatStore(),
   confirm = ref(props.confirmOnly),
@@ -16,19 +18,6 @@ const chat = useTeamChatStore(),
 const canDelete = computed(
   () => chat.me?.owner || props.task?.creatorId === chat.me?.actorId,
 );
-function release(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  document.removeEventListener("touchend", release, true);
-}
-onMounted(() => {
-  if (props.suppressOpeningTouch)
-    document.addEventListener("touchend", release, {
-      capture: true,
-      passive: false,
-    });
-});
-onBeforeUnmount(() => document.removeEventListener("touchend", release, true));
 async function remove() {
   if (busy.value || !canDelete.value) return;
   busy.value = true;
@@ -50,6 +39,11 @@ async function remove() {
 </script>
 <template>
   <TeamChatDialog
+    @pointerdown.capture="openingGesture.down"
+    @pointermove.capture="openingGesture.move"
+    @pointercancel.capture="openingGesture.cancel"
+    @keydown.capture="openingGesture.keys"
+    @click.capture="openingGesture.click"
     :title="confirm ? 'Удалить задачу?' : 'Задача'"
     :busy="busy"
     @close="emit('close')"

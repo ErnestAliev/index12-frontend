@@ -1,5 +1,5 @@
 import "/src/assets/main.css";
-import { createApp, h } from "vue";
+import { createApp, h, ref } from "vue";
 import { createPinia } from "pinia";
 import { useTeamChatStore, teamApi } from "/src/stores/teamChatStore.js";
 import { useTeamChatSearchStore } from "/src/stores/teamChatSearchStore.js";
@@ -28,6 +28,10 @@ rows.push({
 });
 let deleted = new Set();
 window.searchRequests = [];
+window.reactionRequests = [];
+window.readRequests = [];
+const shown = ref(true);
+window.fixtureOpen = shown;
 window.failDelete = false;
 const snapshot = () => ({
   messages: rows.filter((m) => !m.taskId && !deleted.has(m._id)).slice(-50),
@@ -50,6 +54,15 @@ const task = {
   unreadCount: 0,
 };
 teamApi.defaults.adapter = async (config) => {
+  if (config.url.endsWith("/reaction")) {
+    window.reactionRequests.push(JSON.parse(config.data));
+    return { status: 200, data: {} };
+  }
+  if (config.url === "/messages/read") {
+    window.readRequests.push(JSON.parse(config.data));
+    return { status: 200, data: { read: 1 } };
+  }
+
   if (config.method === "delete") {
     await new Promise((resolve, reject) => {
       window.releaseDelete = resolve;
@@ -123,11 +136,10 @@ const app = createApp({
     h(
       Frame,
       {
-        open: true,
+        open: shown.value,
         mobile: true,
         headingOwnsClose: true,
-        hideHeading:
-          (!!chat.requestedTaskId || chat.creatingTask) && !search.open,
+        hideHeading: !!chat.requestedTaskId || chat.creatingTask,
       },
       { heading: () => h(Header), default: () => h(Pane, { mobile: true }) },
     ),

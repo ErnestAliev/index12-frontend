@@ -11,14 +11,12 @@ import {
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useAppearanceStore } from "@/stores/appearanceStore";
 import UiIcon from "./UiIcon.vue";
-import TeamChatSearchBar from "./TeamChatSearchBar.vue";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
-const search = useTeamChatSearchStore(),
-  searchBar = ref(null);
+const search = useTeamChatSearchStore();
 function openSearch() {
   open.value = false;
   search.start();
-  searchBar.value?.focus();
+  search.focusField();
 }
 import { useTeamChatNotifications } from "@/composables/useTeamChatNotifications";
 const props = defineProps({ modelValue: String, inviteToken: String });
@@ -83,6 +81,7 @@ function toggle() {
   else open.value = true;
 }
 function select(value) {
+  if (search.open) search.close(false);
   if (value === "members" && !chat.isOwner) return;
   emit("update:modelValue", value);
   close();
@@ -173,81 +172,78 @@ onBeforeUnmount(() => {
       close(false)
     "
   >
-    <TeamChatSearchBar ref="searchBar" />
-    <template v-if="!search.open">
-      <div class="team-navigation-identity"><slot /></div>
-      <div class="team-navigation-picker">
-        <button
-          ref="trigger"
-          type="button"
-          class="team-navigation-trigger"
-          aria-label="Меню чата"
-          aria-haspopup="dialog"
-          :aria-controls="menuId"
-          :aria-expanded="open"
-          :data-section="modelValue"
-          @click="toggle"
-        >
-          <span>{{ label }}</span
-          ><UiIcon name="chevron-down" />
-        </button>
-        <section
-          v-if="open"
-          :id="menuId"
-          ref="menu"
-          class="team-navigation-menu"
-          role="dialog"
-          aria-label="Меню чата"
-          :style="{ maxHeight: `${menuHeight}px` }"
-        >
-          <button
-            v-for="s in sections"
-            :key="s.value"
-            type="button"
-            :aria-pressed="modelValue === s.value"
-            aria-controls="team-panel"
-            @click="select(s.value)"
-          >
-            <UiIcon
-              name="check"
-              :class="{ 'team-navigation-unchecked': modelValue !== s.value }"
-            />{{ s.label }}
-          </button>
-          <button type="button" @click="openSearch">
-            <UiIcon name="search" />Поиск
-          </button>
-          <hr />
-          <button type="button" @click="theme">
-            <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
-              appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
-            }}
-          </button>
-          <p v-if="error" role="alert">{{ error }}</p>
-          <button
-            type="button"
-            :disabled="notificationsBusy"
-            :aria-pressed="notificationsEnabled"
-            @click="toggleNotifications"
-          >
-            <UiIcon :name="notificationsBusy ? 'refresh' : 'bell'" />{{
-              notificationsEnabled
-                ? "Выключить уведомления"
-                : "Включить уведомления"
-            }}
-          </button>
-          <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
-        </section>
-      </div>
+    <div class="team-navigation-identity"><slot /></div>
+    <div class="team-navigation-picker">
       <button
+        ref="trigger"
         type="button"
-        class="team-heading-close"
-        aria-label="Закрыть чат Сотрудники"
-        title="Закрыть"
-        @click="emit('close')"
+        class="team-navigation-trigger"
+        aria-label="Меню чата"
+        aria-haspopup="dialog"
+        :aria-controls="menuId"
+        :aria-expanded="open"
+        :data-section="modelValue"
+        @click="toggle"
       >
-        <UiIcon name="close" />
+        <span>{{ label }}</span
+        ><UiIcon name="chevron-down" />
       </button>
-    </template>
+      <section
+        v-if="open"
+        :id="menuId"
+        ref="menu"
+        class="team-navigation-menu"
+        role="dialog"
+        aria-label="Меню чата"
+        :style="{ maxHeight: `${menuHeight}px` }"
+      >
+        <button
+          v-for="s in sections"
+          :key="s.value"
+          type="button"
+          :aria-pressed="modelValue === s.value"
+          aria-controls="team-panel"
+          @click="select(s.value)"
+        >
+          <UiIcon
+            name="check"
+            :class="{ 'team-navigation-unchecked': modelValue !== s.value }"
+          />{{ s.label }}
+        </button>
+        <button type="button" @click="openSearch">
+          <UiIcon name="search" />Поиск
+        </button>
+        <hr />
+        <button type="button" @click="theme">
+          <UiIcon :name="appearance.mode === 'light' ? 'moon' : 'sun'" />{{
+            appearance.mode === "light" ? "Тёмная тема" : "Светлая тема"
+          }}
+        </button>
+        <p v-if="error" role="alert">{{ error }}</p>
+        <button
+          type="button"
+          :disabled="notificationsBusy"
+          :aria-pressed="notificationsEnabled"
+          @click="toggleNotifications"
+        >
+          <UiIcon :name="notificationsBusy ? 'refresh' : 'bell'" />{{
+            notificationsEnabled
+              ? "Выключить уведомления"
+              : "Включить уведомления"
+          }}
+        </button>
+        <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
+      </section>
+    </div>
+    <button
+      type="button"
+      class="team-heading-close"
+      aria-label="Закрыть чат Сотрудники"
+      title="Закрыть"
+      @click="emit('close')"
+    >
+      <UiIcon name="close" />
+    </button>
   </nav>
 </template>
 <style scoped>

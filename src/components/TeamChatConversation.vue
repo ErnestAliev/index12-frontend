@@ -8,6 +8,7 @@ import {
   onBeforeUnmount,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import { canSeeChatMessage } from "@/utils/teamMessageVisibility";
 import TeamSearchText from "./TeamSearchText.vue";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 const search = useTeamChatSearchStore();
@@ -249,9 +250,8 @@ async function showOriginal(quote) {
       quoteView.value = data.message;
       trackVisibleHistory();
       chat.schedule();
-      void teamApi
-        .post("/messages/read", { ids: [data.message._id] })
-        .catch(() => {});
+      await nextTick();
+      scheduleOriginalRead();
     }
   } catch (e) {
     if (workspace === chat.me?.workspaceId)
@@ -285,7 +285,7 @@ async function reactToMessage(row, reaction) {
   );
 }
 const messageStatus = (row) =>
-  row.readCount > 0 ? "Просмотрено" : "Доставлено";
+  row.readCount > 0 ? "Просмотрено" : "Отправлено";
 const mentionChoices = computed(() =>
   (chat.state.people || []).filter(
     (p) =>
@@ -356,7 +356,28 @@ watch(
       );
   },
 );
-let noticeTimer, readTimer;
+let noticeTimer, readTimer, originalReadTimer;
+function scheduleOriginalRead() {
+  clearTimeout(originalReadTimer);
+  const id = quoteView.value?._id;
+  if (!id) return;
+  originalReadTimer = setTimeout(() => {
+    const element = document.querySelector(".team-original-message"),
+      dialog = element?.closest("dialog");
+    if (quoteView.value?._id === id && canSeeChatMessage(element, dialog))
+      void teamApi
+        .post("/messages/read", { ids: [id], visibilityConfirmed: true })
+        .catch(() => {});
+  }, 200);
+}
+function readVisibilityChanged() {
+  clearTimeout(readTimer);
+  clearTimeout(originalReadTimer);
+  if (document.visibilityState === "visible" && document.hasFocus()) {
+    scheduleReads();
+    scheduleOriginalRead();
+  }
+}
 const acknowledgedReads = new Set();
 function startTask() {
   emit("new");
@@ -378,6 +399,9 @@ watch(
 );
 onMounted(async () => {
   syncCalendarDay();
+  window.addEventListener("focus", readVisibilityChanged);
+  window.addEventListener("blur", readVisibilityChanged);
+  document.addEventListener("visibilitychange", readVisibilityChanged);
   window.addEventListener("focus", syncCalendarDay);
   document.addEventListener("visibilitychange", syncCalendarDay);
   await nextTick();
@@ -395,9 +419,14 @@ onMounted(async () => {
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
   await revealTarget();
+  scheduleReads();
 });
 onBeforeUnmount(() => {
   disposed = true;
+  clearTimeout(originalReadTimer);
+  window.removeEventListener("focus", readVisibilityChanged);
+  window.removeEventListener("blur", readVisibilityChanged);
+  document.removeEventListener("visibilitychange", readVisibilityChanged);
   clearTimeout(calendarTimer);
   window.removeEventListener("focus", syncCalendarDay);
   document.removeEventListener("visibilitychange", syncCalendarDay);
@@ -672,6 +701,7 @@ function scheduleReads() {
     !props.active ||
     tab.value !== "messages" ||
     document.visibilityState !== "visible" ||
+    !document.hasFocus() ||
     !feed.value
   )
     return;
@@ -679,34 +709,34 @@ function scheduleReads() {
     if (
       !feed.value ||
       document.visibilityState !== "visible" ||
+      !document.hasFocus() ||
       !props.active ||
       selectedMessage.value ||
       quoteView.value ||
       preview.value
     )
       return;
-    const box = feed.value.getBoundingClientRect(),
-      rows = [...feed.value.querySelectorAll("[data-message-id]")]
-        .filter((e) => {
-          const r = e.getBoundingClientRect();
-          return r.bottom > box.top && r.top < box.bottom;
-        })
-        .map((e) =>
-          shownMessages.value.find((m) => m._id === e.dataset.messageId),
-        )
-        .filter(
-          (m) =>
-            m &&
-            !m._delivery &&
-            m.authorId !== chat.me?.actorId &&
-            !acknowledgedReads.has(m._id + ":" + (m.contentVersion || 0)),
-        )
-        .slice(0, 100);
+    const rows = [...feed.value.querySelectorAll("[data-message-id]")]
+      .filter((e) => canSeeChatMessage(e, feed.value))
+      .map((e) =>
+        shownMessages.value.find((m) => m._id === e.dataset.messageId),
+      )
+      .filter(
+        (m) =>
+          m &&
+          !m._delivery &&
+          m.authorId !== chat.me?.actorId &&
+          !acknowledgedReads.has(m._id + ":" + (m.contentVersion || 0)),
+      )
+      .slice(0, 100);
     if (!rows.length) return;
     const keys = rows.map((m) => m._id + ":" + (m.contentVersion || 0));
     keys.forEach((k) => acknowledgedReads.add(k));
     try {
-      await teamApi.post("/messages/read", { ids: rows.map((m) => m._id) });
+      await teamApi.post("/messages/read", {
+        ids: rows.map((m) => m._id),
+        visibilityConfirmed: true,
+      });
     } catch {
       keys.forEach((k) => acknowledgedReads.delete(k));
     }

@@ -1,6 +1,4 @@
 <script setup>
-import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
-const search = useTeamChatSearchStore();
 import { computed, onBeforeUnmount, ref, watch, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import { useMainStore } from "@/stores/mainStore";
@@ -119,9 +117,7 @@ async function decide(status) {
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
     heading-owns-close
-    :hide-heading="
-      (!!chat.requestedTaskId || chat.creatingTask) && !search.open
-    "
+    :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
     :mobile="route.name === 'mobile-home'"
     title="Сотрудники"
     window-id="team-chat-window"

@@ -11,7 +11,17 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
   let generation = 0,
     controller,
     timer,
-    origin;
+    origin,
+    focusHandler;
+  function registerFocus(handler) {
+    focusHandler = handler;
+    return () => {
+      if (focusHandler === handler) focusHandler = null;
+    };
+  }
+  function focusField() {
+    focusHandler?.();
+  }
   const hasQuery = computed(() => !!query.value.trim());
   const total = computed(() => result.value?.total || 0);
   const index = computed(() => result.value?.index ?? -1);
@@ -115,6 +125,8 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     total,
     index,
     start,
+    registerFocus,
+    focusField,
     close,
     find,
     move,

@@ -1,6 +1,4 @@
 <script setup>
-import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
-const search = useTeamChatSearchStore();
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
@@ -357,9 +355,7 @@ const closedText = (status) =>
       v-else
       :open="true"
       heading-owns-close
-      :hide-heading="
-        (!!chat.requestedTaskId || chat.creatingTask) && !search.open
-      "
+      :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"
