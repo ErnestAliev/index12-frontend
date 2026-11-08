@@ -133,8 +133,7 @@
   background: var(--codex-pane-surface);
   overflow: hidden;
 }
-.task-description-box textarea,
-.edit-description textarea {
+.task-description-box textarea {
   display: block;
   background: transparent;
   border: 0;
@@ -430,16 +429,6 @@
   padding: 6px;
   width: 70px;
 }
-.edit-description {
-  display: flex;
-  align-items: flex-end;
-}
-.edit-description textarea {
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 8px;
-  padding: 8px;
-  min-width: 0;
-}
 .upload-state {
   display: block;
   align-self: center;
@@ -690,16 +679,15 @@
 .task-panel .task-field-value .task-assignee,.task-panel .task-field-value .task-due { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .task-field-value .ui-icon { width: 14px; height: 14px; }
 .task-from-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-block: 4px; }
-.task-summary.is-editing .task-summary-title { grid-template-columns: minmax(0,1fr); }
 @container (min-width: 350px) {
-  .task-summary:not(.is-editing) { grid-template-columns: 40px 112px minmax(0,1fr); grid-template-rows: 30px 28px 28px minmax(28px,1fr); column-gap: 8px; align-items: start; }
-  .task-summary:not(.is-editing) .task-summary-title { display: contents; }
-  .task-summary:not(.is-editing) .task-status-select { grid-column: 1 / 3; grid-row: 1; margin-bottom: 4px; }
-  .task-summary:not(.is-editing) .task-description { grid-column: 3; grid-row: 1 / 5; }
-  .task-summary:not(.is-editing) .task-who-label { grid-column: 1; grid-row: 2; padding-block: 4px; }
-  .task-summary:not(.is-editing) .task-who-value { grid-column: 2; grid-row: 2; }
-  .task-summary:not(.is-editing) .task-when-label { grid-column: 1; grid-row: 3; }
-  .task-summary:not(.is-editing) .task-when-value { grid-column: 2; grid-row: 3; }
-  .task-summary:not(.is-editing) .task-from-label { grid-column: 1; grid-row: 4; padding-block: 4px; }
-  .task-summary:not(.is-editing) .task-from-value { grid-column: 2; grid-row: 4; }
+  .task-summary { grid-template-columns: 36px 112px minmax(0,1fr); grid-template-rows: 30px 28px 28px minmax(28px,1fr); column-gap: 8px; align-items: start; }
+  .task-summary .task-summary-title { display: contents; }
+  .task-summary .task-status-select { grid-column: 1 / 3; grid-row: 1; margin-bottom: 4px; }
+  .task-summary .task-description { grid-column: 3; grid-row: 1 / 5; }
+  .task-summary .task-who-label { grid-column: 1; grid-row: 2; padding-block: 4px; }
+  .task-summary .task-who-value { grid-column: 2; grid-row: 2; }
+  .task-summary .task-when-label { grid-column: 1; grid-row: 3; }
+  .task-summary .task-when-value { grid-column: 2; grid-row: 3; }
+  .task-summary .task-from-label { grid-column: 1; grid-row: 4; padding-block: 4px; }
+  .task-summary .task-from-value { grid-column: 2; grid-row: 4; }
 }

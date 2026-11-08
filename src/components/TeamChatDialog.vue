@@ -3,11 +3,17 @@ import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
 import { useInputModality } from "@/composables/useInputModality";
 const keyboardNavigation = useInputModality();
-defineProps({ title: String, busy: Boolean });
+const props = defineProps({ title: String, busy: Boolean, bare: Boolean, dismissOutside: Boolean });
 const emit = defineEmits(["close"]),
   dialog = ref(null),
   bounds = ref({});
-let previous;
+let previous, outsideStarted = false;
+function outside(event) {
+  const r = dialog.value.getBoundingClientRect();
+  return event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom;
+}
+function pointerDown(event) { outsideStarted = props.dismissOutside && event.target === dialog.value && outside(event); }
+function click(event) { if (outsideStarted && outside(event) && !props.busy) emit('close'); outsideStarted = false; }
 function resize() {
   const v = window.visualViewport;
   const style = getComputedStyle(document.documentElement),
@@ -52,10 +58,12 @@ onBeforeUnmount(() => {
     :class="{ 'keyboard-navigation': keyboardNavigation }"
     :style="bounds"
     :aria-label="title"
+    @pointerdown="pointerDown"
+    @click="click"
     @keydown.stop
     @cancel.prevent="!busy && emit('close')"
   >
-    <header>
+    <header v-if="!bare">
       <strong>{{ title }}</strong
       ><button
         type="button"

@@ -20,6 +20,7 @@ import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
 import { useTeamMedia } from "@/composables/useTeamMedia";
+import TeamTaskTextEditor from "./TeamTaskTextEditor.vue";
 import TeamTaskStatusSelect from "./TeamTaskStatusSelect.vue";
 import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import { useTaskHold } from "@/composables/useTaskHold";
@@ -325,14 +326,25 @@ async function upload(event) {
   }
 }
 
-async function editDescription() {
+function editDescription() {
   if (!canEdit.value) return;
+  error.value = "";
   text.value = task.value.description;
   editing.value = "description";
-  await nextTick();
-  field.value?.focus();
+}
+async function saveDescription() {
+  if (busy.value || editing.value !== 'description') return;
+  const description = text.value.trim(), previousError = error.value;
+  if (!description) { error.value = 'Опишите задачу'; return; }
+  if (description === task.value.description || await update({ description })) {
+    if (previousError && chat.error === previousError) chat.error = '';
+    editing.value = '';
+    text.value = '';
+    error.value = '';
+  }
 }
 function close() {
+  if (editing.value === 'description') { saveDescription(); return; }
   if (filterOpen.value) { filterOpen.value = false; return; }
   if (busy.value || uploading.value) return;
   if (picker.value) {
@@ -429,6 +441,7 @@ onBeforeUnmount(() => {
     }"
     @keydown.esc.stop.prevent="close"
   >
+    <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
     <TeamMediaPreview
       v-if="preview"
       :media="preview"
@@ -712,40 +725,10 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview">
-          <div class="task-summary" :class="{ 'is-editing': editing === 'description' }">
+          <div class="task-summary">
             <div class="task-summary-title">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
-              <div v-if="editing === 'description'" class="edit-description">
-                <textarea
-                  ref="field"
-                  v-model="text"
-                  aria-label="Описание задачи"
-                  maxlength="10000"
-                /><button
-                  :disabled="busy"
-                  aria-label="Сохранить"
-                  @click="
-                    update({ description: text }).then((ok) => {
-                      if (ok) {
-                        editing = '';
-                        text = '';
-                      }
-                    })
-                  "
-                >
-                  ✓</button
-                ><button
-                  aria-label="Отменить"
-                  @click="
-                    editing = '';
-                    text = '';
-                  "
-                >
-                  ×
-                </button>
-              </div>
               <button
-                v-else
                 class="task-description"
                 :disabled="!canEdit"
                 @click="editDescription"
@@ -794,7 +777,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <TeamChatConversation
-          v-show="editing !== 'description'"
           :active="editing !== 'description'"
           :key="taskId"
           :task-id="taskId"

@@ -192,8 +192,67 @@ try {
   assert.ok((await status.boundingBox()).width > newWidth, 'chip width follows the selected status without moving metadata columns');
   await panel.locator('.task-description').click();
   await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).fill('Отредактировано в новой сетке');
-  await panel.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.locator('dialog.task-text-editor').click({ position: { x: -5, y: -5 }, force: true });
   await panel.locator('.task-description').filter({ hasText: 'Отредактировано в новой сетке' }).waitFor();
+  assert.equal(await page.locator('dialog.task-text-editor').count(), 0);
+  assert.equal(await status.evaluate(el => getComputedStyle(el).borderTopWidth), '0px');
+  assert.equal(await status.evaluate(el => getComputedStyle(el).opacity), '0');
+  for (const theme of ['light','dark']) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    await panel.locator('.task-description').tap();
+    const editor = page.locator('dialog.task-text-editor'), input = editor.getByRole('textbox');
+    await input.waitFor();
+    assert.equal(await editor.locator('button, header').count(), 0, 'editing is just the text field');
+    assert.equal(await input.evaluate(el => el === document.activeElement), true);
+    await input.fill('Длинный текст. '.repeat(30));
+    const styles = await input.evaluate(el => { const s = getComputedStyle(el); return [s.fontSize,s.outlineStyle,s.boxShadow]; });
+    assert.deepEqual(styles, ['16px','none','none'], 'touch and typing never add a heavy focus frame');
+    const shade = await editor.evaluate(el => getComputedStyle(el, '::backdrop').backgroundColor);
+    assert.notEqual(shade, 'rgba(0, 0, 0, 0)');
+    await page.screenshot({ path: `output/playwright/task-editor-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+    await page.setViewportSize({ width: 390, height: 390 });
+    await page.waitForFunction(() => { const r = document.querySelector('dialog.task-text-editor').getBoundingClientRect(); return r.y >= 12 && r.bottom <= innerHeight - 12; });
+    const r = await editor.boundingBox();
+    assert.ok(r.y >= 12 && r.y + r.height <= 378, 'editor fits the reduced viewport with keyboard space');
+    await input.fill('');
+    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.getByRole('alert').waitFor();
+    assert.equal(await editor.isVisible(), true, 'an empty edit cannot erase the task');
+    await input.fill('Изменено касанием снаружи ' + theme);
+    await page.evaluate(() => {
+      const adapter = window.taskCalendar.teamApi.defaults.adapter;
+      window.taskCalendar.teamApi.defaults.adapter = async config => {
+        if (config.method === 'patch') { window.taskCalendar.teamApi.defaults.adapter = adapter; throw new Error('Нет соединения'); }
+        return adapter(config);
+      };
+    });
+    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.getByRole('alert').filter({ hasText: 'Нет соединения' }).waitFor();
+    assert.equal(await input.inputValue(), 'Изменено касанием снаружи ' + theme, 'failed save keeps the draft');
+    await editor.click({ position: { x: -5, y: -5 }, force: true });
+    await editor.waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => window.taskCalendar.chat.error), '', 'retry removes the error from the successful save');
+    await panel.locator('.task-description').filter({ hasText: 'Изменено касанием снаружи ' + theme }).waitFor();
+  }
+
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    const f = window.taskCalendar;
+    f.tasks.slice(0,3).forEach((t,i) => { t.status = ['open','progress','done'][i]; f.messages.push({ _id: crypto.randomUUID(), kind: 'task', taskId: t._id, authorId: 'owner:actor', authorName: 'Эрнест', text: '', attachments: [], createdAt: new Date().toISOString() }); });
+    f.chat.state.tasks = [...f.tasks];
+    f.showChat();
+  });
+  for (const theme of ['light','dark']) {
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    await page.locator('.task-cover').first().waitFor();
+    const colors = await page.locator('.task-cover').evaluateAll(els => els.map(el => { const s = getComputedStyle(el); return { state: el.dataset.status, left: s.borderLeftColor, right: s.borderRightColor }; }));
+    assert.notEqual(colors.find(c => c.state === 'open').left, colors.find(c => c.state === 'open').right, 'active task has a visible tinted accent');
+    assert.notEqual(colors.find(c => c.state === 'progress').left, colors.find(c => c.state === 'progress').right, 'in-progress task keeps its accent');
+    assert.equal(colors.find(c => c.state === 'done').left, colors.find(c => c.state === 'done').right, 'completed tasks stay quiet');
+    await page.screenshot({ path: `output/playwright/task-cover-accent-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  }
 
   assert.deepEqual(errors, []);
   console.log(`PASS (${useWebkit ? 'webkit' : 'chromium'}): role/timing chips, touch recipient search, outside filter dismiss/reset, compact calendar/filter, day-only selection, 10-task agenda, inline chat editing, deletion/restore and explicit chat navigation`);

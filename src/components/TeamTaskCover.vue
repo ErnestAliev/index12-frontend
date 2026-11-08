@@ -120,7 +120,7 @@ async function done() {
   gap: 4px;
   box-sizing: border-box;
   border: 1px solid var(--codex-pane-border);
-  border-left: 3px solid var(--codex-pane-border);
+  border-left: 3px solid color-mix(in srgb, var(--codex-pane-accent, #3b6763) 70%, var(--codex-pane-border)); /* impeccable-disable-line side-tab -- user requests the existing prototype accent, slightly brighter */
   border-radius: 10px;
   background: var(--codex-pane-surface);
   color: var(--codex-pane-text);
@@ -300,4 +300,8 @@ async function done() {
 .task-cover[data-status="delayed"] {
   border-left-color: var(--color-danger, #c65048);
 }
+</style>
+
+<style scoped>
+.task-cover[data-status="progress"] { border-left-color: var(--codex-pane-accent,#3b6763); }
 </style>

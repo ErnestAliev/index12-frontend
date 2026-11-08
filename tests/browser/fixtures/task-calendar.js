@@ -15,7 +15,7 @@ const people = [
   { _id: 'employee', name: 'Валентина', role: 'employee' },
 ];
 const day = dayAt(), view = ref('chat');
-const manualTasks = [];
+const manualTasks = [], messages = [];
 const tasks = [
   { _id: '11111111-1111-4111-8111-111111111111', description: 'Моя задача', assigneeIds: ['owner:actor'], dueDate: day, dueTime: null },
   { _id: '22222222-2222-4222-8222-222222222222', description: 'Задача Валентины', assigneeIds: ['employee'], dueDate: day, dueTime: '18:05' },
@@ -23,7 +23,7 @@ const tasks = [
 ].map(task => ({ ...task, workspaceId: 'workspace', timing: task.dueDate ? 'deadline' : 'none', status: 'open', creatorId: 'owner:actor', creatorName: 'Эрнест', version: 0, attachments: task._id.startsWith('2222') ? [{ fileId: '99999999-9999-4999-8999-999999999999', name: 'Снимок.png', mimeType: 'image/png', size: 68 }] : [], assignees: task.assigneeIds.map(id => ({ actorId: id, name: people.find(p => p._id === id).name })), createdAt: new Date().toISOString() }));
 const project = task => ({ ...task, _id: 'chat:' + task._id, source: 'team-chat', sourceTaskId: task._id, title: task.description, startsAt: null, endsAt: null, status: task.status === 'done' ? 'done' : 'open', chatStatus: task.status });
 const projected = () => tasks.filter(task => !task.deletedAt).map(project);
-const snapshot = () => ({ tasks: tasks.filter(task => !task.deletedAt), people, messages: [], members: [], hasMore: false });
+const snapshot = () => ({ tasks: tasks.filter(task => !task.deletedAt), people, messages, members: [], hasMore: false });
 teamApi.defaults.adapter = async config => {
   if (config.url.startsWith('/files/')) return { status: 200, data: new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII='), ch => ch.charCodeAt(0))], { type: 'image/png' }) };
   if (config.url === '/state') return { status: 200, data: snapshot() };
@@ -58,4 +58,4 @@ const app = createApp({ render: () => view.value === 'calendar'
   ? h(Calendar, { onClose: () => { view.value = 'chat'; } })
   : h(Frame, { open: true, mobile: true, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: true }, { heading: () => h(Header), default: () => h(Pane, { mobile: true }) }) });
 app.use(pinia); app.mount('#app');
-window.taskCalendar = { chat, business, tasks, people, manualTasks, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };
+window.taskCalendar = { teamApi, chat, business, tasks, people, manualTasks, messages, showChat: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'messages'; chat.state.messages = messages; chat.historyReady = true; }, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };
