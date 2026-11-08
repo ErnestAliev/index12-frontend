@@ -46,6 +46,7 @@ const limits = computed(() => ({
 const dimensions = computed(() =>
   isCompact.value
     ? {
+        '--task-header-safe-top': props.hideHeading ? 'var(--safe-area-top)' : '0px',
         left: `${viewport.value.left}px`,
         top: `${viewport.value.top}px`,
         width: `${viewport.value.width}px`,
@@ -173,7 +174,8 @@ watch(
     if (open) {
       returnFocus = document.activeElement;
       await nextTick();
-      panel.value?.focus({ preventScroll: true });
+      if (panel.value && !panel.value.contains(document.activeElement))
+        panel.value.focus({ preventScroll: true });
     } else {
       endResize();
       returnFocus?.focus?.({ preventScroll: true });

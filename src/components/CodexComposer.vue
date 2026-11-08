@@ -14,6 +14,7 @@ const props = defineProps({
   recording: Boolean,
   speechSupported: Boolean,
   mobile: Boolean,
+  focusOnTouch: Boolean,
   attachmentsEnabled: Boolean,
   hasAttachments: Boolean,
   hideMicrophone: Boolean,
@@ -48,6 +49,11 @@ function focusField() {
   cancelAnimationFrame(blurFrame);
   pendingBlur = false;
   focused.value = true;
+}
+function focusFromTouch(event) {
+  if (!props.focusOnTouch || !touch.value || (event.pointerType && event.pointerType === 'mouse')) return;
+  // Focus synchronously in the trusted tap, before reactive layout updates.
+  input.value?.focus({ preventScroll: true });
 }
 function blurField() {
   // Keep the message/file under the pointer until its click is delivered.
@@ -154,6 +160,8 @@ onBeforeUnmount(() => {
         rows="1"
         maxlength="16000"
         @focus="focusField"
+        @pointerup="focusFromTouch"
+        @touchend="focusFromTouch"
         @blur="blurField"
         @input="emit('update:modelValue', $event.target.value)"
         @keydown="keydown"

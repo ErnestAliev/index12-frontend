@@ -59,7 +59,8 @@ watch(
     main.user?.currentWorkspaceId,
     route.path.startsWith("/team/"),
   ],
-  ([actor, workspace, publicPage]) => {
+  ([actor, workspace, publicPage], previous) => {
+    if (previous && actor === previous[0] && workspace === previous[1] && publicPage === previous[2]) return;
     dismissed.value = [];
     if (publicPage) return;
     if (actor && workspace)
@@ -116,8 +117,8 @@ async function decide(status) {
   <ChatWindowFrame
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
-    heading-owns-close
-    :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
+    :heading-owns-close="!chat.isOwner"
+    :hide-heading="!chat.isOwner && (!!chat.requestedTaskId || chat.creatingTask)"
     :mobile="route.name === 'mobile-home'"
     title="Сотрудники"
     window-id="team-chat-window"

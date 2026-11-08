@@ -1246,6 +1246,7 @@ watch(
           v-model="message"
           :busy="uploading"
           :mobile="mobile"
+          :focus-on-touch="chat.isOwner"
           attachments-enabled
           :recording="dictating"
           :speech-supported="dictationSupported"
