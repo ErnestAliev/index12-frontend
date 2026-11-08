@@ -9,8 +9,10 @@ const emit = defineEmits(['created']);
 const chat = useTeamChatStore();
 const position = ref(''), createdMember = ref(null), editingMember = ref(null), profile = ref({ name: '', position: '', role: 'employee' });
 const formOpen = ref(false), name = ref(''), password = ref(''), role = ref('employee'), link = ref(''), visible = ref(false), creating = ref(false), error = ref(''), notice = ref(''), pending = ref(new Set());
-let active = true;
-onBeforeUnmount(() => { active = false; password.value = ''; });
+const credentialMember = ref(null), currentPassword = ref(''), newPassword = ref(''), currentVisible = ref(false), newVisible = ref(false);
+const passwordLoading = ref(false), passwordSaving = ref(false), passwordError = ref(''), passwordNotice = ref(''), passwordUnavailable = ref(''), passwordVersion = ref(null);
+let active = true, passwordTicket = 0;
+onBeforeUnmount(() => { active = false; ++passwordTicket; password.value = ''; currentPassword.value = ''; newPassword.value = ''; });
 const members = computed(() => {
   const rows = chat.state.members || [];
   if (rows.some(member => member.owner) || !chat.me?.owner) return rows;
@@ -18,6 +20,39 @@ const members = computed(() => {
 });
 function openProfile(member) { editingMember.value = member; profile.value = { name: member.name, position: member.position || '', role: member.role }; error.value = ''; }
 async function saveProfile() { const member = editingMember.value; if (member && await change(member, profile.value)) editingMember.value = null; }
+async function openCredentials(member) {
+  if (member.owner || passwordSaving.value) return;
+  const ticket = ++passwordTicket;
+  credentialMember.value = member; currentPassword.value = ''; newPassword.value = '';
+  currentVisible.value = false; newVisible.value = false; passwordVersion.value = null;
+  passwordError.value = ''; passwordNotice.value = ''; passwordUnavailable.value = ''; passwordLoading.value = true;
+  try {
+    const { data } = await teamApi.get('/access/employees/' + member._id + '/password');
+    if (!active || ticket !== passwordTicket) return;
+    passwordVersion.value = data.version;
+    currentPassword.value = data.available ? data.password : '';
+    passwordUnavailable.value = data.available ? '' : data.message;
+  } catch (e) { if (active && ticket === passwordTicket) passwordError.value = teamError(e); }
+  finally { if (active && ticket === passwordTicket) passwordLoading.value = false; }
+}
+function closeCredentials() {
+  if (passwordSaving.value) return;
+  ++passwordTicket; credentialMember.value = null; currentPassword.value = ''; newPassword.value = '';
+  currentVisible.value = false; newVisible.value = false; passwordVersion.value = null;
+}
+async function savePassword() {
+  if (passwordSaving.value || passwordLoading.value || passwordVersion.value === null || !credentialMember.value) return;
+  const ticket = passwordTicket, value = newPassword.value, member = credentialMember.value;
+  passwordSaving.value = true; passwordError.value = ''; passwordNotice.value = '';
+  try {
+    const data = await chat.action('/access/employees/' + member._id + '/password', { password: value, expectedVersion: passwordVersion.value }, 'patch');
+    if (!active || ticket !== passwordTicket || !data?.member) return;
+    credentialMember.value = data.member; passwordVersion.value = data.member.version;
+    currentPassword.value = value; newPassword.value = ''; currentVisible.value = false; newVisible.value = false;
+    passwordUnavailable.value = ''; passwordNotice.value = 'Пароль изменён';
+  } catch (e) { if (active && ticket === passwordTicket) passwordError.value = teamError(e); }
+  finally { if (active && ticket === passwordTicket) passwordSaving.value = false; }
+}
 defineExpose({ openForm });
 const statusLabel = member => ({ invited: 'Ожидает входа', active: 'В системе', pending: 'Ожидает подтверждения', revoked: 'Заблокирован', rejected: 'Заблокирован' })[member.status] || member.status;
 function openForm(initialName = '') { name.value = typeof initialName === 'string' ? initialName : ''; position.value = ''; password.value = ''; role.value = 'employee'; link.value = ''; error.value = ''; notice.value = ''; createdMember.value = null; formOpen.value = true; }
@@ -89,12 +124,25 @@ async function remove(member) {
     <div v-for="member in members" :key="member._id" class="access-row">
       <button type="button" class="access-name" :title="[member.name, member.position, statusLabel(member)].filter(Boolean).join(' · ')" :aria-label="`Редактировать ${member.name}`" @click="openProfile(member)"><i :data-status="member.status" :aria-label="statusLabel(member)" /><span>{{ member.name }}{{ member.position ? ' · ' + member.position : '' }}</span></button>
       <TeamChatRoleSelect :value="member.role" :roles="chat.me.roles" :label="`Роль ${member.name}`" :disabled="pending.has(member._id)" @change="change(member, { role: $event.target.value }, $event)" />
+      <button v-if="!member.owner" type="button" :disabled="pending.has(member._id)" :aria-label="`Пароль ${member.name}`" title="Посмотреть или изменить пароль" @click="openCredentials(member)"><UiIcon name="key" /></button>
+      <span v-else aria-hidden="true" />
       <button v-if="member.owner" type="button" :disabled="pending.has(member._id)" aria-label="Редактировать свой профиль" title="Редактировать" @click="openProfile(member)"><UiIcon name="edit" /></button>
       <button v-else-if="member.status === 'pending'" type="button" :disabled="pending.has(member._id)" :aria-label="`Открыть доступ ${member.name}`" title="Открыть доступ" @click="allow(member)"><UiIcon name="check" /></button>
       <button v-else type="button" :disabled="pending.has(member._id)" :aria-label="`${['revoked','rejected'].includes(member.status) ? 'Вернуть доступ' : 'Заблокировать'} ${member.name}`" :title="['revoked','rejected'].includes(member.status) ? 'Вернуть доступ' : 'Заблокировать'" @click="change(member, { blocked: !['revoked','rejected'].includes(member.status) })"><UiIcon :name="['revoked','rejected'].includes(member.status) ? 'undo' : 'ban'" /></button>
       <button v-if="!member.owner" type="button" class="access-danger" :disabled="pending.has(member._id)" :aria-label="`Удалить сотрудника ${member.name}`" title="Удалить" @click="remove(member)"><UiIcon name="trash" /></button>
     </div>
     </template>
+    <TeamChatDialog v-if="credentialMember" :title="'Пароль: ' + credentialMember.name" :busy="passwordSaving" @close="closeCredentials">
+      <form class="access-form" @submit.prevent="savePassword">
+        <p v-if="passwordLoading" role="status">Загружаем…</p>
+        <label v-else-if="currentPassword">Установленный пароль<div class="access-password"><input :value="currentPassword" :type="currentVisible ? 'text' : 'password'" readonly autocomplete="off" aria-label="Установленный пароль" /><button type="button" :aria-label="currentVisible ? 'Скрыть пароль' : 'Показать пароль'" :aria-pressed="currentVisible" @click="currentVisible = !currentVisible"><UiIcon name="view" /></button></div></label>
+        <p v-else-if="passwordUnavailable">{{ passwordUnavailable }}</p>
+        <label>Новый пароль<div class="access-password"><input v-model="newPassword" :type="newVisible ? 'text' : 'password'" autocomplete="new-password" minlength="10" maxlength="128" required :readonly="passwordSaving" aria-label="Новый пароль сотрудника" /><button type="button" :aria-label="newVisible ? 'Скрыть новый пароль' : 'Показать новый пароль'" :aria-pressed="newVisible" @click="newVisible = !newVisible"><UiIcon name="view" /></button></div></label>
+        <p v-if="passwordError" role="alert">{{ passwordError }}</p>
+        <p v-if="passwordNotice" role="status">{{ passwordNotice }}</p>
+        <button type="submit" :disabled="passwordLoading || passwordSaving || passwordVersion === null || !newPassword">{{ passwordSaving ? 'Сохраняем…' : 'Изменить пароль' }}</button>
+      </form>
+    </TeamChatDialog>
     <TeamChatDialog v-if="editingMember" :title="editingMember.owner ? 'Мой профиль в чате' : 'Профиль сотрудника'" :busy="pending.has(editingMember._id)" @close="editingMember = null">
       <form class="access-form" @submit.prevent="saveProfile">
         <label>Имя<input v-model="profile.name" aria-label="Имя в чате" :title="editingMember.loginKey ? 'Это имя используется для входа сотрудника' : undefined" maxlength="100" required /></label>
@@ -123,7 +171,7 @@ async function remove(member) {
 .team-access .access-row > .access-name { display: flex; justify-content: flex-start; gap: 6px; width: 100%; min-width: 0; padding: 0; font: inherit; text-align: left; }
 .team-access { min-width: 0; font-size: 13px; }
 .team-access .access-add { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-bottom: 8px; padding: 6px 10px; font-size: 13px; }
-.access-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(84px,104px) 44px 44px; align-items: center; gap: 2px; min-height: 48px; border-bottom: 1px solid var(--codex-pane-border); }
+.access-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(84px,104px) 44px 44px 44px; align-items: center; gap: 2px; min-height: 48px; border-bottom: 1px solid var(--codex-pane-border); }
 .access-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .access-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .access-name i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--codex-pane-muted); }

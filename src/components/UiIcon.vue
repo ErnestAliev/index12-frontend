@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  key: "M15 7h.01M21 7a5 5 0 0 1-7.5 4.3L4 21H1v-3l3-3h3v-3l3.7-3.5A5 5 0 1 1 21 7Z",
   download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5",
   ban: "M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0M6.4 6.4l11.2 11.2",
   view: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
