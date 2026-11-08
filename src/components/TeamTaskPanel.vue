@@ -300,12 +300,7 @@ async function toggleList(t) {
     error.value = teamError(e);
   }
 }
-const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } =
-  useTeamMedia({
-    onError: (e) => {
-      error.value = teamError(e);
-    },
-  });
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } = useTeamMedia();
 async function upload(event) {
   const files = [...event.target.files];
   event.target.value = "";

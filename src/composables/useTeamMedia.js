@@ -1,15 +1,17 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import { cacheTeamMedia, getTeamMedia } from "@/utils/teamMediaCache";
+import { deviceFile } from "@/utils/deviceFiles";
 const previewable = (file) =>
   /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(file?.mimeType || "");
-export function useTeamMedia({ onError }) {
+export function useTeamMedia({ getScope, fetchFile } = {}) {
   const chat = useTeamChatStore();
-  const scope = computed(() =>
-    chat.me?.status === "active" && chat.me?.workspaceId && chat.me?.actorId
+  const scope = computed(() => {
+    if (getScope) return getScope();
+    return chat.me?.status === "active" && chat.me?.workspaceId && chat.me?.actorId
       ? JSON.stringify([chat.me.workspaceId, chat.me.actorId])
-      : "",
-  );
+      : "";
+  });
   const preview = ref(null);
   let ticket = 0,
     disposed = false,
@@ -25,16 +27,18 @@ export function useTeamMedia({ onError }) {
   async function bytes(file) {
     const identity = scope.value,
       workspaceId = chat.me?.workspaceId;
-    if (!identity) throw Error("Войдите в чат");
+    if (!identity) throw Error("Войдите в приложение");
     return getTeamMedia(identity, file, async () => {
       const controller = new AbortController();
       controllers.add(controller);
       try {
-        const { data } = await teamApi.get(`/files/${file.fileId}`, {
-          responseType: "blob",
-          signal: controller.signal,
-          headers: { "x-index12-workspace-id": workspaceId },
-        });
+        const data = fetchFile
+          ? await fetchFile(file, controller.signal)
+          : (await teamApi.get(`/files/${file.fileId}`, {
+              responseType: "blob",
+              signal: controller.signal,
+              headers: { "x-index12-workspace-id": workspaceId },
+            })).data;
         if (disposed || identity !== scope.value)
           throw Error("Сеанс чата изменился");
         return new Blob([data], {
@@ -49,37 +53,29 @@ export function useTeamMedia({ onError }) {
     closePreview();
     currentFile = file;
     const t = ticket,
-      identity = scope.value,
-      inline = previewable(file);
-    if (inline)
-      preview.value = {
-        name: file.name,
-        mimeType: file.mimeType,
-        url: "",
-        error: "",
-      };
+      identity = scope.value;
+    preview.value = {
+      name: file.name,
+      mimeType: file.mimeType || "application/octet-stream",
+      size: file.size,
+      url: "",
+      error: "",
+    };
     try {
       const blob = await bytes(file);
       if (disposed || t !== ticket || identity !== scope.value) return;
-      const url = URL.createObjectURL(blob);
-      if (inline)
-        preview.value = {
+      const prepared = deviceFile(blob, file), url = URL.createObjectURL(prepared);
+      preview.value = {
           name: file.name,
-          mimeType: file.mimeType,
+          mimeType: file.mimeType || "application/octet-stream",
+          size: blob.size,
+          file: prepared,
           url,
           error: "",
-        };
-      else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = file.name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
+      };
     } catch (e) {
       if (disposed || t !== ticket || identity !== scope.value) return;
-      if (inline) preview.value = { ...preview.value, error: teamError(e) };
-      else onError(e);
+      preview.value = { ...preview.value, error: teamError(e) };
     }
   }
   function cacheUpload(file, blob) {

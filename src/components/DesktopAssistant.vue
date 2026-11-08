@@ -5,6 +5,8 @@ import { useCodexDeliveryStore } from '@/stores/codexDeliveryStore';
 import CodexComposer from './CodexComposer.vue';
 import CodexGlyph from './CodexGlyph.vue';
 import CodexFileCard from './CodexFileCard.vue';
+import TeamMediaPreview from './TeamMediaPreview.vue';
+import { useTeamMedia } from '@/composables/useTeamMedia';
 import CodexMessageText from './CodexMessageText.vue';
 import CodexRequestCard from './CodexRequestCard.vue';
 import CodexVoicePanel from './CodexVoicePanel.vue';
@@ -28,6 +30,15 @@ const visibleMessages = computed(() => [...messages.value, ...delivery.rows.filt
 const codexBase = () => `${props.apiBaseUrl.replace(/\/$/, '')}/codex`;
 const isImage = file => /^image\/(png|jpeg|webp|gif)$/.test(file.mimeType || '');
 const fileUrl = file => file.previewUrl || file.url || `${codexBase()}/files/${encodeURIComponent(file.fileId)}`;
+const deviceSharing = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+const media = useTeamMedia({
+  getScope: () => (store.user?._id || store.user?.id) && store.user?.currentWorkspaceId ? JSON.stringify(['assistant', scopeKey.value]) : '',
+  fetchFile: async (file, signal) => {
+    const response = await fetch(fileUrl(file), { credentials: 'include', signal });
+    if (!response.ok) throw Error('Не удалось загрузить файл');
+    return response.blob();
+  },
+});
 function clearAttachments() { for (const file of attachments.value) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value = []; }
 function removeAttachment(index) { const file = attachments.value[index]; if (file.previewUrl) URL.revokeObjectURL(file.previewUrl); attachments.value.splice(index, 1); }
 const storageKey = () => `index12-desktop-chat:${scopeKey.value}`;
@@ -262,6 +273,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
 
 <template>
   <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex">
+    <TeamMediaPreview v-if="media.preview.value" :media="media.preview.value" @close="media.closePreview" @retry="media.retryPreview" />
     <div class="desktop-toolbar">
       <span class="desktop-status" :class="{ online: connected }" :title="connected ? (provider === 'cloud' ? 'Работает на сервере INDEX12 независимо от Mac' : 'Подключён Codex на Mac') : 'Помощник недоступен'">Codex · {{ connected ? (provider === 'cloud' ? 'сервер' : 'подключён') : 'нет связи' }}</span>
       <button type="button" class="codex-action-btn" :disabled="busy || voiceActive" title="Обновить связь и историю" aria-label="Обновить связь и историю" @click="refresh(true)"><CodexGlyph name="refresh" /></button>
@@ -281,7 +293,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
           <CodexMessageText v-if="message.text" :text="message.text" :plain="message.role === 'user'" />
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" />
-            <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" @download="downloadFile(file)" />
+            <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />
           </div>
           <div v-if="message.delivery" class="codex-delivery" :class="{failed:message.delivery==='failed'}" role="status"><span :title="message.sendError">{{ message.delivery==='sending'?'Отправляется…':message.delivery==='failed'?'Не отправлено':message.delivery==='processing'?'Обрабатывается…':'Отправлено' }}</span><button v-if="message.delivery==='failed'" type="button" class="codex-action-btn" :disabled="busy || voiceActive" @click="send(undefined,message)">Повторить отправку</button></div>
           <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)"><CodexGlyph :name="message.copied ? 'check' : 'copy'" /><span>{{ message.copied ? 'Скопировано' : 'Копировать' }}</span></button></div>

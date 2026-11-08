@@ -87,12 +87,7 @@ const historyLoading = computed(() =>
 );
 const watchedIds = ref([]);
 let disposed = false;
-const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } =
-  useTeamMedia({
-    onError: (e) => {
-      localError.value = teamError(e);
-    },
-  });
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } = useTeamMedia();
 async function refreshConversation() {
   try {
     if (props.taskId) await chat.refreshThread(props.taskId, watchedIds.value);

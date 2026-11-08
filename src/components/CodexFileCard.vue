@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from 'vue';
 import CodexGlyph from './CodexGlyph.vue';
-const props = defineProps({ file: { type: Object, required: true }, removable: Boolean, disabled: Boolean, loading: Boolean, uploading: Boolean });
-const emit = defineEmits(['remove', 'download']);
+import UiIcon from './UiIcon.vue';
+const props = defineProps({ file: { type: Object, required: true }, removable: Boolean, disabled: Boolean, loading: Boolean, uploading: Boolean, shareable: Boolean });
+const emit = defineEmits(['remove', 'download', 'share']);
 const extension = computed(() => props.file.name?.split('.').at(-1)?.toUpperCase().slice(0, 5) || 'ФАЙЛ');
 const kind = computed(() => /^(XLSX?|XLSM|CSV)$/.test(extension.value) ? 'sheet' : extension.value === 'PDF' ? 'pdf' : 'document');
 const size = computed(() => props.file.size >= 1024 * 1024 ? `${(props.file.size / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(1, Math.ceil((props.file.size || 0) / 1024))} КБ`);
@@ -20,6 +21,7 @@ const size = computed(() => props.file.size >= 1024 * 1024 ? `${(props.file.size
       </span>
       <CodexGlyph v-if="!removable" :name="loading ? 'loader' : 'download'" class="codex-file-download" />
     </component>
+    <button v-if="!removable && shareable" type="button" class="codex-file-share" :disabled="disabled || loading" :aria-label="`Поделиться ${file.name}`" title="Поделиться" @click="emit('share')"><UiIcon name="share" /></button>
     <button v-if="removable" type="button" class="codex-file-remove" :disabled="disabled" :aria-label="`Убрать ${file.name}`" :title="`Убрать ${file.name}`" @click="emit('remove')"><CodexGlyph :name="loading ? 'loader' : 'close'" /></button>
   </div>
 </template>
@@ -45,6 +47,8 @@ button.codex-file-body:hover { background: transparent; }
 .codex-file-remove :deep(svg) { width: 15px; height: 15px; }
 .codex-file-remove:hover:not(:disabled) { background: var(--codex-pane-hover); color: var(--codex-pane-text); }
 .codex-file-remove:disabled { cursor: wait; opacity: .5; }
+.codex-file-share { display: grid; place-items: center; flex: none; width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--codex-pane-muted); cursor: pointer; }
+.codex-file-share:disabled { opacity: .45; cursor: default; }
 .codex-file-download { width: 16px; height: 16px; color: var(--codex-pane-muted); }
 button:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 3px; }
 @container codex-window (max-height: 420px) { .codex-file-card { padding: 6px; } .codex-file-symbol, .codex-file-thumbnail { height: 32px; } .codex-file-symbol > span { bottom: 0; } .codex-file-symbol :deep(svg) { width: 20px; height: 20px; } }

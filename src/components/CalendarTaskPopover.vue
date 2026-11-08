@@ -28,7 +28,13 @@ function taskDraft(original, existing = true) { return {
   links: (original.links || []).map(link => ({ ...link })), attachments: [...(original.attachments || [])],
 }; }
 const draft = reactive(taskDraft(original, Boolean(props.task)));
-const media = useTeamMedia({ onError: e => { error.value = businessError(e); } });
+const media = useTeamMedia({
+  getScope: isChat ? undefined : () => business.status?.workspaceId && business.status?.actorId ? JSON.stringify(['calendar', business.status.workspaceId, business.status.actorId]) : '',
+  fetchFile: isChat ? undefined : async (file, signal) => {
+    if (!id) throw Error('Сначала сохраните задачу');
+    return (await businessApi.get(`/tasks/${id}/files/${file.fileId}`, { responseType: 'blob', signal })).data;
+  },
+});
 function chooseAssignee(person) { if (!draft.assigneeIds.includes(person._id)) draft.assigneeIds.push(person._id); recipientOpen.value = false; changed(); }
 const assigneeName = id => business.people.find(p => p._id === id)?.name || original.assignees?.find(p => p.actorId === id)?.name || id;
 const presets = [{ minutes: 10, label: '10 мин' }, { minutes: 30, label: '30 мин' }, { minutes: 60, label: '1 ч' }, { minutes: 1440, label: '1 день' }, { minutes: 4320, label: '3 дня' }, { minutes: 10080, label: '1 неделя' }];
@@ -120,7 +126,7 @@ async function upload(event) {
       if (file.size > 10 * 1024 * 1024) throw new Error('Размер одного файла — до 10 МБ');
       if (draft.attachments.reduce((sum, row) => sum + row.size, 0) + file.size > 25 * 1024 * 1024) throw new Error('Общий размер файлов — до 25 МБ');
       if (isChat) await business.prepareChat(original.workspaceId);
-      const response = await (isChat ? teamApi : businessApi).post(isChat ? '/files' : '/task-files', file, { headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type }, timeout: 60000 }); draft.attachments.push(response.data.file); if (isChat) media.cacheUpload(response.data.file, file);
+      const response = await (isChat ? teamApi : businessApi).post(isChat ? '/files' : '/task-files', file, { headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type }, timeout: 60000 }); draft.attachments.push(response.data.file); media.cacheUpload(response.data.file, file);
     }
     changed();
   } catch (e) { error.value = e.response ? businessError(e) : e.message; } finally { uploading.value = false; event.target.value = ''; drainRemote(); }
@@ -128,7 +134,7 @@ async function upload(event) {
 async function download(file) {
   if (isChat) { try { await business.prepareChat(original.workspaceId); await media.download(file); } catch (e) { error.value = e.response ? businessError(e) : e.message; } return; }
   if (!id) return;
-  try { const response = await businessApi.get(`/tasks/${id}/files/${file.fileId}`, { responseType: 'blob' }); const url = URL.createObjectURL(response.data), link = document.createElement('a'); link.href = url; link.download = file.name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  try { await media.download(file); }
   catch (e) { error.value = businessError(e); }
 }
 async function openChat() {
