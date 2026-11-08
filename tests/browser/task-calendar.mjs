@@ -105,7 +105,7 @@ try {
   await card.getByRole('button', { name: 'Снимок.png', exact: true }).tap();
   await page.waitForFunction(() => document.querySelector('dialog[aria-label="Снимок.png"] img')?.naturalWidth > 0);
   await page.getByRole('button', { name: 'Закрыть снимок.png', exact: true }).tap();
-  await card.getByRole('combobox', { name: 'Статус задачи', exact: true }).selectOption('progress');
+  await card.getByRole('combobox', { name: 'Статус задачи', exact: true }).click(); await page.getByRole("option", { name: "В процессе", exact: true }).click();
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'progress');
   await capture({ path: `output/playwright/calendar-task-inline-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await card.getByRole('button', { name: 'Удалить задачу', exact: true }).tap();
@@ -158,9 +158,9 @@ try {
   await status.waitFor();
   assert.equal(await status.evaluate(el => getComputedStyle(el).backgroundImage), 'none', 'a shared select must not add a second chevron');
   assert.equal(await panel.locator('.task-statuses button').count(), 0);
-  await status.selectOption('delayed');
+  await status.click(); await page.getByRole("option", { name: "Не успеваю", exact: true }).click();
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'delayed');
-  await status.selectOption('done');
+  await status.click(); await page.getByRole("option", { name: "Готово", exact: true }).click();
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'done');
   for (const theme of ['light','dark']) for (const width of [320,390,1280]) {
     await page.setViewportSize({ width, height: 844 });
@@ -187,9 +187,9 @@ try {
       await capture({ path: `output/playwright/task-columns-${description.length < 30 ? 'short' : 'long'}-${theme}-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
     }
   }
-  await status.selectOption('open');
+  await status.click(); await page.getByRole("option", { name: "Новая", exact: true }).click();
   const newWidth = (await status.boundingBox()).width;
-  await status.selectOption('progress');
+  await status.click(); await page.getByRole("option", { name: "В процессе", exact: true }).click();
   assert.ok((await status.boundingBox()).width > newWidth, 'chip width follows the selected status without moving metadata columns');
   await panel.locator('.task-description').click();
   await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).fill('Отредактировано в новой сетке');

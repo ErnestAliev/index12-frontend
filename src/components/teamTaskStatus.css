@@ -1,0 +1,8 @@
+[data-task-status="open"] { --task-status-color: #4ade80; }
+[data-task-status="progress"] { --task-status-color: #fb923c; }
+[data-task-status="delayed"] { --task-status-color: #f87171; }
+[data-task-status="done"] { --task-status-color: #8b949e; }
+html[data-theme="light"] [data-task-status="open"] { --task-status-color: #138a3c; }
+html[data-theme="light"] [data-task-status="progress"] { --task-status-color: #b95009; }
+html[data-theme="light"] [data-task-status="delayed"] { --task-status-color: #c42c32; }
+html[data-theme="light"] [data-task-status="done"] { --task-status-color: #768077; }

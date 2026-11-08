@@ -124,8 +124,8 @@ try {
     .getByRole("button", { name: "Кому: Calendar owner", exact: true })
     .click();
   await panel.getByRole("button", { name: "Employee", exact: true }).click();
-  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).selectOption("progress");
-  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).selectOption("done");
+  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).click(); await page.getByRole("option", { name: "В процессе", exact: true }).click();
+  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).click(); await page.getByRole("option", { name: "Готово", exact: true }).click();
   await panel.getByRole("button", { name: "Назад", exact: true }).click();
   const completed = page
     .locator(".task-cover")

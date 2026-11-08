@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useTaskHold } from "@/composables/useTaskHold";
 import UiIcon from "./UiIcon.vue";
+import './teamTaskStatus.css';
 import TeamSearchText from "./TeamSearchText.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import { taskDate } from "@/utils/teamTasks";
@@ -50,6 +51,7 @@ async function done() {
     class="task-cover"
     :class="{ completed: task.status === 'done', unread: task.unreadCount }"
     :data-status="task.status"
+    :data-task-status="task.status"
     @pointerdown="hold.down($event, task)"
     @pointermove="hold.move"
     @pointerup="hold.cancel"
@@ -303,5 +305,5 @@ async function done() {
 </style>
 
 <style scoped>
-.task-cover[data-status="progress"] { border-left-color: var(--codex-pane-accent,#3b6763); }
+.task-cover[data-status] { border-left-color: var(--task-status-color); }
 </style>
