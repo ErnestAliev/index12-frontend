@@ -66,7 +66,7 @@ onBeforeUnmount(() => {
 <template>
   <span class="task-status-select" :class="{ 'is-compact': compact, 'status-keyboard': keyboardNavigation }" :data-task-status="modelValue">
     <button ref="trigger" type="button" class="status-trigger" role="combobox" aria-label="Статус задачи" aria-haspopup="listbox" :aria-expanded="opened" :aria-controls="opened ? menuId : undefined" :disabled="disabled" @click="opened ? close() : show()" @keydown.down.prevent="show" @keydown.up.prevent="show">
-      <UiIcon v-if="compact" name="check" /><span>{{ statusLabel }}</span><UiIcon v-if="!compact" name="chevron-down" />
+      <span>{{ statusLabel }}</span><UiIcon :name="compact ? 'check' : 'chevron-down'" />
     </button>
     <Teleport to="body">
       <div v-if="opened" :id="menuId" ref="menu" class="task-status-menu" :class="{ 'status-keyboard': keyboardNavigation }" role="listbox" aria-label="Статус задачи" tabindex="-1" :aria-activedescendant="menuId + '-' + active" :style="bounds" @keydown="keys">

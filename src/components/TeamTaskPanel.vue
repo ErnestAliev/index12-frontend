@@ -65,6 +65,12 @@ const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
 const active = computed(() => (props.creating ? draft.value : task.value));
+const taskCreatedLabel = computed(() => {
+  if (!task.value?.createdAt) return '';
+  const date = new Date(task.value.createdAt);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+});
 const canEdit = computed(
   () =>
     props.creating ||
@@ -726,30 +732,19 @@ onBeforeUnmount(() => {
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview">
           <div class="task-summary">
-            <div class="task-summary-title">
+            <div class="task-summary-header">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
-              <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
-              <button
-                v-else
-                class="task-description"
-                :disabled="!canEdit"
-                @click="editDescription"
-              >
-                {{ task.description }}
-              </button>
+              <time v-if="taskCreatedLabel" class="task-created" :datetime="task.createdAt" aria-label="Дата и время постановки задачи">{{ taskCreatedLabel }}</time>
             </div>
-            <span class="task-field-label task-who-label">Кому:</span>
-            <div class="task-field-value task-who-value">
-              <button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :title="selectedNames" :disabled="!canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button>
-              <button :disabled="!canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button>
+            <div class="task-metadata">
+              <span class="task-meta-group">От: {{ task.creatorName }}</span>
+              <span class="task-meta-divider"> / </span>
+              <span class="task-meta-group">Кому: <button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button> <button :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button></span>
+              <span class="task-meta-divider"> / </span>
+              <span class="task-meta-group"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button> <button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button> <button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button></span>
             </div>
-            <button class="task-field-label task-when-label" :disabled="!canEdit" @click="editing = 'when'">Когда:</button>
-            <div class="task-field-value task-when-value">
-              <button class="task-due" :title="taskDate(task)" :disabled="!canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button>
-              <button v-if="task.dueDate" :disabled="!canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button>
-            </div>
-            <span class="task-field-label task-from-label">От:</span>
-            <span class="task-field-value task-from-value" :title="task.creatorName">{{ task.creatorName }}</span>
+            <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
+            <button v-else class="task-description" :disabled="!canEdit" @click="editDescription">{{ task.description }}</button>
           </div>
           <TeamTaskRecipientPicker
             v-if="['who', 'add'].includes(editing)"
