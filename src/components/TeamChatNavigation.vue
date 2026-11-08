@@ -42,6 +42,7 @@ const sections = computed(() => [
   { value: "messages", label: "Чат" },
   { value: "tasks", label: "Задачи" },
   ...(chat.isOwner ? [{ value: "members", label: "Доступы и роли" }] : []),
+  ...(!chat.isOwner ? [{ value: 'mcp', label: 'MCP-коннектор' }] : []),
 ]);
 const label = computed(
   () =>
@@ -84,6 +85,10 @@ function toggle() {
 function select(value) {
   if (search.open) search.close(false);
   if (value === "members" && !chat.isOwner) return;
+  if (value === 'mcp') {
+    chat.requestedTaskId = null; chat.requestedTaskMessageId = null;
+    chat.creatingTask = false; chat.creatingTaskParentId = null; chat.taskNotifications = false;
+  }
   emit("update:modelValue", value);
   close();
 }

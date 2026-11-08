@@ -26,6 +26,14 @@ export function taskDate(task) {
           });
   return day + (task.dueTime ? " · " + task.dueTime : "");
 }
+export function taskDeadlineState(task, now = Date.now()) {
+  if (!task?.dueDate || task.timing === 'none' || task.status === 'done') return { tone: '', label: '' };
+  const due = Date.parse(`${task.dueDate}T${task.dueTime ? task.dueTime + ':00' : '23:59:59.999'}+05:00`);
+  if (!Number.isFinite(due)) return { tone: '', label: '' };
+  if (due <= now) return { tone: 'overdue', label: 'Просрочена' };
+  if (due - now <= 30 * 60000) return { tone: 'soon', label: 'Срок скоро' };
+  return { tone: '', label: '' };
+}
 export const taskStatuses = [
   { id: "all", label: "Все" },
   { id: "progress", label: "В процессе" },

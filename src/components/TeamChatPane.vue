@@ -9,6 +9,7 @@ import { useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskPanel from "./TeamTaskPanel.vue";
 import TeamChatAccess from "./TeamChatAccess.vue";
+import TeamChatMcp from './TeamChatMcp.vue';
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
 const panelOpen = computed(
@@ -104,6 +105,7 @@ onBeforeUnmount(() => {
       <TeamChatAccess />
     </div>
     <TeamChatSearchBar ref="searchBar" />
+    <div v-if="chat.tab === 'mcp' && !chat.isOwner && !panelOpen" class="team-scroll"><TeamChatMcp /></div>
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>

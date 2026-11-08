@@ -7,6 +7,7 @@ import './teamTaskStatus.css';
 import TeamSearchText from "./TeamSearchText.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import { taskDate } from "@/utils/teamTasks";
+import { useTeamTaskDeadline } from '@/composables/useTeamTaskDeadline';
 const props = defineProps({
   taskId: String,
   highlight: { type: String, default: "" },
@@ -19,6 +20,7 @@ const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
 const subtaskCount = computed(() => (chat.state.tasks || []).filter(t => t.parentTaskId === props.taskId).length);
+const { deadline } = useTeamTaskDeadline(() => task.value);
 const canEdit = computed(
   () =>
     task.value &&
@@ -53,6 +55,7 @@ async function done() {
     :class="{ completed: task.status === 'done', unread: task.unreadCount }"
     :data-status="task.status"
     :data-task-status="task.status"
+    :data-deadline="deadline.tone"
     @pointerdown="hold.down($event, task)"
     @pointermove="hold.move"
     @pointerup="hold.cancel"
@@ -81,7 +84,7 @@ async function done() {
         <span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>
         <span class="cover-divider" aria-hidden="true">/</span>
         <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => p.name).join(', ')}`">Кому: {{ task.assignees.map((p) => p.name).join(", ") }}</span>
-        <span class="cover-due">/ Когда: {{ taskDate(task) }}</span>
+        <span class="cover-due" :title="deadline.label || undefined" :aria-label="deadline.label ? taskDate(task) + ' · ' + deadline.label : undefined">/ Когда: {{ taskDate(task) }}</span>
       </span><button v-if="subtaskCount" type="button" class="cover-subtasks" :aria-label="`Подзадачи: ${subtaskCount}`" @pointerdown.stop @click.stop="emit('open')">↳ {{ subtaskCount }}</button><span v-if="task.attachments.length" class="cover-files"
         ><UiIcon name="attach" />{{ task.attachments.length }}</span
       ><button

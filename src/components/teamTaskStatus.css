@@ -6,3 +6,9 @@ html[data-theme="light"] [data-task-status="open"] { --task-status-color: #138a3
 html[data-theme="light"] [data-task-status="progress"] { --task-status-color: #007bb5; }
 html[data-theme="light"] [data-task-status="delayed"] { --task-status-color: #c42c32; }
 html[data-theme="light"] [data-task-status="done"] { --task-status-color: #768077; }
+[data-deadline="overdue"] { --task-deadline-color: #f87171; }
+[data-deadline="soon"] { --task-deadline-color: #fbbf24; }
+html[data-theme="light"] [data-deadline="overdue"] { --task-deadline-color: #c42c32; }
+html[data-theme="light"] [data-deadline="soon"] { --task-deadline-color: #946000; }
+[data-deadline] .task-deadline-label { color: var(--task-deadline-color); font-size: 12px; white-space: nowrap; }
+.task-cover[data-deadline="soon"] .cover-due,.task-cover[data-deadline="overdue"] .cover-due { color: var(--task-deadline-color); }

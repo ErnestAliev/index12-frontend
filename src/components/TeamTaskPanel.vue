@@ -16,6 +16,7 @@ import {
   filterTasks,
 } from "@/utils/teamTasks";
 import UiIcon from "./UiIcon.vue";
+import { useTeamTaskDeadline } from '@/composables/useTeamTaskDeadline';
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
@@ -66,6 +67,7 @@ const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
 const active = computed(() => (props.creating ? draft.value : task.value));
+const { deadline, state: deadlineFor } = useTeamTaskDeadline(() => task.value);
 const subtasks = computed(() => (chat.state.tasks || [])
   .filter(t => t.parentTaskId === props.taskId)
   .sort((a, b) => (a.status === 'done') - (b.status === 'done') || a.createdAt.localeCompare(b.createdAt)));
@@ -739,7 +741,7 @@ onBeforeUnmount(() => {
     <template v-else-if="taskId">
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
-        <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status">
+        <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status" :data-deadline="deadline.tone">
           <button v-if="task.parentTaskId" class="task-parent-link" @click="openTask(task.parentTaskId)"><UiIcon name="back" /><span>{{ parentTask?.description || 'Родительская задача' }}</span></button>
           <div class="task-summary">
             <div class="task-summary-header">
@@ -752,7 +754,7 @@ onBeforeUnmount(() => {
                 <span class="task-meta-divider" aria-hidden="true">/</span>
                 <span class="task-meta-group task-meta-assignees"><span class="task-meta-label">Кому:</span><button class="task-assignee" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''"><UiIcon name="plus" /></button></span>
               </div>
-              <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button></span>
+              <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button><span v-if="deadline.label" class="task-deadline-label">{{ deadline.label }}</span></span>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
             <button v-else class="task-description" :disabled="!canEdit" @click="editDescription">{{ task.description }}</button>
@@ -786,8 +788,8 @@ onBeforeUnmount(() => {
           </div>
           <section v-if="editing !== 'description'" class="task-subtasks" aria-label="Подзадачи">
             <header><span>Подзадачи<span v-if="subtasks.length"> · {{ subtasks.length }}</span></span><button type="button" aria-label="Добавить подзадачу" @click="emit('new', task._id)"><UiIcon name="plus" /></button></header>
-            <button v-for="child in subtasks" :key="child._id" type="button" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" @click="openTask(child._id)">
-              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><span>{{ child.description }}</span><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}</small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
+            <button v-for="child in subtasks" :key="child._id" type="button" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" :data-deadline="deadlineFor(child).tone" @click="openTask(child._id)">
+              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><span>{{ child.description }}</span><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}<span v-if="deadlineFor(child).label" class="task-deadline-label"> · {{ deadlineFor(child).label }}</span></small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
             </button>
           </section>
         </div>
@@ -905,6 +907,7 @@ onBeforeUnmount(() => {
           v-for="t in shownTasks"
           :key="t._id"
           class="task-list-row"
+          :data-deadline="deadlineFor(t).tone"
           @pointerdown="hold.down($event, t)"
           @pointermove="hold.move"
           @pointerup="hold.cancel"
@@ -928,7 +931,7 @@ onBeforeUnmount(() => {
             <span :title="t.description">{{ t.parentTaskId ? '↳ ' : '' }}{{ t.description }}</span
             ><span>{{ t.assignees.map((p) => p.name).join(", ") }}</span
             ><span
-              >{{ taskDate(t) }}<b v-if="t.unreadCount"> {{ t.unreadCount }}</b
+              >{{ taskDate(t) }}<span v-if="deadlineFor(t).label" class="task-deadline-label"> · {{ deadlineFor(t).label }}</span><b v-if="t.unreadCount"> {{ t.unreadCount }}</b
               ><b v-if="t.mentioned"> @</b></span
             >
           </button>
