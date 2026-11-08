@@ -15,6 +15,7 @@ const rows = Array.from({ length: 95 }, (_, i) => ({
   attachments: [],
   createdAt: new Date(Date.now() - (100 - i) * 60000).toISOString(),
   readCount: i % 2,
+  reactions: (i === 93 ? ["❤️"] : i === 92 ? ["👍", "❤️", "😂", "😮", "😢", "🙏"] : []).map((emoji) => ({ emoji, count: 1, mine: emoji === "❤️" })),
 }));
 rows.push({
   _id: "33333333-3333-4333-8333-333333333333",

@@ -569,11 +569,18 @@
 }
 .team-reactions {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
   gap: 4px;
-  margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.team-reactions::-webkit-scrollbar {
+  display: none;
 }
 .team-pane .team-reactions button {
+  flex: none;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -689,6 +696,8 @@
   align-items: center;
   gap: 4px;
   color: var(--codex-pane-muted);
+  margin-left: auto;
+  white-space: nowrap;
 }
 .team-read-receipt {
   display: inline-flex;

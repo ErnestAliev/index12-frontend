@@ -187,8 +187,21 @@ try {
   assert.equal(await stamp.locator("footer time").count(), 1);
   assert.equal(await stamp.locator("footer .team-read-receipt").count(), 1);
   assert.equal(await page.locator("footer .team-read-receipt:not(.read)").first().getAttribute("aria-label"), "Отправлено");
+  async function checkReactionRow() {
+    for (const footer of await page.locator(".team-message:visible footer:has(.team-reactions)").all()) {
+      const reactions = await footer.locator(".team-reactions").boundingBox(),
+        time = await footer.locator(".team-message-stamp").boundingBox(),
+        box = await footer.boundingBox();
+      assert.ok(Math.abs(reactions.y + reactions.height / 2 - time.y - time.height / 2) < 1, "reactions and time share one row");
+      assert.ok(reactions.x + reactions.width <= time.x, "reactions do not overlap the timestamp");
+      assert.ok(time.x + time.width <= box.x + box.width + 1, "timestamp stays inside the bubble");
+    }
+  }
+  await checkReactionRow();
+  await page.screenshot({ path: `output/playwright/chat-reactions-${useWebkit ? "webkit" : "chromium"}.png` });
   for (const width of [320, 736, 1280]) {
     await page.setViewportSize({ width, height: width === 736 ? 390 : 844 });
+    await checkReactionRow();
     await page.getByRole("button", { name: "Меню чата", exact: true }).click();
     await page.getByRole("button", { name: "Поиск", exact: true }).click();
     const bar = await page.locator(".team-search-bar").boundingBox(),

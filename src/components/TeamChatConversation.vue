@@ -1135,21 +1135,21 @@ watch(
                   Повторить отправку
                 </button>
               </div>
-              <div v-if="m.reactions?.length" class="team-reactions">
-                <button
-                  v-for="reaction in m.reactions"
-                  :key="reaction.emoji"
-                  type="button"
-                  :aria-label="`Реакция ${reaction.emoji}: ${reaction.count}`"
-                  :aria-pressed="reaction.mine"
-                  :disabled="chat.busy"
-                  @pointerdown.stop
-                  @click="reactToMessage(m, reaction)"
-                >
-                  {{ reaction.emoji }} <span>{{ reaction.count }}</span>
-                </button>
-              </div>
               <footer v-if="m.kind !== 'task'" class="team-message-meta">
+                <div v-if="m.reactions?.length" class="team-reactions">
+                  <button
+                    v-for="reaction in m.reactions"
+                    :key="reaction.emoji"
+                    type="button"
+                    :aria-label="`Реакция ${reaction.emoji}: ${reaction.count}`"
+                    :aria-pressed="reaction.mine"
+                    :disabled="chat.busy"
+                    @pointerdown.stop
+                    @click="reactToMessage(m, reaction)"
+                  >
+                    {{ reaction.emoji }} <span>{{ reaction.count }}</span>
+                  </button>
+                </div>
                 <span v-if="m.editedAt">изменено</span>
                 <span class="team-message-stamp"
                   ><time :datetime="m.createdAt">{{
