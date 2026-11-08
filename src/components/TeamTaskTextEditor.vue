@@ -41,6 +41,6 @@ onBeforeUnmount(() => {
 .task-text-editor .editor-save { display: none; margin: 4px 0 0 auto; min-height: 32px; align-items: center; gap: 4px; padding: 4px 0 4px 8px; border: 0; background: transparent; font: inherit; font-size: 12px; color: var(--codex-pane-accent,var(--color-primary)); cursor: pointer; }
 .editor-save .ui-icon { width: 14px; height: 14px; }
 @media (hover:hover) and (pointer:fine) { .task-text-editor .editor-save { display: flex; } }
-@media (max-width:767px), (pointer:coarse) { .task-text-editor .editor-save { display: none !important; } }
+@media (max-width:767px), (pointer:coarse) { .task-text-editor .editor-save { display: flex; width: fit-content; min-width: 44px; min-height: 44px; margin: 4px auto 0 0; padding: 4px 8px 4px 0; } }
 .task-text-editor p { margin: 0; padding: 8px 0; color: var(--color-danger,#b24f45); font-size: 12px; }
 </style>
