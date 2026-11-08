@@ -1,13 +1,15 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
+import { useTeamChatStore, teamApi } from '@/stores/teamChatStore';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useBusinessStore } from '@/stores/businessStore';
 import { useMainStore } from '@/stores/mainStore';
 import { businessApi, businessError } from '@/services/businessApi';
-import { dayAt, monthDays, shiftTask, statusLabels, taskState, taskOnDay, timeAt } from '@/utils/calendarTime';
+import { dayAt, monthDays, shiftTask, statusLabels, taskState, taskOnDay, timeAt, matchesEmployee } from '@/utils/calendarTime';
 import CalendarTaskPopover from './CalendarTaskPopover.vue';
 const emit = defineEmits(['close']);
-const business = useBusinessStore(), main = useMainStore();
+const business = useBusinessStore(), main = useMainStore(), chat = useTeamChatStore();
+const employee = ref('all'), filterOpen = ref(false);
 const now = ref(Date.now()), month = ref(dayAt().slice(0, 7)), selected = ref(dayAt()), query = ref(''), party = ref(''), statuses = ref(Object.keys(statusLabels)), error = ref(''), dropDate = ref(null), popover = ref(null), editor = ref(null);
 const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const days = computed(() => monthDays(month.value));
@@ -15,20 +17,35 @@ const today = computed(() => dayAt(now.value));
 const monthLabel = computed(() => new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(' г.', ''));
 const parties = computed(() => [{ key: 'companies', label: 'Мои компании' }, { key: 'contractors', label: 'Контрагенты' }, { key: 'individuals', label: 'Физические лица' }].map(group => ({ ...group, rows: main[group.key] || [] })));
 const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-const filtered = computed(() => business.tasks.filter(task => (!party.value || `${task.party?.kind || 'companies'}:${task.party?.id || task.companyId}` === party.value) && normalize(`${task.title} ${task.description || ''} ${task.partyName || ''}`).includes(normalize(query.value))));
+const filtered = computed(() => business.tasks.filter(task => matchesEmployee(task, employee.value, business.status?.actorId) && (!party.value || `${task.party?.kind || 'companies'}:${task.party?.id || task.companyId}` === party.value) && normalize(`${task.title} ${task.description || ''} ${task.partyName || ''}`).includes(normalize(query.value))));
 const visible = computed(() => filtered.value.filter(task => statuses.value.includes(taskState(task, now.value))));
 const counts = computed(() => Object.fromEntries(Object.keys(statusLabels).map(key => [key, filtered.value.filter(task => taskState(task, now.value) === key).length])));
-const byDay = computed(() => Object.fromEntries(days.value.map(date => [date, visible.value.filter(task => taskOnDay(task, date)).sort((a, b) => Number(!!a.startsAt) - Number(!!b.startsAt) || (a.startsAt || '').localeCompare(b.startsAt || '') || a.title.localeCompare(b.title))])));
+const eventTime = task => task.dueTime || (task.startsAt ? timeAt(task.startsAt) : '');
+const byDay = computed(() => Object.fromEntries(days.value.map(date => [date, visible.value.filter(task => taskOnDay(task, date)).sort((a, b) => Number(!!eventTime(a)) - Number(!!eventTime(b)) || eventTime(a).localeCompare(eventTime(b)) || a.title.localeCompare(b.title))])));
 const selectedTasks = computed(() => visible.value.filter(task => taskOnDay(task, selected.value)));
 const selectedLabel = computed(() => new Date(`${selected.value}T12:00:00Z`).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC' }));
 const unscheduled = computed(() => visible.value.filter(task => !task.dueDate && !task.startsAt));
 let clock;
+async function prepareChat(workspaceId) {
+  if (chat.me?.workspaceId !== workspaceId) await chat.start(workspaceId);
+  if (chat.me?.workspaceId !== workspaceId || chat.me?.status !== 'active') throw new Error('Чат недоступен в этой рабочей области');
+}
 function clickDay(date) { selected.value = date; if (!window.matchMedia('(max-width: 700px)').matches) void show(null, date); }
 function moveMonth(delta) { const [year, m] = month.value.split('-').map(Number); month.value = new Date(Date.UTC(year, m - 1 + delta, 1)).toISOString().slice(0, 7); }
 function goToday() { month.value = today.value.slice(0, 7); selected.value = today.value; }
 async function show(task, date) {
   if (popover.value?.task?._id === task?._id && task) return;
   if (popover.value) { await editor.value?.close(); if (popover.value) return; }
+  if (task?.source === 'team-chat') {
+    try {
+      await prepareChat(task.workspaceId);
+      const { data } = await teamApi.get(`/tasks/${task.sourceTaskId}`);
+      chat.state.tasks = [...chat.state.tasks.filter(t => t._id !== data.task._id), data.task];
+      chat.creatingTask = false; chat.taskNotifications = false; chat.tab = 'tasks';
+      chat.requestedTaskId = task.sourceTaskId; chat.show(); emit('close');
+    } catch (e) { error.value = e.response ? businessError(e) : e.message; }
+    return;
+  }
   popover.value = { task, date, key: task?._id || crypto.randomUUID() };
 }
 async function closeCalendar() { if (popover.value) { await editor.value?.close(); if (popover.value) return; } emit('close'); }
@@ -36,14 +53,20 @@ function endDrag() { dropDate.value = null; }
 function drag(event, task) { if (popover.value) { event.preventDefault(); return; } event.dataTransfer.setData('application/x-index12-task', task._id); event.dataTransfer.effectAllowed = 'move'; }
 async function drop(event, date) {
   endDrag(); const id = event.dataTransfer.getData('application/x-index12-task'); if (!business.tasks.some(task => task._id === id)) return;
-  try { const response = await businessApi.get(`/tasks/${id}`), task = response.data.task; await business.saveTask(shiftTask(task, date), id, task.version); error.value = ''; } catch (e) { error.value = businessError(e); }
+  try { const response = await businessApi.get(`/tasks/${id}`), task = response.data.task;
+    if (task.source === 'team-chat') {
+      await prepareChat(task.workspaceId);
+      await chat.action(`/tasks/${task.sourceTaskId}`, { expectedVersion: task.version, dueDate: date, dueTime: task.dueTime, timing: task.timing === 'none' ? 'deadline' : task.timing }, 'patch');
+      await business.refresh({ tasksOnly: true });
+    } else await business.saveTask(shiftTask(task, date), id, task.version);
+    error.value = ''; } catch (e) { error.value = businessError(e); }
 }
 async function openRequested(id) {
   if (!id) return;
   try { const { data } = await businessApi.get(`/tasks/${id}`); const date = data.task.dueDate || today.value; month.value = date.slice(0, 7); selected.value = date; await show(data.task, date); business.requestedTask = null; } catch (e) { error.value = businessError(e); }
 }
 function reloadTask(task) { if (popover.value) popover.value = { ...popover.value, task, key: crypto.randomUUID() }; }
-function keyboard(event) { if (event.key === 'Escape' && !popover.value) { event.stopPropagation(); emit('close'); } }
+function keyboard(event) { if (event.key === 'Escape' && filterOpen.value) { event.stopPropagation(); filterOpen.value = false; return; } if (event.key === 'Escape' && !popover.value) { event.stopPropagation(); emit('close'); } }
 watch(month, () => business.setRange(days.value[0], days.value.at(-1)));
 watch(() => business.requestedTask, id => void openRequested(id));
 onMounted(() => { business.setCalendarVisible(true); void business.setRange(days.value[0], days.value.at(-1)); void openRequested(business.requestedTask); clock = setInterval(() => { now.value = Date.now(); }, 15000); window.addEventListener('keydown', keyboard); });
@@ -52,23 +75,25 @@ onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock)
 <template>
   <div class="calendar-overlay" @click.self="closeCalendar">
     <section class="calendar-window" role="dialog" aria-modal="true" aria-label="Календарь задач">
-      <header class="calendar-header"><h2>Календарь</h2><button type="button" class="today-button" @click="goToday">Сегодня</button><div class="calendar-navigation"><button type="button" aria-label="Предыдущий месяц" @click="moveMonth(-1)" class="ui-icon-button"><UiIcon name="chevron-left" /></button><button type="button" aria-label="Следующий месяц" @click="moveMonth(1)" class="ui-icon-button"><UiIcon name="chevron-right" /></button></div><strong class="calendar-month-label">{{ monthLabel }}</strong><div class="calendar-search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input v-model="query" type="search" aria-label="Поиск задач" placeholder="Поиск задач" /></div><button type="button" class="notification-button" :class="{ enabled: business.notificationsEnabled }" :aria-pressed="business.notificationsEnabled" :aria-label="business.notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления'" :title="business.notificationsEnabled ? 'Уведомления включены' : 'Включить уведомления'" @click="business.toggleNotifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button><button type="button" class="calendar-close ui-icon-button" aria-label="Закрыть календарь" @click="closeCalendar"><UiIcon name="close" /></button></header>
+      <header class="calendar-header"><h2>Календарь</h2><button type="button" class="today-button" @click="goToday">Сегодня</button><div class="calendar-navigation"><button type="button" aria-label="Предыдущий месяц" @click="moveMonth(-1)" class="ui-icon-button"><UiIcon name="chevron-left" /></button><button type="button" aria-label="Следующий месяц" @click="moveMonth(1)" class="ui-icon-button"><UiIcon name="chevron-right" /></button></div><strong class="calendar-month-label">{{ monthLabel }}</strong><div class="calendar-search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input v-model="query" type="search" aria-label="Поиск задач" placeholder="Поиск задач" /></div><button type="button" class="calendar-filter-toggle ui-icon-button" aria-label="Фильтры календаря" :aria-expanded="filterOpen" @click="filterOpen = !filterOpen"><UiIcon name="filter" /></button><button type="button" class="notification-button" :class="{ enabled: business.notificationsEnabled }" :aria-pressed="business.notificationsEnabled" :aria-label="business.notificationsEnabled ? 'Отключить уведомления' : 'Включить уведомления'" :title="business.notificationsEnabled ? 'Уведомления включены' : 'Включить уведомления'" @click="business.toggleNotifications"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button><button type="button" class="calendar-close ui-icon-button" aria-label="Закрыть календарь" @click="closeCalendar"><UiIcon name="close" /></button></header>
       <div v-if="error || business.error" class="calendar-error" role="alert">{{ error || business.error }}</div><div v-if="business.truncated" class="calendar-error" role="status">Показаны первые 2000 задач периода</div>
+      <div v-if="filterOpen" class="calendar-filter-backdrop" @click.stop="filterOpen = false" />
       <div class="calendar-layout">
-        <aside class="calendar-sidebar">
+        <aside class="calendar-sidebar" :class="{ 'mobile-filters-open': filterOpen }">
           <button type="button" class="calendar-create" @click="show(null, selected)"><span aria-hidden="true">+</span>Создать задачу</button>
           <div class="mini-header"><strong>{{ monthLabel }}</strong><button type="button" aria-label="Предыдущий месяц в мини-календаре" @click="moveMonth(-1)" class="ui-icon-button"><UiIcon name="chevron-left" /></button><button type="button" aria-label="Следующий месяц в мини-календаре" @click="moveMonth(1)" class="ui-icon-button"><UiIcon name="chevron-right" /></button></div>
           <div class="mini-grid"><span v-for="day in weekdays" :key="day">{{ day }}</span><button v-for="date in days" :key="date" type="button" :class="{ 'is-today': date === today, 'is-selected': date === selected, adjacent: !date.startsWith(month) }" :aria-label="`Выбрать ${date}`" @click="selected = date; month = date.slice(0, 7)">{{ Number(date.slice(-2)) }}</button></div>
-          <h3>Мои задачи</h3><label v-for="(label, key) in statusLabels" :key="key" class="status-filter" :data-status="key"><input v-model="statuses" type="checkbox" :value="key" /><span>{{ label }}</span><small>{{ counts[key] }}</small></label>
+          <h3>Задачи</h3><label v-for="(label, key) in statusLabels" :key="key" class="status-filter" :data-status="key"><input v-model="statuses" type="checkbox" :value="key" /><span>{{ label }}</span><small>{{ counts[key] }}</small></label>
           <h3>Контрагент</h3><select v-model="party" aria-label="Фильтр по контрагенту" class="ui-select"><option value="">Все компании и контрагенты</option><optgroup v-for="group in parties" :key="group.key" :label="group.label"><option v-for="row in group.rows" :key="row._id" :value="`${group.key}:${row._id}`">{{ row.name }}</option></optgroup></select>
+          <h3>Сотрудники</h3><select v-model="employee" aria-label="Фильтр по сотруднику" class="ui-select"><option value="all">Все</option><option value="mine">Мои</option><option v-for="person in business.people" :key="person._id" :value="person._id">{{ person.name }}</option></select>
           <div v-if="unscheduled.length" class="unscheduled"><h3>Без даты <small>{{ unscheduled.length }}</small></h3><button v-for="task in unscheduled" :key="task._id" type="button" @click="show(task, selected)">{{ task.title }}</button></div>
         </aside>
         <main class="calendar-main"><div class="calendar-weekdays"><span v-for="day in weekdays" :key="day">{{ day }}</span></div><div class="calendar-grid" :style="{ '--calendar-weeks': days.length / 7 }" role="grid" :aria-label="monthLabel">
           <div v-for="date in days" :key="date" class="calendar-cell" :class="{ adjacent: !date.startsWith(month), 'drop-target': dropDate === date, 'selected-day': date === selected }" role="gridcell" tabindex="0" :aria-label="`${date}, задач: ${byDay[date].length}`" :data-date="date" @click="clickDay(date)" @keydown.enter.self.prevent="selected = date; show(null, date)" @dragover.prevent="dropDate = date" @dragleave.self="dropDate = null" @drop.prevent="drop($event, date)">
             <div class="day-number"><span :class="{ 'is-today': date === today }">{{ Number(date.slice(-2)) }}<small v-if="date.slice(-2) === '01'"> {{ new Date(`${date}T12:00:00Z`).toLocaleDateString('ru-RU', { month: 'short', timeZone: 'UTC' }) }}</small></span></div>
-            <div class="day-tasks"><button v-for="task in byDay[date]" :key="task._id" type="button" class="calendar-event" :data-status="taskState(task, now)" :data-task-id="task._id" draggable="true" :aria-label="task.title" @dragstart="drag($event, task)" @dragend="endDrag" @click.stop="show(task, date)"><i aria-hidden="true"></i><time v-if="task.startsAt && dayAt(task.startsAt) === date">{{ timeAt(task.startsAt) }}</time><span>{{ task.title }}</span></button></div>
+            <div class="day-tasks"><button v-for="task in byDay[date]" :key="task._id" type="button" class="calendar-event" :data-status="taskState(task, now)" :data-task-id="task._id" draggable="true" :aria-label="task.title" @dragstart="drag($event, task)" @dragend="endDrag" @click.stop="show(task, date)"><i aria-hidden="true"></i><time v-if="task.dueTime || (task.startsAt && dayAt(task.startsAt) === date)">{{ task.dueTime || timeAt(task.startsAt) }}</time><span>{{ task.title }}</span></button></div>
           </div>
-        </div><div class="mobile-agenda"><header><strong>{{ selectedLabel }}</strong><span>{{ selectedTasks.length }}</span></header><button v-for="task in selectedTasks" :key="task._id" type="button" class="mobile-agenda-task" :data-status="taskState(task, now)" @click="show(task, selected)"><time>{{ task.startsAt ? timeAt(task.startsAt) : 'Весь день' }}</time><span>{{ task.title }}<small>{{ task.partyName || statusLabels[taskState(task, now)] }}</small></span><i></i></button></div></main>
+        </div><div class="mobile-agenda"><header><strong>{{ selectedLabel }}</strong><span>{{ selectedTasks.length }}</span></header><button v-for="task in selectedTasks" :key="task._id" type="button" class="mobile-agenda-task" :data-status="taskState(task, now)" @click="show(task, selected)"><time>{{ task.dueTime || (task.startsAt ? timeAt(task.startsAt) : 'Весь день') }}</time><span>{{ task.title }}<small>{{ task.partyName || statusLabels[taskState(task, now)] }}</small></span><i></i></button></div></main>
       </div>
       <button type="button" class="mobile-create" aria-label="Создать задачу" @click="show(null, selected)">+</button>
       <CalendarTaskPopover v-if="popover" :key="popover.key" ref="editor" :task="popover.task" :date="popover.date" @close="popover = null" @reload="reloadTask" @saved="task => { if (popover) popover.task = task }" />
@@ -96,5 +121,38 @@ onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock)
   .calendar-header { padding-top: calc(12px + var(--safe-area-top)); }
   .mobile-agenda { padding-bottom: var(--safe-bottom-controls); }
   .mobile-create { bottom: var(--safe-bottom-controls); }
+}
+</style>
+
+<style scoped>
+.calendar-filter-toggle { display: none !important; }
+@media (max-width: 700px) {
+  .calendar-header { grid-template-columns: minmax(0,1fr) auto 44px 44px 44px; padding-inline: max(12px,var(--safe-area-left)) max(12px,var(--safe-area-right)); }
+  .calendar-header .calendar-filter-toggle { display: grid !important; grid-column: 3; grid-row: 1; width: 44px; height: 44px; }
+  .calendar-header .notification-button { grid-column: 4; width: 44px; height: 44px; }
+  .calendar-header .calendar-close { grid-column: 5; width: 44px; height: 44px; }
+  .calendar-filter-backdrop { position: absolute; inset: 0; z-index: 3; }
+  .calendar-sidebar.mobile-filters-open {
+    display: block; position: absolute; z-index: 4; right: max(12px,var(--safe-area-right));
+    top: 8px; width: min(300px,calc(100% - max(12px,var(--safe-area-left)) - max(12px,var(--safe-area-right))));
+    max-height: calc(100% - 16px - var(--safe-bottom-controls)); overflow: auto;
+    background: var(--color-background); border: 1px solid var(--color-border); border-radius: 10px;
+    padding: 0 16px 16px; box-sizing: border-box; box-shadow: 0 8px 24px #0003;
+  }
+  .mobile-filters-open .calendar-create, .mobile-filters-open .mini-header, .mobile-filters-open .mini-grid { display: none; }
+  .mobile-agenda-task time { width: 56px; white-space: nowrap; }
+  .calendar-sidebar select { min-height: 44px; font-size: 16px; }
+  .status-filter { min-height: 36px; margin: 4px 0; }
+}
+</style>
+
+<style scoped>
+@media (max-width: 375px) {
+  .calendar-header { grid-template-columns: minmax(0,1fr) 44px 44px 44px; }
+  .calendar-header .calendar-filter-toggle { grid-column: 2; }
+  .calendar-header .notification-button { grid-column: 3; }
+  .calendar-header .calendar-close { grid-column: 4; }
+  .calendar-header .today-button { grid-column: 3/5; grid-row: 2; justify-self: end; }
+  .calendar-month-label { grid-column: 1/3; font-size: 14px; margin-left: 60px; white-space: nowrap; }
 }
 </style>

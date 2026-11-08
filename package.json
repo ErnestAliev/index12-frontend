@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "lint": "eslint . --fix --cache",
     "format": "prettier --write src/",
+    "test:task-calendar": "node tests/browser/task-calendar.mjs && node tests/browser/task-calendar.mjs --webkit",
     "test:chat-ui": "node tests/browser/team-chat-search.mjs && node tests/browser/team-chat-search.mjs --webkit && node tests/browser/team-chat-interactions.mjs && node tests/browser/team-chat-interactions.mjs --webkit"
   },
   "dependencies": {

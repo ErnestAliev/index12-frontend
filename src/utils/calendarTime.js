@@ -23,7 +23,7 @@ export function defaultSlot(date = dayAt(), now = Date.now()) {
 }
 export function taskState(task, now = Date.now()) {
   if (task.status === 'done') return 'done';
-  const deadline = task.endsAt ? Date.parse(task.endsAt) : task.dueDate ? Date.parse(localInstant(addDays(task.dueDate, 1), '00:00')) : null;
+  const deadline = task.endsAt ? Date.parse(task.endsAt) : task.dueDate ? task.dueTime ? Date.parse(localInstant(task.dueDate, task.dueTime)) : Date.parse(localInstant(addDays(task.dueDate, 1), '00:00')) : null;
   if (deadline !== null && deadline <= now) return 'overdue';
   return (task.startsAt ? dayAt(task.startsAt) : task.dueDate) === dayAt(now) ? 'today' : 'planned';
 }
@@ -32,6 +32,16 @@ export function shiftTask(task, date) {
   if (!task.startsAt) return { dueDate: date, allDay: true };
   const delta = Date.parse(date) - Date.parse(dayAt(task.startsAt));
   return { dueDate: date, startsAt: new Date(Date.parse(task.startsAt) + delta).toISOString(), endsAt: new Date(Date.parse(task.endsAt) + delta).toISOString(), allDay: false };
+}
+export function matchesEmployee(task, selection, actorId) {
+  if (!selection || selection === 'all') return true;
+  const id = selection === 'mine' ? actorId : selection;
+  if (!id) return false;
+  const aliases = new Set([String(id), 'owner:' + String(id)]);
+  if (String(id).startsWith('owner:')) aliases.add(String(id).slice(6));
+  return task.assigneeIds?.length
+    ? task.assigneeIds.some(person => aliases.has(person))
+    : aliases.has(task.createdBy);
 }
 export function oneHourEnd(date, time) {
   const end = new Date(Date.parse(localInstant(date, time)) + 3600000).toISOString();

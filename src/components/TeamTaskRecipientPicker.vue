@@ -134,6 +134,9 @@ onBeforeUnmount(() => {
         <button
           v-for="p in initial"
           :key="p._id"
+          class="task-choice-chip"
+          :data-tone="p.role || 'employee'"
+          :title="p.name"
           type="button"
           :disabled="disabled"
           @click="choose(p)"
@@ -146,7 +149,7 @@ onBeforeUnmount(() => {
         type="button"
         :aria-label="searching ? 'Закрыть поиск' : 'Найти сотрудника'"
         :disabled="disabled"
-        @pointerdown.prevent
+        @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
         @click="searching ? cancel() : search()"
       >
         <UiIcon :name="searching ? 'close' : 'search'" />
@@ -168,7 +171,7 @@ onBeforeUnmount(() => {
         role="option"
         :aria-selected="active === i"
         :disabled="disabled"
-        @pointerdown.prevent
+        @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
         @click="choose(p)"
       >
         {{ p._id === actorId ? "Себе" : p.name }}
@@ -347,3 +350,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+<style scoped src="./teamTaskChips.css"></style>

@@ -188,10 +188,14 @@ try {
   assert.equal(await stamp.locator("footer .team-read-receipt").count(), 1);
   assert.equal(await page.locator("footer .team-read-receipt:not(.read)").first().getAttribute("aria-label"), "Отправлено");
   async function checkReactionRow() {
-    for (const footer of await page.locator(".team-message:visible footer:has(.team-reactions)").all()) {
-      const reactions = await footer.locator(".team-reactions").boundingBox(),
-        time = await footer.locator(".team-message-stamp").boundingBox(),
-        box = await footer.boundingBox();
+    // Read one layout snapshot: mobile resize/scroll can move the feed between protocol calls.
+    const rows = await page.locator(".team-message:visible footer:has(.team-reactions)").evaluateAll(footers => footers.map(footer => ({
+      reactions: footer.querySelector('.team-reactions').getBoundingClientRect().toJSON(),
+      time: footer.querySelector('.team-message-stamp').getBoundingClientRect().toJSON(),
+      box: footer.getBoundingClientRect().toJSON(),
+    })));
+    assert.ok(rows.length > 0);
+    for (const { reactions, time, box } of rows) {
       assert.ok(Math.abs(reactions.y + reactions.height / 2 - time.y - time.height / 2) < 1, "reactions and time share one row");
       assert.ok(reactions.x + reactions.width <= time.x, "reactions do not overlap the timestamp");
       assert.ok(time.x + time.width <= box.x + box.width + 1, "timestamp stays inside the bubble");

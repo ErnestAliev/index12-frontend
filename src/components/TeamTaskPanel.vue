@@ -332,6 +332,7 @@ async function editDescription() {
   field.value?.focus();
 }
 function close() {
+  if (filterOpen.value) { filterOpen.value = false; return; }
   if (busy.value || uploading.value) return;
   if (picker.value) {
     picker.value = "";
@@ -616,9 +617,9 @@ onBeforeUnmount(() => {
         <div v-else-if="step === 'when'" class="task-input-line">
           <span>Когда:</span>
           <div class="inline-choices">
-            <button @click="chooseTiming('urgent')">Срочно</button
-            ><button @click="chooseTiming('deadline')">К сроку</button
-            ><button @click="chooseTiming('none')">Без срока</button>
+            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
+            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
+            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')">Без срока</button>
           </div>
         </div>
         <div v-else-if="step === 'urgent'" class="task-input-line">
@@ -793,9 +794,9 @@ onBeforeUnmount(() => {
             @select="choosePerson"
           />
           <div v-if="editing === 'when'" class="inline-choices">
-            <button @click="chooseTiming('urgent')">Срочно</button
-            ><button @click="chooseTiming('deadline')">К сроку</button
-            ><button @click="chooseTiming('none')">Без срока</button>
+            <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
+            ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
+            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')">Без срока</button>
           </div>
           <div v-if="editing === 'urgent'" class="inline-choices">
             <button @click="chooseDate(localDay())">Сегодня</button
@@ -873,6 +874,7 @@ onBeforeUnmount(() => {
         >
           {{ s.label }}</button
         ><button
+          class="task-filter-toggle"
           aria-label="Фильтры"
           :aria-expanded="filterOpen"
           @click="filterOpen = !filterOpen"
@@ -882,7 +884,8 @@ onBeforeUnmount(() => {
           <UiIcon name="plus" />
         </button>
       </div>
-      <div v-if="filterOpen" class="task-filters">
+      <div v-if="filterOpen" class="task-filter-backdrop" @click.stop="filterOpen = false" />
+      <div v-if="filterOpen" class="task-filters" role="region" aria-label="Фильтры задач">
         <label
           ><input v-model="filters.mine" type="checkbox" />Поставлены
           мной</label
@@ -924,7 +927,8 @@ onBeforeUnmount(() => {
               period: '',
               from: '',
               to: '',
-            }
+            };
+            filterOpen = false
           "
         >
           Сбросить
@@ -969,3 +973,5 @@ onBeforeUnmount(() => {
   </section>
 </template>
 <style scoped src="./teamTasks.css"></style>
+
+<style scoped src="./teamTaskChips.css"></style>

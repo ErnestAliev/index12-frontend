@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { businessApi, businessError } from '@/services/businessApi';
 export const useBusinessStore = defineStore('business', () => {
-  const tasks = ref([]), status = ref(null), error = ref(''), truncated = ref(false), notificationsEnabled = ref(false), requestedTask = ref(null);
+  const tasks = ref([]), people = ref([]), status = ref(null), error = ref(''), truncated = ref(false), notificationsEnabled = ref(false), requestedTask = ref(null);
   let notificationScope = '', interval, initial, recovery, generation = 0, request = 0, range = null, live = null;
   const calendarVisible = ref(false);
   const visible = () => typeof document !== 'undefined' && document.visibilityState !== 'hidden';
@@ -29,7 +29,7 @@ export const useBusinessStore = defineStore('business', () => {
     try {
       const [state, list] = await Promise.all([tasksOnly ? null : businessApi.get('/status'), businessApi.get('/tasks', { params: range || {} })]);
       if (current !== generation || ticket !== request) return;
-      if (state) status.value = state.data; tasks.value = list.data.tasks; truncated.value = list.data.truncated; error.value = '';
+      if (state) status.value = state.data; tasks.value = list.data.tasks; people.value = list.data.people || []; truncated.value = list.data.truncated; error.value = '';
     } catch (e) { if (current === generation && ticket === request) error.value = businessError(e); }
   }
   function stop() {
@@ -37,7 +37,7 @@ export const useBusinessStore = defineStore('business', () => {
     window.removeEventListener?.('index12:calendar-changed', invalidate);
     for (const name of ['focus', 'pageshow', 'online']) window.removeEventListener?.(name, resume);
     document.removeEventListener?.('visibilitychange', resume);
-    tasks.value = []; status.value = null; error.value = ''; truncated.value = false; range = null;
+    tasks.value = []; people.value = []; status.value = null; error.value = ''; truncated.value = false; range = null;
     notificationScope = ''; delete businessApi.defaults.headers.common['x-index12-workspace-id']; notificationsEnabled.value = false; requestedTask.value = null;
   }
   function start(scope) {
@@ -98,5 +98,5 @@ export const useBusinessStore = defineStore('business', () => {
     requestedTask.value = data.taskId; window.dispatchEvent(new Event('index12:open-calendar'));
   }
   if (typeof navigator !== 'undefined' && navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => { if (event.data?.type === 'index12:open-calendar') openNotification(event.data); });
-  return { tasks, calendarVisible, setCalendarVisible, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
+  return { tasks, people, calendarVisible, setCalendarVisible, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
 });

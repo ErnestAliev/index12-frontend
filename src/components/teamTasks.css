@@ -704,3 +704,6 @@
 .task-list-row{display:grid;grid-template-columns:28px minmax(0,1fr);align-items:center}.task-panel .task-list-row>.list-check{display:grid;place-items:center;align-self:stretch;height:48px;min-height:48px;line-height:1;appearance:none;-webkit-appearance:none}.list-checkmark{display:grid;place-items:center;box-sizing:border-box;width:18px;height:18px;border:1.5px solid currentColor;border-radius:50%;font-size:12px;line-height:1}.task-panel .task-list-row>.list-content{height:48px;min-height:48px;align-items:center;align-content:center;box-sizing:border-box;appearance:none;-webkit-appearance:none}.list-content>span{display:block;min-width:0;line-height:20px}
 
 .clock-display{display:flex;align-items:center;justify-content:center;gap:4px;margin-inline:auto}.clock-header-spacer{width:36px;flex:none}.task-panel .clock-display>button{min-width:44px;min-height:44px;padding:0 8px}.task-panel .clock-display>button[aria-pressed="false"]{background:transparent;color:var(--codex-pane-text)}.task-panel .clock-display>button[aria-pressed="true"]{background:var(--codex-pane-accent,#3b6763);color:var(--codex-pane-bg);font-weight:600}
+
+.task-filter-backdrop { position: fixed; inset: 0; z-index: 2; }
+.task-filter-toggle[aria-expanded="true"] { position: relative; z-index: 4; }

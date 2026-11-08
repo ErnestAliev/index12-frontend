@@ -1,0 +1,32 @@
+.task-choice-chip {
+  --chip-tone: var(--codex-pane-muted);
+}
+.task-choice-chip[data-tone="director"] { --chip-tone: #489b75; }
+.task-choice-chip[data-tone="manager"],
+.task-choice-chip[data-tone="deadline"] { --chip-tone: #558ab7; }
+.task-choice-chip[data-tone="employee"] { --chip-tone: #bc8c3d; }
+.task-choice-chip[data-tone="urgent"] { --chip-tone: #c66962; }
+.recipient-line .recipient-options .task-choice-chip,
+.task-panel .inline-choices .task-choice-chip {
+  flex: none;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--chip-tone) 55%, var(--codex-pane-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--chip-tone) 12%, var(--codex-pane-surface));
+  color: var(--codex-pane-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  cursor: pointer;
+}
+.recipient-line .recipient-options .task-choice-chip:hover,
+.task-panel .inline-choices .task-choice-chip:hover {
+  background: color-mix(in srgb, var(--chip-tone) 22%, var(--codex-pane-surface));
+}
+.task-choice-chip:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) {
+  .task-choice-chip:active { transform: none; }
+}
