@@ -41,6 +41,6 @@ onBeforeUnmount(() => {
 .task-text-editor .editor-save { display: flex; margin: 4px 0 0 auto; min-height: 32px; align-items: center; gap: 4px; padding: 4px 0 4px 8px; border: 0 !important; background: transparent !important; box-shadow: none !important; font: inherit; font-size: 12px; color: var(--codex-pane-accent,var(--color-primary)) !important; cursor: pointer; }
 .editor-save .ui-icon { width: 14px; height: 14px; }
 @media (max-width:767px), (pointer:coarse) { .task-text-editor .editor-save { position: sticky; bottom: 0; z-index: 1; width: fit-content; min-width: 44px; min-height: 44px; margin: 4px auto 0 0; padding: 4px 8px 4px 0; } }
-:global(html[data-theme="light"]) .task-text-editor .editor-save { color: var(--light-accent,#168447) !important; }
+:global(html[data-theme="light"] .task-text-editor .editor-save) { color: var(--light-accent,#168447) !important; }
 .task-text-editor p { margin: 0; padding: 8px 0; color: var(--color-danger,#b24f45); font-size: 12px; }
 </style>
