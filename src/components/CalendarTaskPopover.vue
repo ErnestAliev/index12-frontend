@@ -1,32 +1,47 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
+import TeamTaskRecipientPicker from './TeamTaskRecipientPicker.vue';
+import TeamMediaPreview from './TeamMediaPreview.vue';
+import { useTeamMedia } from '@/composables/useTeamMedia';
+import { teamApi } from '@/stores/teamChatStore';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import CalendarPartySelect from './CalendarPartySelect.vue';
 import { useBusinessStore } from '@/stores/businessStore';
 import { businessApi, businessError } from '@/services/businessApi';
 import { addDays, dayAt, timeAt, localInstant, statusLabels, taskState, defaultSlot, oneHourEnd } from '@/utils/calendarTime';
 const props = defineProps({ task: { type: Object, default: null }, date: { type: String, required: true } });
-const emit = defineEmits(['close', 'saved', 'reload']);
+const emit = defineEmits(['close', 'saved', 'reload', 'open-chat']);
 const business = useBusinessStore();
+const isChat = props.task?.source === 'team-chat';
+const recipientOpen = ref(false);
+const chatStatuses = [{ id: 'progress', label: 'В процессе' }, { id: 'delayed', label: 'Не успеваю' }, { id: 'done', label: 'Готово' }];
 const panel = ref(null), fileInput = ref(null), busy = ref(false), uploading = ref(false), error = ref(''), saved = ref(false), conflict = ref(false), viewport = ref({});
 const original = reactive(props.task ? { ...props.task } : { ...defaultSlot(props.date), title: '', description: '', status: 'open', reminderOffsets: [10, 30, 60], reminderDates: [], overdueReminders: 1, overdueRepeatMinutes: 60, links: [], attachments: [], party: null });
 function taskDraft(original, existing = true) { return {
+  assigneeIds: [...(original.assigneeIds || [])], dueTime: original.dueTime || '',
   title: original.title, description: original.description || '', date: existing ? original.dueDate || (original.startsAt ? dayAt(original.startsAt) : '') : original.dueDate || props.date,
   start: timeAt(original.startsAt) || '11:00', endDate: original.endsAt ? dayAt(original.endsAt) : original.dueDate || props.date, end: timeAt(original.endsAt) || '12:00',
-  allDay: original.allDay ?? !original.startsAt, status: original.status, party: original.party || (original.companyId ? { kind: 'companies', id: original.companyId } : null),
+  allDay: original.allDay ?? !original.startsAt, status: isChat ? original.chatStatus || original.status : original.status, party: original.party || (original.companyId ? { kind: 'companies', id: original.companyId } : null),
   reminderOffsets: [...(original.reminderOffsets || [])], reminderDates: [...(original.reminderDates || [])], overdueReminders: original.overdueReminders ?? 1, overdueRepeatMinutes: original.overdueRepeatMinutes || 60,
   links: (original.links || []).map(link => ({ ...link })), attachments: [...(original.attachments || [])],
 }; }
 const draft = reactive(taskDraft(original, Boolean(props.task)));
+const media = useTeamMedia({ onError: e => { error.value = businessError(e); } });
+function chooseAssignee(person) { if (!draft.assigneeIds.includes(person._id)) draft.assigneeIds.push(person._id); recipientOpen.value = false; changed(); }
+const assigneeName = id => business.people.find(p => p._id === id)?.name || original.assignees?.find(p => p.actorId === id)?.name || id;
 const presets = [{ minutes: 10, label: '10 мин' }, { minutes: 30, label: '30 мин' }, { minutes: 60, label: '1 ч' }, { minutes: 1440, label: '1 день' }, { minutes: 4320, label: '3 дня' }, { minutes: 10080, label: '1 неделя' }];
 const legacyOffsets = computed(() => draft.reminderOffsets.filter(minutes => !presets.some(p => p.minutes === minutes)));
 const customOpen = ref(false), customDateTime = ref('');
 const customLabel = value => new Date(value).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-const currentStatus = computed(() => taskState({ status: draft.status, dueDate: draft.date, ...(!draft.allDay && draft.date && draft.endDate && draft.start && draft.end ? { startsAt: localInstant(draft.date, draft.start), endsAt: localInstant(draft.endDate, draft.end) } : {}) }));
+const currentStatus = computed(() => isChat ? taskState({ status: draft.status, dueDate: draft.date, dueTime: draft.dueTime }) : taskState({ status: draft.status, dueDate: draft.date, ...(!draft.allDay && draft.date && draft.endDate && draft.start && draft.end ? { startsAt: localInstant(draft.date, draft.start), endsAt: localInstant(draft.endDate, draft.end) } : {}) }));
 let id = props.task?._id, version = props.task?.version || 0, timer, pending = false, active = true, savingPromise, previousDate = draft.date, returnFocus, remoteTicket = 0, queuedRemote = null;
 const creationKey = crypto.randomUUID();
 function payload() {
   if (!draft.title.trim()) throw new Error('Укажите название задачи');
+  if (isChat) {
+    if (!draft.assigneeIds.length) throw new Error('Выберите ответственного');
+    return { description: draft.title.trim(), dueDate: draft.date || null, dueTime: draft.date ? draft.dueTime || null : null, timing: draft.date ? (original.timing === 'urgent' ? 'urgent' : 'deadline') : 'none', assigneeIds: [...draft.assigneeIds], status: draft.status, fileIds: draft.attachments.map(file => file.fileId) };
+  }
   if (!draft.allDay && (!draft.date || !draft.start || !draft.end || !draft.endDate)) throw new Error('Укажите дату и время задачи');
   const data = { title: draft.title.trim(), description: draft.description, dueDate: draft.date || null, allDay: draft.allDay, status: draft.status, party: draft.party,
     reminderOffsets: draft.reminderOffsets.map(Number), reminderDates: [...draft.reminderDates], overdueReminders: Number(draft.overdueReminders), overdueRepeatMinutes: Number(draft.overdueRepeatMinutes),
@@ -102,17 +117,24 @@ async function upload(event) {
       if (draft.attachments.length >= 5) throw new Error('Можно прикрепить до пяти файлов');
       if (file.size > 10 * 1024 * 1024) throw new Error('Размер одного файла — до 10 МБ');
       if (draft.attachments.reduce((sum, row) => sum + row.size, 0) + file.size > 25 * 1024 * 1024) throw new Error('Общий размер файлов — до 25 МБ');
-      const response = await businessApi.post('/task-files', file, { headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type }, timeout: 60000 }); draft.attachments.push(response.data.file);
+      if (isChat) await business.prepareChat(original.workspaceId);
+      const response = await (isChat ? teamApi : businessApi).post(isChat ? '/files' : '/task-files', file, { headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name), 'x-file-type': file.type }, timeout: 60000 }); draft.attachments.push(response.data.file); if (isChat) media.cacheUpload(response.data.file, file);
     }
     changed();
   } catch (e) { error.value = e.response ? businessError(e) : e.message; } finally { uploading.value = false; event.target.value = ''; drainRemote(); }
 }
 async function download(file) {
+  if (isChat) { try { await business.prepareChat(original.workspaceId); await media.download(file); } catch (e) { error.value = e.response ? businessError(e) : e.message; } return; }
   if (!id) return;
   try { const response = await businessApi.get(`/tasks/${id}/files/${file.fileId}`, { responseType: 'blob' }); const url = URL.createObjectURL(response.data), link = document.createElement('a'); link.href = url; link.download = file.name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   catch (e) { error.value = businessError(e); }
 }
-async function remove() { if (busy.value) return; clearTimeout(timer); busy.value = true; try { await business.deleteTask(id, version); emit('close'); } catch (e) { error.value = businessError(e); } finally { busy.value = false; } }
+async function openChat() {
+  if (busy.value && savingPromise) await savingPromise.catch(() => {});
+  await save();
+  if (!busy.value && !error.value) emit('open-chat', original);
+}
+async function remove() { if (busy.value) return; clearTimeout(timer); if (id && dirty()) { await save(); if (busy.value || error.value) return; } busy.value = true; try { await business.deleteTask(id, version); emit('close'); } catch (e) { error.value = businessError(e); } finally { busy.value = false; } }
 function updateViewport() { const v = window.visualViewport; viewport.value = v ? { inset: 'auto', left: `${v.offsetLeft}px`, top: `${v.offsetTop}px`, width: `${v.width}px`, height: `${v.height}px`, '--dialog-safe-bottom': innerHeight - v.height > 120 ? '0px' : 'var(--safe-area-bottom)' } : {}; }
 function keyboard(event) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void close(); }
@@ -128,11 +150,20 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer); window.removeEventL
 defineExpose({ close });
 </script>
 <template>
+  <TeamMediaPreview v-if="media.preview.value" :media="media.preview.value" @close="media.closePreview" @retry="media.retryPreview" />
   <div class="task-dialog-backdrop" :style="viewport" @click.self="close">
     <section ref="panel" class="task-popover" role="dialog" aria-modal="true" aria-label="Карточка задачи" tabindex="-1" @keydown="keyboard">
       <header><span class="task-state" :data-status="currentStatus"><i></i>{{ statusLabels[currentStatus] }}</span><div class="popover-tools"><span v-if="busy" class="save-state" role="status">Сохранение…</span><span v-else-if="saved" class="save-state" role="status">Сохранено</span><button v-if="id" type="button" class="ui-icon-button" aria-label="Удалить задачу" title="Удалить задачу" :disabled="busy" @click="remove"><UiIcon name="trash" /></button><button type="button" class="ui-icon-button" aria-label="Закрыть карточку задачи" @click="close"><UiIcon name="close" /></button></div></header>
       <div v-if="error" class="task-error" role="alert">{{ error }}<button v-if="conflict" type="button" title="Отменить локальные правки и загрузить актуальную задачу" @click="reload">Загрузить актуальную версию</button><button v-else-if="id" type="button" @click="error = ''; save()">Повторить</button></div>
       <form id="calendar-task-form" class="task-form-body" novalidate @submit.prevent="save" @input="changed" @change="changed">
+        <template v-if="isChat">
+          <textarea v-model="draft.title" class="chat-task-text" aria-label="Текст задачи" maxlength="10000" rows="3" />
+          <div class="chat-task-date"><input v-model="draft.date" type="date" aria-label="Дата задачи" /><input v-model="draft.dueTime" type="time" aria-label="Время задачи" :disabled="!draft.date" /><button v-if="draft.date" type="button" class="ui-icon-button" aria-label="Убрать срок" @click="draft.date = ''; draft.dueTime = ''; changed()"><UiIcon name="close" /></button></div>
+          <div class="chat-task-people"><span>Кому:</span><span v-for="person in draft.assigneeIds" :key="person" class="chat-person-chip">{{ assigneeName(person) }}<button type="button" :aria-label="`Убрать ответственного ${assigneeName(person)}`" @click="draft.assigneeIds = draft.assigneeIds.filter(id => id !== person); changed()"><UiIcon name="close" /></button></span><button type="button" class="ui-icon-button" aria-label="Добавить ответственного" :aria-expanded="recipientOpen" @click="recipientOpen = !recipientOpen"><UiIcon name="plus" /></button></div>
+          <TeamTaskRecipientPicker v-if="recipientOpen" :people="business.people" @select="chooseAssignee" />
+          <div class="chat-source-tools"><button type="button" class="chat-source-link" aria-label="Перейти в рабочий чат" @click="openChat"><UiIcon name="external" />Рабочий чат</button><button type="button" class="ui-icon-button" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button></div>
+        </template>
+        <template v-else>
         <input v-model="draft.title" class="task-title-input" aria-label="Название задачи" aria-required="true" placeholder="Название задачи" maxlength="300" />
         <div class="task-date-row"><label>Дата<input v-model="draft.date" type="date" aria-label="Дата задачи" @change="datesChanged" /></label><label class="all-day"><input v-model="draft.allDay" type="checkbox" />Весь день</label></div>
         <div v-if="!draft.allDay" class="task-time-row"><label>Начало<input v-model="draft.start" type="time" aria-label="Время начала" @change="startChanged" /></label><span>—</span><label>Окончание<input v-model="draft.end" type="time" aria-label="Время окончания" /></label><label>Дата окончания<input v-model="draft.endDate" type="date" aria-label="Дата окончания" /></label></div>
@@ -144,14 +175,15 @@ defineExpose({ close });
         <div v-if="customOpen" class="custom-reminder-row"><input v-model="customDateTime" type="datetime-local" aria-label="Дата и время напоминания" @input.stop @change.stop @keydown.enter.prevent="addCustomReminder" /><button type="button" :disabled="!customDateTime || draft.reminderDates.length >= 10" @click="addCustomReminder">Добавить</button></div>
         <div v-for="(at, index) in draft.reminderDates" :key="at" class="custom-reminder-chip"><time :datetime="at">{{ customLabel(at) }}</time><button type="button" class="ui-icon-button" :aria-label="`Убрать точное напоминание ${index + 1}`" @click="draft.reminderDates.splice(index, 1); changed()"><UiIcon name="close" /></button></div>
         <div class="overdue-row"><span>При просрочке</span><input v-model.number="draft.overdueReminders" type="number" min="0" max="10" aria-label="Количество напоминаний о просрочке" /><span>раз, каждые</span><input v-model.number="draft.overdueRepeatMinutes" type="number" min="5" max="10080" aria-label="Интервал просрочки, минут" /><span>мин</span></div>
-        <div class="attachment-heading"><label class="field-label">Файлы и ссылки</label><div><button type="button" class="ui-icon-button" title="Прикрепить файл" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button><button type="button" class="ui-icon-button" aria-label="Добавить ссылку" title="Добавить ссылку" :disabled="draft.links.length >= 20" @click="draft.links.push({ url: '' }); changed()"><UiIcon name="plus" /></button></div></div>
+        </template>
+        <div v-if="!isChat" class="attachment-heading"><label class="field-label">Файлы и ссылки</label><div><button type="button" class="ui-icon-button" title="Прикрепить файл" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button><button type="button" v-if="!isChat" class="ui-icon-button" aria-label="Добавить ссылку" title="Добавить ссылку" :disabled="draft.links.length >= 20" @click="draft.links.push({ url: '' }); changed()"><UiIcon name="plus" /></button></div></div>
         <input ref="fileInput" class="hidden-file" type="file" multiple aria-label="Файлы задачи" @change.stop="upload" />
         <span v-if="uploading" role="status" class="save-state">Загрузка файла…</span>
         <div v-for="file in draft.attachments" :key="file.fileId" class="file-row"><button type="button" :disabled="!id" @click="download(file)">{{ file.name }}</button><small>{{ Math.ceil(file.size / 1024) }} КБ</small><button type="button" class="ui-icon-button" :aria-label="`Убрать файл ${file.name}`" @click="draft.attachments.splice(draft.attachments.indexOf(file), 1); changed()"><UiIcon name="close" /></button></div>
         <div v-for="(link, index) in draft.links" :key="index" class="link-row"><input v-model="link.url" type="url" :aria-label="`Ссылка ${index + 1}`" placeholder="https://" /><a v-if="/^https:\/\//i.test(link.url)" :href="link.url" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть ссылку ${index + 1}`"><UiIcon name="external" /></a><button type="button" class="ui-icon-button" :aria-label="`Убрать ссылку ${index + 1}`" @click="draft.links.splice(index, 1); changed()"><UiIcon name="close" /></button></div>
         <a v-if="original.sourceUrl" :href="original.sourceUrl" target="_blank" rel="noopener noreferrer" class="source-link">Источник: КГД ↗</a>
       </form>
-      <footer><label class="completion"><input v-model="draft.status" type="checkbox" true-value="done" false-value="open" aria-label="Задача исполнена" @change="changed" />Исполнено</label><button v-if="!id" type="submit" form="calendar-task-form" class="save-button" :disabled="busy || uploading || !draft.title.trim()">Сохранить задачу</button></footer>
+      <footer><div v-if="isChat" class="chat-status-actions"><button v-for="state in chatStatuses" :key="state.id" type="button" :aria-pressed="draft.status === state.id" @click="draft.status = state.id; changed()">{{ state.label }}</button></div><label v-else class="completion"><input v-model="draft.status" type="checkbox" true-value="done" false-value="open" aria-label="Задача исполнена" @change="changed" />Исполнено</label><button v-if="!id" type="submit" form="calendar-task-form" class="save-button" :disabled="busy || uploading || !draft.title.trim()">Сохранить задачу</button></footer>
     </section>
   </div>
 </template>
@@ -198,4 +230,25 @@ defineExpose({ close });
 .task-error { color:var(--color-danger,#e48b86); font-size:12px; padding:8px 20px; flex-shrink:0; }.task-error button { font-size:11px; margin-left:8px; }
 :global(:root[data-theme=light]) .task-popover input:is([type=date],[type=time],[type=datetime-local]) { color-scheme:light; }
 @media(max-width:540px) { .task-dialog-backdrop { padding:12px; }.task-form-body { padding:0 16px 16px; }.task-popover footer { padding:12px 16px; }.task-time-row { grid-template-columns:1fr 12px 1fr; }.task-time-row label:last-child { grid-column:1/-1; }.reminder-presets { gap:6px; }.reminder-presets button { flex:1 0 27%; justify-content:center; } }
+</style>
+
+<style scoped>
+.task-popover .chat-task-text { margin: 4px 0 12px; min-height: 84px; max-height: 200px; font-size: 15px; line-height: 1.5; }
+.chat-task-date { display: flex; align-items: center; gap: 8px; }
+.chat-task-date input { flex: 1; width: 0; min-height: 44px; }
+.chat-task-date input[type=time] { flex: .7; }
+.chat-task-people { display: flex; align-items: center; gap: 6px; overflow-x: auto; white-space: nowrap; margin-block: 12px; font-size: 13px; }
+.chat-person-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--color-border); border-radius: 8px; padding: 0 6px; flex: none; }
+.task-popover .chat-person-chip button { display: grid; place-items: center; width: 32px; height: 36px; background: transparent; border: 0; padding: 0; }
+.chat-person-chip :deep(svg), .chat-source-link :deep(svg) { width: 14px; height: 14px; }
+.chat-source-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.task-popover .chat-source-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; border: 0; background: transparent; padding: 0; font-size: 12px; color: var(--color-primary); }
+.chat-status-actions { display: flex; gap: 6px; overflow-x: auto; width: 100%; }
+.chat-status-actions button { flex: 1 0 auto; white-space: nowrap; min-height: 44px; background: transparent; font-size: 12px; }
+.chat-status-actions button[aria-pressed=true] { background: color-mix(in srgb,var(--color-primary) 14%,var(--color-background)); border-color: var(--color-primary); }
+@media (max-width:540px) {
+  .task-dialog-backdrop { padding: max(12px,var(--safe-area-top)) max(12px,var(--safe-area-right)) max(12px,var(--dialog-safe-bottom,var(--safe-area-bottom))) max(12px,var(--safe-area-left)); }
+  .task-popover input,.task-popover textarea { font-size: 16px; }
+  .task-popover .ui-icon-button { width: 44px; height: 44px; }
+}
 </style>

@@ -1,3 +1,4 @@
+import process from "node:process";
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
@@ -80,6 +81,7 @@ export async function verifyRealtimeCalendar({ origin, headers, cookie, scope })
     await api('/tasks/' + isolated.id, { expectedVersion: 0 }, 'DELETE');
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await api('/tasks', { title: 'Mobile realtime task', dueDate: day, idempotencyKey: 'calendar-realtime-mobile' });
+    await page.locator(`[data-date="${mobile.task.dueDate}"]`).click();
     await page.getByRole('button', { name: 'Mobile realtime task', exact: true }).waitFor();
     await api('/tasks/' + mobile.id, { expectedVersion: 0, changes: { title: 'Mobile title updated' } }, 'PATCH');
     await page.getByRole('button', { name: 'Mobile title updated', exact: true }).waitFor();

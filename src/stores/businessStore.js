@@ -80,17 +80,57 @@ export const useBusinessStore = defineStore('business', () => {
     } catch (e) { if (current === generation) error.value = e.response ? businessError(e) : e.message; }
   }
   async function sync() { const current = generation; try { await businessApi.post('/sync'); } catch (e) { if (current === generation) error.value = businessError(e); } if (current === generation) await refresh(); }
-  async function saveTask(data, id, expectedVersion) {
-    const current = generation;
-    const response = id ? await businessApi.patch(`/tasks/${id}`, { changes: data, expectedVersion }) : await businessApi.post('/tasks', data);
-    if (current !== generation) throw new Error('Рабочая область изменилась');
-    ++request; const task = response.data.task, existing = tasks.value.find(t => t._id === task._id);
+  async function prepareChat(workspaceId) {
+    const current = generation, selectedWorkspace = notificationScope.split(':')[1];
+    const { useTeamChatStore } = await import('./teamChatStore');
+    const chat = useTeamChatStore();
+    const workspace = workspaceId || selectedWorkspace || chat.me?.workspaceId;
+    if (!workspace || (selectedWorkspace && workspace !== selectedWorkspace)) throw new Error('Рабочая область изменилась');
+    if (chat.me?.workspaceId !== workspace) await chat.start(workspace);
+    if (current !== generation || chat.me?.workspaceId !== workspace || chat.me?.status !== 'active') throw new Error('Чат недоступен в этой рабочей области');
+    return chat;
+  }
+  function acceptTask(task) {
+    ++request;
+    const existing = tasks.value.find(t => t._id === task._id);
     if (!existing || (existing.version || 0) <= (task.version || 0)) tasks.value = [...tasks.value.filter(t => t._id !== task._id), task];
     invalidate(); return task;
   }
+  async function saveTask(data, id, expectedVersion) {
+    const current = generation;
+    if (id?.startsWith('chat:')) {
+      const chat = await prepareChat(tasks.value.find(t => t._id === id)?.workspaceId);
+      const response = await chat.action(`/tasks/${id.slice(5)}`, { ...data, expectedVersion }, 'patch');
+      if (current !== generation) throw new Error('Рабочая область изменилась');
+      return acceptTask(response.calendarTask);
+    }
+    const response = id ? await businessApi.patch(`/tasks/${id}`, { changes: data, expectedVersion }) : await businessApi.post('/tasks', data);
+    if (current !== generation) throw new Error('Рабочая область изменилась');
+    return acceptTask(response.data.task);
+  }
   async function deleteTask(id, expectedVersion) {
-    const current = generation; await businessApi.delete(`/tasks/${id}`, { data: { expectedVersion } });
+    const current = generation;
+    if (id.startsWith('chat:')) {
+      const chat = await prepareChat(tasks.value.find(t => t._id === id)?.workspaceId);
+      await chat.action(`/tasks/${id.slice(5)}`, { expectedVersion }, 'delete');
+    } else await businessApi.delete(`/tasks/${id}`, { data: { expectedVersion } });
     if (current === generation) { ++request; tasks.value = tasks.value.filter(t => t._id !== id); invalidate(); }
+  }
+  async function deletedTasks() {
+    const current = generation, { data } = await businessApi.get('/tasks/deleted');
+    if (current !== generation) throw new Error('Рабочая область изменилась');
+    return data;
+  }
+  async function restoreTask(task) {
+    const current = generation;
+    let response;
+    if (task.source === 'team-chat') {
+      const chat = await prepareChat(task.workspaceId);
+      const data = await chat.action(`/tasks/${task.sourceTaskId}/restore`, { expectedVersion: task.version });
+      response = { ...data, task: data.calendarTask };
+    } else response = (await businessApi.post(`/tasks/${task._id}/restore`, { expectedVersion: task.version })).data;
+    if (current !== generation) throw new Error('Рабочая область изменилась');
+    acceptTask(response.task); return response;
   }
   function openNotification(data) {
     const workspaceId = notificationScope.split(':')[1];
@@ -98,5 +138,5 @@ export const useBusinessStore = defineStore('business', () => {
     requestedTask.value = data.taskId; window.dispatchEvent(new Event('index12:open-calendar'));
   }
   if (typeof navigator !== 'undefined' && navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', event => { if (event.data?.type === 'index12:open-calendar') openNotification(event.data); });
-  return { tasks, people, calendarVisible, setCalendarVisible, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
+  return { tasks, people, prepareChat, deletedTasks, restoreTask, calendarVisible, setCalendarVisible, status, error, truncated, notificationsEnabled, requestedTask, toggleNotifications, refresh, setRange, start, stop, sync, saveTask, deleteTask, openNotification };
 });
