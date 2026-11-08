@@ -98,8 +98,8 @@
   background: var(--codex-pane-surface);
   border: 1px solid var(--codex-pane-border);
   border-radius: 10px;
-  padding: 6px 10px;
-  min-height: 52px;
+  padding: 2px 10px;
+  min-height: 50px;
 }
 .task-input-line > span {
   white-space: nowrap;
@@ -113,6 +113,7 @@
   max-width: 140px;
 }
 .inline-choices {
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -242,16 +243,6 @@
   vertical-align: middle;
   width: 14px;
   height: 14px;
-}
-.task-statuses {
-  display: flex;
-  gap: 6px;
-  white-space: nowrap;
-  justify-content: space-between;
-}
-.task-statuses button {
-  font-size: 12px;
-  padding: 5px;
 }
 .task-panel button[aria-pressed="true"] {
   background: var(--codex-pane-surface-soft);
@@ -644,9 +635,6 @@
   min-height: 0;
   padding: 4px 0 !important;
 }
-.task-overview .task-statuses button {
-  min-height: 36px;
-}
 .task-details-collapsed > .task-overview {
   display: none;
 }
@@ -707,3 +695,5 @@
 
 .task-filter-backdrop { position: fixed; inset: 0; z-index: 2; }
 .task-filter-toggle[aria-expanded="true"] { position: relative; z-index: 4; }
+
+.task-overview > .task-status-select { margin-bottom: 6px; }

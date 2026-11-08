@@ -1,3 +1,5 @@
+import process from "node:process";
+import { Buffer } from "node:buffer";
 import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import { readFile, mkdir } from "node:fs/promises";
@@ -122,8 +124,8 @@ try {
     .getByRole("button", { name: "Кому: Calendar owner", exact: true })
     .click();
   await panel.getByRole("button", { name: "Employee", exact: true }).click();
-  await panel.getByRole("button", { name: "В процессе", exact: true }).click();
-  await panel.getByRole("button", { name: "Готово", exact: true }).click();
+  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).selectOption("progress");
+  await panel.getByRole("combobox", { name: "Статус задачи", exact: true }).selectOption("done");
   await panel.getByRole("button", { name: "Назад", exact: true }).click();
   const completed = page
     .locator(".task-cover")

@@ -17,7 +17,7 @@ try {
     await page.evaluate(({ theme, manualId }) => {
       document.documentElement.dataset.theme = theme;
       const fixture = window.taskCalendar, day = fixture.tasks[0].dueDate;
-      fixture.manualTasks.push({ _id: manualId, title: 'Оплатить налоги за ТОО YYY', description: '', status: 'open', version: 0, dueDate: day, startsAt: day + 'T05:00:00.000Z', endsAt: day + 'T06:00:00.000Z', allDay: false, reminderOffsets: [10,30,60], reminderDates: [], links: [], attachments: [], source: 'manual', party: { kind: 'companies', id: 'company' }, partyName: 'ТОО YYY' });
+      fixture.manualTasks.push({ _id: manualId, title: 'Оплатить налоги за ТОО YYY', description: 'Договор заканчивается — нужно продлить', status: 'open', version: 0, dueDate: day, startsAt: day + 'T05:00:00.000Z', endsAt: day + 'T06:00:00.000Z', allDay: false, reminderOffsets: [10,30,60], reminderDates: [], links: [], attachments: [], source: 'manual', party: { kind: 'companies', id: 'company' }, partyName: 'ТОО YYY' });
       for (let i = 0; i < 3; i++) fixture.tasks.push({ ...fixture.tasks[1], _id: crypto.randomUUID(), description: i ? 'Приступить немедленно' : 'Запросить закрывающие документы: ИП Шиповский', deletedAt: `2026-11-0${8-i}T08:01:00.000Z` });
       fixture.showCalendar();
     }, { theme, manualId });
@@ -42,6 +42,22 @@ try {
       return { titleFont: parseFloat(getComputedStyle(input).fontSize), title: input.getBoundingClientRect().toJSON(), description: rect('Описание задачи'), date: rect('Дата задачи'), endDate: rect('Дата окончания'), start: rect('Время начала'), end: rect('Время окончания'), card: el.getBoundingClientRect().toJSON() };
     });
     assert.ok(geometry.titleFont <= 16);
+    assert.equal(await card.getByLabel('Описание задачи', { exact: true }).evaluate(el => getComputedStyle(el).fontSize), '14px');
+    for (const label of ['Дата задачи', 'Дата окончания', 'Время начала', 'Время окончания']) {
+      assert.equal(await card.getByLabel(label, { exact: true }).evaluate(el => getComputedStyle(el).textAlign), 'center');
+    }
+    const quick = card.getByRole('group', { name: 'Напоминания до начала задачи' });
+    assert.equal(await quick.getByRole('button').count(), 4);
+    assert.equal(await card.locator('.overdue-row').count(), 0);
+    const expand = card.getByRole('button', { name: 'Дополнительные напоминания', exact: true });
+    if (width < 1000) await expand.tap(); else await expand.click();
+    await card.getByLabel('Количество напоминаний о просрочке').waitFor();
+    assert.equal(await expand.getAttribute('aria-expanded'), 'true');
+    await card.getByRole('button', { name: 'Дата и время', exact: true }).click();
+    await card.getByLabel('Дата и время напоминания', { exact: true }).waitFor();
+    await expand.click();
+    assert.equal(await card.locator('.overdue-row').count(), 0);
+    assert.equal(await card.locator('.custom-reminder-row').count(), 0);
     assert.ok(Math.abs(geometry.description.width - geometry.title.width) < 1, 'description fills the same form width as the title');
     assert.ok(Math.abs(geometry.date.y - geometry.endDate.y) < 1, 'start/end dates share the first row');
     assert.ok(Math.abs(geometry.start.y - geometry.end.y) < 1 && geometry.start.y >= geometry.date.bottom, 'start/end times share the next row');

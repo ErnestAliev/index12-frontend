@@ -141,7 +141,7 @@ onBeforeUnmount(() => {
           :disabled="disabled"
           @click="choose(p)"
         >
-          {{ p._id === actorId ? "Себе" : p.name }}
+          <span class="task-chip-label">{{ p._id === actorId ? "Себе" : p.name }}</span>
         </button>
       </div>
       <button
@@ -188,9 +188,9 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: 58px;
+  height: 50px;
   flex: none;
-  padding: 6px 10px;
+  padding: 2px 10px;
   border: 1px solid var(--codex-pane-border);
   border-radius: 10px;
   background: var(--codex-pane-surface);

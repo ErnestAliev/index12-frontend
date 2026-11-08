@@ -9,16 +9,18 @@ try {
   await server.listen();
   browser = useWebkit ? await webkit.launch() : await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), errors = [];
+  page.setDefaultTimeout(10000);
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://127.0.0.1:5201/tests/browser/fixtures/task-calendar.html');
   const panel = page.locator('.task-panel');
   await panel.getByRole('button', { name: 'Себе', exact: true }).waitFor();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
-    const tones = await panel.locator('.recipient-options button').evaluateAll(buttons => buttons.map(b => ({ tone: b.dataset.tone, border: getComputedStyle(b).borderTopWidth, bg: getComputedStyle(b).backgroundColor, whiteSpace: getComputedStyle(b).whiteSpace })));
+    const tones = await panel.locator('.recipient-options button').evaluateAll(buttons => buttons.map(b => ({ tone: b.dataset.tone, border: getComputedStyle(b,'::before').borderTopWidth, bg: getComputedStyle(b,'::before').backgroundColor, whiteSpace: getComputedStyle(b).whiteSpace })));
     assert.deepEqual(tones.map(t => t.tone), ['manager', 'director', 'employee']);
     assert.ok(tones.every(t => t.border === '1px' && t.whiteSpace === 'nowrap'));
     assert.equal(new Set(tones.map(t => t.bg)).size, 3);
+    assert.ok(await panel.locator('.task-choice-chip').first().evaluate(el => el.getBoundingClientRect().height - 14 <= 32));
     await page.screenshot({ path: `output/playwright/task-chips-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
   }
   for (const width of [320, 375, 736, 390]) {
@@ -26,7 +28,7 @@ try {
     await page.waitForFunction(() => { const r = document.querySelector('.recipient-line').getBoundingClientRect(); return r.x >= 0 && r.right <= innerWidth; });
     const line = await panel.locator('.recipient-line').boundingBox();
     assert.ok(line.x >= 0 && line.x + line.width <= width);
-    assert.ok(line.height <= 60, 'recipient chips remain on one line');
+    assert.ok(line.height <= 50, 'recipient chips remain on one line');
   }
   await panel.getByRole('button', { name: 'Найти сотрудника', exact: true }).tap();
   const recipient = panel.getByRole('combobox');
@@ -35,7 +37,8 @@ try {
   await panel.getByRole('option', { name: 'Валентина', exact: true }).tap();
   assert.equal(await panel.getByRole('button', { name: 'Срочно', exact: true }).getAttribute('data-tone'), 'urgent');
   await page.screenshot({ path: `output/playwright/task-timing-chips-${useWebkit ? 'webkit' : 'chromium'}.png` });
-  await panel.getByRole('button', { name: 'К сроку', exact: true }).tap();
+  const deadline = await panel.getByRole('button', { name: 'К сроку', exact: true }).boundingBox();
+  await page.touchscreen.tap(deadline.x + deadline.width / 2, deadline.y + 3);
   await panel.getByRole('dialog', { name: 'Выберите дату' }).waitFor();
   await page.evaluate(() => window.taskCalendar.showTasks());
   const filter = panel.getByRole('button', { name: 'Фильтры', exact: true });
@@ -100,7 +103,7 @@ try {
   await card.getByRole('button', { name: 'Снимок.png', exact: true }).tap();
   await page.waitForFunction(() => document.querySelector('dialog[aria-label="Снимок.png"] img')?.naturalWidth > 0);
   await page.getByRole('button', { name: 'Закрыть снимок.png', exact: true }).tap();
-  await card.getByRole('button', { name: 'В процессе', exact: true }).tap();
+  await card.getByRole('combobox', { name: 'Статус задачи', exact: true }).selectOption('progress');
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'progress');
   await page.screenshot({ path: `output/playwright/calendar-task-inline-${useWebkit ? 'webkit' : 'chromium'}.png` });
   await card.getByRole('button', { name: 'Удалить задачу', exact: true }).tap();
@@ -149,6 +152,22 @@ try {
   await page.locator('.task-overview').waitFor();
   assert.equal(await page.evaluate(() => window.taskCalendar.chat.requestedTaskId), '22222222-2222-4222-8222-222222222222');
   assert.equal(await page.locator('.calendar-window').count(), 0);
+  const status = panel.getByRole('combobox', { name: 'Статус задачи', exact: true });
+  await status.waitFor();
+  assert.equal(await status.evaluate(el => getComputedStyle(el).backgroundImage), 'none', 'a shared select must not add a second chevron');
+  assert.equal(await panel.locator('.task-statuses button').count(), 0);
+  await status.selectOption('delayed');
+  await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'delayed');
+  await status.selectOption('done');
+  await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'done');
+  for (const width of [320,390,1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.evaluate(() => { window.taskCalendar.chat.state.tasks.find(t => t._id.startsWith('2222')).description = 'Длинная задача: подготовить договор, забрать документы и передать сотруднику для проверки'.repeat(3); });
+    const bounds = await status.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height <= 36);
+    await page.screenshot({ path: `output/playwright/task-status-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
+  }
+
   assert.deepEqual(errors, []);
   console.log(`PASS (${useWebkit ? 'webkit' : 'chromium'}): role/timing chips, touch recipient search, outside filter dismiss/reset, compact calendar/filter, day-only selection, 10-task agenda, inline chat editing, deletion/restore and explicit chat navigation`);
 } finally { await browser?.close(); await server.close(); }

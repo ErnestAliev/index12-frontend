@@ -20,6 +20,7 @@ import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
 import { useTeamMedia } from "@/composables/useTeamMedia";
+import TeamTaskStatusSelect from "./TeamTaskStatusSelect.vue";
 import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
@@ -619,7 +620,7 @@ onBeforeUnmount(() => {
           <div class="inline-choices">
             <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
             ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
-            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')">Без срока</button>
+            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')"><span class="task-chip-label">Без срока</span></button>
           </div>
         </div>
         <div v-else-if="step === 'urgent'" class="task-input-line">
@@ -711,6 +712,7 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview">
+          <TeamTaskStatusSelect :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
           <div v-if="editing === 'description'" class="edit-description">
             <textarea
               ref="field"
@@ -796,7 +798,7 @@ onBeforeUnmount(() => {
           <div v-if="editing === 'when'" class="inline-choices">
             <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')">Срочно</button
             ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')">К сроку</button
-            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')">Без срока</button>
+            ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')"><span class="task-chip-label">Без срока</span></button>
           </div>
           <div v-if="editing === 'urgent'" class="inline-choices">
             <button @click="chooseDate(localDay())">Сегодня</button
@@ -812,17 +814,6 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <div class="task-creator">От: {{ task.creatorName }}</div>
-          <div class="task-statuses">
-            <button
-              v-for="s in taskStatuses.slice(1)"
-              :key="s.id"
-              :aria-pressed="task.status === s.id"
-              :disabled="busy || !canEdit"
-              @click="update({ status: task.status === s.id ? 'open' : s.id })"
-            >
-              {{ s.label }}
-            </button>
-          </div>
         </div>
         <TeamChatConversation
           v-show="editing !== 'description'"

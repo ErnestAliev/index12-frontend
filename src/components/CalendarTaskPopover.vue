@@ -1,6 +1,7 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
 import { useInputModality } from '@/composables/useInputModality';
+import TeamTaskStatusSelect from './TeamTaskStatusSelect.vue';
 import TeamTaskRecipientPicker from './TeamTaskRecipientPicker.vue';
 import TeamMediaPreview from './TeamMediaPreview.vue';
 import { useTeamMedia } from '@/composables/useTeamMedia';
@@ -16,7 +17,6 @@ const business = useBusinessStore();
 const keyboardNavigation = useInputModality();
 const isChat = props.task?.source === 'team-chat';
 const recipientOpen = ref(false);
-const chatStatuses = [{ id: 'progress', label: 'В процессе' }, { id: 'delayed', label: 'Не успеваю' }, { id: 'done', label: 'Готово' }];
 const panel = ref(null), fileInput = ref(null), busy = ref(false), uploading = ref(false), error = ref(''), saved = ref(false), conflict = ref(false), viewport = ref({});
 const original = reactive(props.task ? { ...props.task } : { ...defaultSlot(props.date), title: '', description: '', status: 'open', reminderOffsets: [10, 30, 60], reminderDates: [], overdueReminders: 1, overdueRepeatMinutes: 60, links: [], attachments: [], party: null });
 function taskDraft(original, existing = true) { return {
@@ -33,7 +33,7 @@ function chooseAssignee(person) { if (!draft.assigneeIds.includes(person._id)) d
 const assigneeName = id => business.people.find(p => p._id === id)?.name || original.assignees?.find(p => p.actorId === id)?.name || id;
 const presets = [{ minutes: 10, label: '10 мин' }, { minutes: 30, label: '30 мин' }, { minutes: 60, label: '1 ч' }, { minutes: 1440, label: '1 день' }, { minutes: 4320, label: '3 дня' }, { minutes: 10080, label: '1 неделя' }];
 const legacyOffsets = computed(() => draft.reminderOffsets.filter(minutes => !presets.some(p => p.minutes === minutes)));
-const customOpen = ref(false), customDateTime = ref('');
+const reminderDetails = ref(false), customOpen = ref(false), customDateTime = ref('');
 const customLabel = value => new Date(value).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const currentStatus = computed(() => isChat ? taskState({ status: draft.status, dueDate: draft.date, dueTime: draft.dueTime }) : taskState({ status: draft.status, dueDate: draft.date, ...(!draft.allDay && draft.date && draft.endDate && draft.start && draft.end ? { startsAt: localInstant(draft.date, draft.start), endsAt: localInstant(draft.endDate, draft.end) } : {}) }));
 let id = props.task?._id, version = props.task?.version || 0, timer, pending = false, active = true, savingPromise, previousDate = draft.date, returnFocus, remoteTicket = 0, queuedRemote = null;
@@ -174,11 +174,15 @@ defineExpose({ close });
         </div>
         <label class="field-label">Контрагент</label><CalendarPartySelect v-model="draft.party" :fallback-name="original.partyName" @update:model-value="changed" />
         <label class="field-label" for="calendar-description">Описание</label><textarea id="calendar-description" v-model="draft.description" aria-label="Описание задачи" placeholder="Описание" maxlength="10000" rows="2"></textarea>
-        <div class="reminder-heading"><label class="field-label" :title="draft.allDay ? 'Для задач на весь день — до 09:00 по Алматы' : 'До начала задачи'">Напоминания</label><button type="button" class="custom-reminder-toggle" :aria-expanded="customOpen" @click="customOpen = !customOpen">Дата и время</button></div>
-        <div class="reminder-presets" role="group" aria-label="Напоминания до начала задачи"><button v-for="preset in presets" :key="preset.minutes" type="button" :aria-pressed="draft.reminderOffsets.includes(preset.minutes)" @click="toggleReminder(preset.minutes)">{{ preset.label }}</button><button v-for="minutes in legacyOffsets" :key="minutes" type="button" aria-pressed="true" @click="toggleReminder(minutes)">{{ minutes }} мин <UiIcon name="close" /></button></div>
+        <div class="reminder-heading"><label class="field-label" :title="draft.allDay ? 'Для задач на весь день — до 09:00 по Алматы' : 'До начала задачи'">Напоминания</label></div>
+        <div class="reminder-presets reminder-quick" role="group" aria-label="Напоминания до начала задачи"><button v-for="preset in presets.slice(0, 3)" :key="preset.minutes" type="button" :aria-pressed="draft.reminderOffsets.includes(preset.minutes)" @click="toggleReminder(preset.minutes)">{{ preset.label }}</button><button type="button" class="reminder-details-toggle" aria-label="Дополнительные напоминания" :aria-expanded="reminderDetails" aria-controls="calendar-reminder-details" @click="reminderDetails = !reminderDetails"><UiIcon :name="reminderDetails ? 'chevron-up' : 'chevron-down'" /></button></div>
+        <div v-if="reminderDetails" id="calendar-reminder-details" class="reminder-details">
+          <div class="reminder-presets"><button v-for="preset in presets.slice(3)" :key="preset.minutes" type="button" :aria-pressed="draft.reminderOffsets.includes(preset.minutes)" @click="toggleReminder(preset.minutes)">{{ preset.label }}</button><button v-for="minutes in legacyOffsets" :key="minutes" type="button" aria-pressed="true" @click="toggleReminder(minutes)">{{ minutes }} мин <UiIcon name="close" /></button></div>
+          <button type="button" class="custom-reminder-toggle" :aria-expanded="customOpen" @click="customOpen = !customOpen">Дата и время</button>
         <div v-if="customOpen" class="custom-reminder-row"><input v-model="customDateTime" type="datetime-local" aria-label="Дата и время напоминания" @input.stop @change.stop @keydown.enter.prevent="addCustomReminder" /><button type="button" :disabled="!customDateTime || draft.reminderDates.length >= 10" @click="addCustomReminder">Добавить</button></div>
         <div v-for="(at, index) in draft.reminderDates" :key="at" class="custom-reminder-chip"><time :datetime="at">{{ customLabel(at) }}</time><button type="button" class="ui-icon-button" :aria-label="`Убрать точное напоминание ${index + 1}`" @click="draft.reminderDates.splice(index, 1); changed()"><UiIcon name="close" /></button></div>
         <div class="overdue-row"><span>При просрочке</span><input v-model.number="draft.overdueReminders" type="number" min="0" max="10" aria-label="Количество напоминаний о просрочке" /><span>раз, каждые</span><input v-model.number="draft.overdueRepeatMinutes" type="number" min="5" max="10080" aria-label="Интервал просрочки, минут" /><span>мин</span></div>
+        </div>
         </template>
         <div v-if="!isChat" class="attachment-heading"><label class="field-label">Файлы и ссылки</label><div><button type="button" class="ui-icon-button" title="Прикрепить файл" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button><button type="button" v-if="!isChat" class="ui-icon-button" aria-label="Добавить ссылку" title="Добавить ссылку" :disabled="draft.links.length >= 20" @click="draft.links.push({ url: '' }); changed()"><UiIcon name="plus" /></button></div></div>
         <input ref="fileInput" class="hidden-file" type="file" multiple aria-label="Файлы задачи" @change.stop="upload" />
@@ -187,7 +191,7 @@ defineExpose({ close });
         <div v-for="(link, index) in draft.links" :key="index" class="link-row"><input v-model="link.url" type="url" :aria-label="`Ссылка ${index + 1}`" placeholder="https://" /><a v-if="/^https:\/\//i.test(link.url)" :href="link.url" target="_blank" rel="noopener noreferrer" :aria-label="`Открыть ссылку ${index + 1}`"><UiIcon name="external" /></a><button type="button" class="ui-icon-button" :aria-label="`Убрать ссылку ${index + 1}`" @click="draft.links.splice(index, 1); changed()"><UiIcon name="close" /></button></div>
         <a v-if="original.sourceUrl" :href="original.sourceUrl" target="_blank" rel="noopener noreferrer" class="source-link">Источник: КГД ↗</a>
       </form>
-      <footer><div v-if="isChat" class="chat-status-actions"><button v-for="state in chatStatuses" :key="state.id" type="button" :aria-pressed="draft.status === state.id" @click="draft.status = state.id; changed()">{{ state.label }}</button></div><label v-else class="completion"><input v-model="draft.status" type="checkbox" true-value="done" false-value="open" aria-label="Задача исполнена" @change="changed" />Исполнено</label><button v-if="!id" type="submit" form="calendar-task-form" class="save-button" :disabled="busy || uploading || !draft.title.trim()">Сохранить задачу</button></footer>
+      <footer><TeamTaskStatusSelect v-if="isChat" v-model="draft.status" :disabled="busy" @update:model-value="changed" /><label v-else class="completion"><input v-model="draft.status" type="checkbox" true-value="done" false-value="open" aria-label="Задача исполнена" @change="changed" />Исполнено</label><button v-if="!id" type="submit" form="calendar-task-form" class="save-button" :disabled="busy || uploading || !draft.title.trim()">Сохранить задачу</button></footer>
     </section>
   </div>
 </template>
@@ -217,9 +221,9 @@ defineExpose({ close });
 .task-date-row,.task-time-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; align-items: end; }
 .task-date-row.is-all-day { grid-template-columns: minmax(0,1fr); }
 .task-date-row label { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--color-text); }
-.task-date-row input,.task-time-row input { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin: 0; padding: 6px 8px; font-size: 14px; line-height: 22px; text-align: left; }
-.task-popover input:is([type=date],[type=time])::-webkit-date-and-time-value { text-align: left; }
-.task-popover input:is([type=date],[type=time])::-webkit-datetime-edit { padding: 0; font: inherit; }
+.task-date-row input,.task-time-row input { display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; height: 36px; margin: 0; padding: 6px 8px; font-size: 14px; line-height: 22px; text-align: center; }
+.task-popover input:is([type=date],[type=time])::-webkit-date-and-time-value { display: flex; align-items: center; justify-content: center; height: 100%; margin: 0; text-align: center; }
+.task-popover input:is([type=date],[type=time])::-webkit-datetime-edit { display: inline-flex; align-items: center; justify-content: center; padding: 0; font: inherit; }
 .task-schedule-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
 .all-day { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
 .task-popover .all-day input { width: 14px; height: 14px; margin: 0; padding: 0; flex: none; }
@@ -253,9 +257,6 @@ defineExpose({ close });
 .chat-person-chip :deep(svg), .chat-source-link :deep(svg) { width: 14px; height: 14px; }
 .chat-source-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .task-popover .chat-source-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; border: 0; background: transparent; padding: 0; font-size: 12px; color: var(--color-primary); }
-.chat-status-actions { display: flex; gap: 6px; overflow-x: auto; width: 100%; }
-.chat-status-actions button { flex: 1 0 auto; white-space: nowrap; min-height: 44px; background: transparent; font-size: 12px; }
-.chat-status-actions button[aria-pressed=true] { background: color-mix(in srgb,var(--color-primary) 14%,var(--color-background)); border-color: var(--color-primary); }
 @media (max-width:540px) {
   .task-dialog-backdrop { padding: max(12px,var(--safe-area-top)) max(12px,var(--safe-area-right)) max(12px,var(--dialog-safe-bottom,var(--safe-area-bottom))) max(12px,var(--safe-area-left)); }
   .task-popover input,.task-popover textarea { font-size: 16px; }
@@ -264,6 +265,11 @@ defineExpose({ close });
 </style>
 
 <style scoped>
+.task-popover #calendar-description { font-size: 14px; line-height: 20px; min-height: 52px; height: 56px; padding: 6px 8px; }
+.reminder-quick { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)) 32px; }
+.reminder-quick button { justify-content: center; }
+.reminder-details-toggle { padding: 0 !important; }
+.reminder-details { padding-top: 4px; }
 .task-popover .task-title-input { font-size: 16px; line-height: 24px; padding: 8px 10px; margin: 0 0 12px; }
 .task-popover .task-date-row input,.task-popover .task-time-row input { font-size: 14px; }
 .task-popover:not([data-keyboard="true"]) :is(input,textarea,select,button):focus { outline: none !important; box-shadow: none !important; }

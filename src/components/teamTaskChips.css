@@ -10,11 +10,13 @@
 .task-panel .inline-choices .task-choice-chip {
   flex: none;
   box-sizing: border-box;
+  position: relative;
   min-height: 44px;
+  height: 44px;
   padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--chip-tone) 55%, var(--codex-pane-border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--chip-tone) 12%, var(--codex-pane-surface));
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--codex-pane-text);
   white-space: nowrap;
   overflow: hidden;
@@ -22,11 +24,20 @@
   font-size: 13px;
   cursor: pointer;
 }
-.recipient-line .recipient-options .task-choice-chip:hover,
-.task-panel .inline-choices .task-choice-chip:hover {
-  background: color-mix(in srgb, var(--chip-tone) 22%, var(--codex-pane-surface));
+.task-choice-chip::before {
+  content: "";
+  position: absolute;
+  inset: 7px 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--chip-tone) 55%, var(--codex-pane-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chip-tone) 12%, var(--codex-pane-surface));
 }
+.task-chip-label { position: relative; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-choice-chip:hover::before { background: color-mix(in srgb, var(--chip-tone) 22%, var(--codex-pane-surface)); }
 .task-choice-chip:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) {
   .task-choice-chip:active { transform: none; }
 }
+
+/* A 30px visible surface inside the 44px touch target. */
