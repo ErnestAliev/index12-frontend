@@ -185,13 +185,13 @@ const closedText = (status) =>
 </script>
 <template>
   <main class="team-login" :style="{ height: `${viewportHeight}px` }">
-    <section v-if="booting" class="team-wait" role="status">
+    <section v-if="booting" class="team-wait team-connecting" role="status">
       <span class="team-loader" aria-hidden="true"></span
-      >{{
+      ><span>{{
         chat.historyLoading
           ? "Загружаем историю сообщений…"
           : "Подключаемся к чату…"
-      }}
+      }}</span>
     </section>
     <form v-else-if="!chat.me || mode !== 'auth'" @submit.prevent="submit">
       <h1>
@@ -404,6 +404,11 @@ const closedText = (status) =>
   flex-direction: column;
   gap: 20px;
 }
+.team-connecting {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
 .team-login h1 {
   font-size: 24px;
   font-weight: 500;
@@ -462,6 +467,7 @@ const closedText = (status) =>
   background: transparent;
 }
 .team-loader {
+  flex-shrink: 0;
   width: 20px;
   height: 20px;
   border: 2px solid var(--color-border);

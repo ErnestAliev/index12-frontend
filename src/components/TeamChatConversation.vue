@@ -941,8 +941,8 @@ watch(
       @close="quoteView = null"
       ><div class="team-original-message">
         <p v-if="quoteError" role="alert">{{ quoteError }}</p>
-        <span v-else-if="quoteView.loading" role="status"
-          >Загружаем сообщение…</span
+        <span v-else-if="quoteView.loading" class="team-history-loading" role="status"
+          ><span class="team-history-spinner" aria-hidden="true"></span><span>Загружаем сообщение…</span></span
         ><template v-else
           ><strong>{{ quoteView.authorName }}</strong
           ><CodexMessageText :text="quoteView.text" /><button
@@ -975,8 +975,9 @@ watch(
     >
       {{ localError || thread.error || chat.error }}
     </div>
-    <div v-if="!chat.me" class="team-empty">
-      {{ chat.error || "Подключение к чату…" }}
+    <div v-if="!chat.me" class="team-empty team-history-loading" role="status">
+      <span v-if="!chat.error" class="team-history-spinner" aria-hidden="true"></span>
+      <span>{{ chat.error || "Подключение к чату…" }}</span>
     </div>
     <div v-else-if="chat.me.status === 'pending'" class="team-empty">
       Запрос отправлен владельцу. Ожидается одобрение
@@ -1005,8 +1006,8 @@ watch(
           class="team-empty team-history-loading"
           role="status"
         >
-          <span class="team-history-spinner" aria-hidden="true"></span>Загружаем
-          историю сообщений…
+          <span class="team-history-spinner" aria-hidden="true"></span><span>Загружаем
+          историю сообщений…</span>
         </div>
         <div v-else-if="historyError" class="team-empty" role="alert">
           {{ historyError }}<button @click="loadOlder">Повторить</button>
