@@ -670,8 +670,12 @@
 .task-summary { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .task-summary-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
 .task-created { flex: none; font-size: 10px; line-height: 16px; white-space: nowrap; color: var(--codex-pane-muted); opacity: .55; }
-.task-metadata { min-width: 0; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); overflow-wrap: anywhere; }
+.task-metadata { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; min-width: 0; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); }
+.task-meta-group { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
+.task-meta-label { flex: none; }
 .task-panel .task-metadata button { display: inline; min-height: 28px; max-width: 100%; margin: 0; padding: 0; font-size: inherit; line-height: inherit; color: inherit; white-space: normal; text-align: left; overflow-wrap: anywhere; vertical-align: baseline; }
+.task-panel .task-metadata .task-assignee { min-width: 0; }
+.task-panel .task-meta-when button { flex: none; white-space: nowrap; overflow-wrap: normal; }
 .task-metadata .ui-icon { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
 .task-summary .task-description { text-align: left; min-width: 0; line-height: 22px; }
 

@@ -738,10 +738,8 @@ onBeforeUnmount(() => {
             </div>
             <div class="task-metadata">
               <span class="task-meta-group">От: {{ task.creatorName }}</span>
-              <span class="task-meta-divider"> / </span>
-              <span class="task-meta-group">Кому: <button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button> <button :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button></span>
-              <span class="task-meta-divider"> / </span>
-              <span class="task-meta-group"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button> <button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button> <button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button></span>
+              <span class="task-meta-group"><span class="task-meta-label">/ Кому:</span><button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button></span>
+              <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">/ Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button></span>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
             <button v-else class="task-description" :disabled="!canEdit" @click="editDescription">{{ task.description }}</button>
