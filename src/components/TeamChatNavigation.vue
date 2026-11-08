@@ -235,15 +235,6 @@ onBeforeUnmount(() => {
         <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
       </section>
     </div>
-    <button
-      type="button"
-      class="team-heading-close"
-      aria-label="Закрыть чат Сотрудники"
-      title="Закрыть"
-      @click="emit('close')"
-    >
-      <UiIcon name="close" />
-    </button>
   </nav>
 </template>
 <style scoped>
@@ -295,22 +286,6 @@ onBeforeUnmount(() => {
   height: 14px;
 }
 .team-navigation-trigger:hover {
-  background: var(--codex-pane-hover);
-}
-.team-chat-navigation .team-heading-close {
-  justify-self: end;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.team-heading-close:hover {
   background: var(--codex-pane-hover);
 }
 .team-navigation-menu {
