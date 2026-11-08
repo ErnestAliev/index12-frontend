@@ -77,7 +77,9 @@ async function done() {
     </button>
     <div class="cover-footer">
       <span class="cover-details">
-        <span class="cover-person">Кому: {{ task.assignees.map((p) => p.name).join(", ") }}</span>
+        <span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>
+        <span class="cover-divider" aria-hidden="true">/</span>
+        <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => p.name).join(', ')}`">Кому: {{ task.assignees.map((p) => p.name).join(", ") }}</span>
         <span class="cover-due">/ Когда: {{ taskDate(task) }}</span>
       </span><span v-if="task.attachments.length" class="cover-files"
         ><UiIcon name="attach" />{{ task.attachments.length }}</span
@@ -211,6 +213,9 @@ async function done() {
 .cover-due {
   white-space: nowrap;
   flex-shrink: 0;
+}
+.cover-divider {
+  flex: none;
 }
 .cover-files {
   display: flex;
