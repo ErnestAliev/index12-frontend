@@ -737,8 +737,11 @@ onBeforeUnmount(() => {
               <time v-if="taskCreatedLabel" class="task-created" :datetime="task.createdAt" aria-label="Дата и время постановки задачи">{{ taskCreatedLabel }}</time>
             </div>
             <div class="task-metadata">
-              <span class="task-meta-group">От: {{ task.creatorName }}</span>
-              <span class="task-meta-group"><span class="task-meta-label">Кому:</span><button class="task-assignee" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''">+</button></span>
+              <div class="task-meta-row">
+                <span class="task-meta-group task-meta-from"><span class="task-meta-label">От:</span><span class="task-creator" :title="task.creatorName">{{ task.creatorName }}</span></span>
+                <span class="task-meta-divider" aria-hidden="true">/</span>
+                <span class="task-meta-group task-meta-assignees"><span class="task-meta-label">Кому:</span><button class="task-assignee" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''"><UiIcon name="plus" /></button></span>
+              </div>
               <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button></span>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />

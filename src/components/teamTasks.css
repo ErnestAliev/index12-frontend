@@ -670,15 +670,21 @@
 .task-summary { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .task-summary-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
 .task-created { flex: none; font-size: 10px; line-height: 16px; white-space: nowrap; color: var(--codex-pane-muted); opacity: .55; }
-.task-metadata { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; min-width: 0; overflow: hidden; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); }
-.task-meta-group { position: relative; display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
-/* Separators sit in the gap; at a wrapped row start they fall outside the clipping edge. */
-.task-meta-group + .task-meta-group::before { content: "/"; position: absolute; left: -8px; top: 0; pointer-events: none; }
-.task-meta-label { flex: none; }
-.task-panel .task-metadata button { display: inline; min-height: 28px; max-width: 100%; margin: 0; padding: 0; font-size: inherit; line-height: inherit; color: inherit; white-space: normal; text-align: left; overflow-wrap: anywhere; vertical-align: baseline; }
-.task-panel .task-metadata .task-assignee { min-width: 0; }
-.task-panel .task-meta-when button { flex: none; white-space: nowrap; overflow-wrap: normal; }
-.task-metadata .ui-icon { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
+.task-metadata { display: flex; flex-direction: column; align-items: stretch; min-width: 0; font-size: 12px; line-height: 24px; color: var(--codex-pane-muted); }
+.task-meta-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; min-width: 0; }
+.task-meta-group { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; white-space: nowrap; }
+.task-meta-from { flex: 0 1 auto; max-width: 40%; }
+.task-meta-assignees { flex: 1; }
+.task-meta-label,.task-meta-divider { flex: none; }
+.task-creator { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.task-panel .task-metadata button { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; max-width: 100%; margin: 0; padding: 0; font-size: inherit; line-height: 24px; color: inherit; white-space: nowrap; text-align: left; }
+.task-panel .task-metadata .task-assignee { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.task-panel .task-meta-when button { flex: none; }
+.task-metadata .ui-icon { display: block; width: 14px; height: 14px; flex: none; }
+.task-panel .task-metadata .task-meta-add { position: relative; display: grid; place-items: center; flex: none; width: 32px; height: 32px; min-height: 32px; border: 0; background: transparent; }
+.task-meta-add::before { content: ""; position: absolute; inset: 5px; border: 1px solid var(--codex-pane-border); border-radius: 50%; pointer-events: none; }
+.task-meta-add::after { content: ""; position: absolute; inset: -6px; }
+.task-meta-add .ui-icon { width: 12px; height: 12px; }
 .task-summary .task-description { text-align: left; min-width: 0; line-height: 22px; }
 
 .task-text-editing::after { content: ""; position: absolute; inset: 0; z-index: 20; background: #0006; pointer-events: none; }
