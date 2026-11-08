@@ -61,8 +61,6 @@ onBeforeUnmount(() => { active = false; code.value = ''; clearInterval(timer); }
       <label>Адрес MCP-сервера<span class="mcp-field"><input :value="serverUrl" readonly aria-label="Адрес MCP-сервера" @focus="$event.target.select()" /><button type="button" title="Скопировать адрес" aria-label="Скопировать адрес MCP-сервера" @click="copy(serverUrl, 'Адрес')"><UiIcon name="copy" /></button></span></label>
       <button type="button" :disabled="creating" @click="createCode"><UiIcon name="key" />{{ creating ? 'Создаём код…' : code ? 'Получить новый код' : 'Получить код подключения' }}</button>
       <label v-if="code">Одноразовый код<span class="mcp-field"><input :value="code" readonly aria-label="Одноразовый код подключения" @focus="$event.target.select()" /><button type="button" title="Скопировать код" aria-label="Скопировать код подключения" @click="copy(code, 'Код')"><UiIcon name="copy" /></button></span></label>
-      <details><summary>Как подключить ChatGPT</summary><ol><li>В настройках ChatGPT откройте добавление своего MCP-сервера.</li><li>Вставьте адрес выше и выберите OAuth.</li><li>При подключении вставьте одноразовый код и подтвердите свои права. Код действует 15 минут.</li></ol></details>
-      <a class="mcp-open" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer"><UiIcon name="external" />Открыть ChatGPT</a>
       <div v-for="row in connections" :key="row._id" class="mcp-connection"><span>{{ row.clientName }}<small>{{ fullData && !row.financeAllowed ? 'Переподключите для доступа к полным данным' : row.scopes.includes('index12:write') ? 'Чтение и действия в чате' : 'Только чтение' }}</small></span><button type="button" :disabled="!!pending" :aria-label="`Отключить ${row.clientName}`" @click="disconnect(row._id)">Отключить</button></div>
     </template>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
@@ -74,12 +72,9 @@ onBeforeUnmount(() => { active = false; code.value = ''; clearInterval(timer); }
 .chat-mcp label { display: flex; flex-direction: column; gap: 4px; }
 .mcp-field { display: flex; align-items: center; gap: 4px; }
 .mcp-field input { box-sizing: border-box; min-width: 0; width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--codex-pane-border); border-radius: 8px; background: var(--codex-pane-surface); color: inherit; font: inherit; font-size: 16px; }
-.chat-mcp button,.mcp-open { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--codex-pane-surface); color: inherit; font: inherit; cursor: pointer; text-decoration: none; }
+.chat-mcp button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--codex-pane-surface); color: inherit; font: inherit; cursor: pointer; }
 .mcp-field > button { width: 44px; flex: none; padding: 0; }
 .chat-mcp button:disabled { opacity: .5; cursor: default; }
-.chat-mcp summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--codex-pane-muted); }
-.chat-mcp ol { margin: 0; padding-left: 20px; }
-.chat-mcp li + li { margin-top: 8px; }
 .mcp-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; border-top: 1px solid var(--codex-pane-border); }
 .mcp-connection > span { min-width: 0; overflow-wrap: anywhere; }
 .mcp-connection small { display: block; color: var(--codex-pane-muted); }
