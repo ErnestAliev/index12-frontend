@@ -1,5 +1,7 @@
 <script setup>
 import LinkedText from './LinkedText.vue';
+import { recipientName } from '@/utils/recipientName';
+import { useInputModality } from '@/composables/useInputModality';
 import {
   ref,
   computed,
@@ -37,6 +39,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["close", "created", "new"]);
 const chat = useTeamChatStore();
+const keyboard = useInputModality();
 const blank = () => ({
   id: crypto.randomUUID(),
   description: "",
@@ -59,6 +62,7 @@ const draft = ref(blank()),
   field = ref(null),
   fileInput = ref(null);
 const filters = computed(() => chat.taskFilters);
+const partyName = computed(() => { const party = active.value?.party; return chat.taskOptions.parties.find(row => row.kind === party?.kind && row.id === party?.id)?.name || active.value?.partyName || 'Без контрагента'; });
 const projectName = computed(() => chat.taskOptions.projects.find(project => project._id === active.value?.projectId)?.name || active.value?.projectName || 'Без проекта');
 async function chooseProject(projectId) {
   if (props.creating) { draft.value.projectId = projectId; go('what'); }
@@ -83,7 +87,7 @@ const taskCreatedLabel = computed(() => {
   if (!task.value?.createdAt) return '';
   const date = new Date(task.value.createdAt);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: '2-digit' }) + ' / ' + date.toLocaleTimeString('ru-RU', { timeZone: 'Asia/Almaty', hour: '2-digit', minute: '2-digit' });
 });
 const canEdit = computed(
   () =>
@@ -106,6 +110,7 @@ const selectedNames = computed(() =>
         active.value.assignees?.find((p) => p.actorId === id)?.name,
     )
     .filter(Boolean)
+    .map(recipientName)
     .join(", "),
 );
 const shownTasks = computed(() =>
@@ -453,6 +458,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     class="task-panel"
+    :data-keyboard="keyboard"
     :class="{
       wizard: creating,
       'task-details-collapsed': detailsCollapsed,
@@ -480,7 +486,7 @@ onBeforeUnmount(() => {
       <button aria-label="Назад" :disabled="busy || uploading" @click="close">
         <UiIcon name="back" />
       </button>
-      <span v-if="creating" class="creation-title">{{ parentTaskId ? 'Новая подзадача' : 'Новая задача' }}</span>
+      <span v-if="creating" aria-hidden="true" />
       <button
         v-else
         class="task-heading-title"
@@ -641,6 +647,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="creating" class="task-stage">
       <div class="task-focus">
+        <p class="creation-title">{{ parentTaskId ? 'Новая подзадача' : 'Новая задача' }}</p>
         <TeamTaskRecipientPicker
           v-if="step === 'who'"
           :people="directory"
@@ -700,9 +707,7 @@ onBeforeUnmount(() => {
           <div v-if="step === 'what'"><button type="button" @click="go('project')">Проект: {{ projectName }}</button></div>
           <div v-if="draft.assigneeIds.length">
             <button @click="go('who')">Кому: {{ selectedNames }}</button
-            ><button aria-label="Добавить ответственного" @click="go('who')">
-              +
-            </button>
+            ><button class="task-draft-add" type="button" aria-label="Добавить ответственного" @click="go('who')"><UiIcon name="plus" /></button>
           </div>
           <div v-if="draft.timing">
             <button @click="go('when')">Когда:</button
@@ -761,7 +766,7 @@ onBeforeUnmount(() => {
                 <span class="task-meta-group task-meta-assignees"><span class="task-meta-label">Кому:</span><button class="task-assignee" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''"><UiIcon name="plus" /></button></span>
               </div>
               <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button><span v-if="deadline.label" class="task-deadline-label">{{ deadline.label }}</span></span>
-              <div class="task-project-meta"><button type="button" :disabled="busy || !canEdit" aria-label="Изменить проект задачи" @click="editing = 'project'">Проект: {{ projectName }}</button><select v-if="chat.taskOptions.parties.length || task.party" :value="task.party ? task.party.kind + ':' + task.party.id : ''" aria-label="Контрагент задачи" class="ui-select" :disabled="busy || !canEdit" @change="chooseParty($event.target.value)"><option value="">Без контрагента</option><option v-for="party in chat.taskOptions.parties" :key="party.kind + ':' + party.id" :value="party.kind + ':' + party.id">{{ party.name }}</option></select></div>
+              <div class="task-project-meta"><button type="button" :disabled="busy || !canEdit" :title="projectName" aria-label="Изменить проект задачи" @click="editing = 'project'">Проект: {{ projectName }}</button><span class="task-meta-divider" aria-hidden="true">/</span><span class="task-party-picker" :title="partyName" :class="{ 'is-disabled': busy || !canEdit }"><span>{{ partyName }}</span><select :value="task.party ? task.party.kind + ':' + task.party.id : ''" aria-label="Контрагент задачи" :disabled="busy || !canEdit" @change="chooseParty($event.target.value)"><option value="">Без контрагента</option><option v-if="task.party && !chat.taskOptions.parties.some(party => party.kind === task.party.kind && party.id === task.party.id)" :value="task.party.kind + ':' + task.party.id">{{ partyName }}</option><option v-for="party in chat.taskOptions.parties" :key="party.kind + ':' + party.id" :value="party.kind + ':' + party.id">{{ party.name }}</option></select></span></div>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
             <div v-else class="task-description" :role="canEdit ? 'button' : undefined" :tabindex="canEdit ? 0 : undefined" @click="editDescription" @keydown.enter.self.prevent="editDescription" @keydown.space.self.prevent="editDescription"><LinkedText :text="task.description" /></div>
@@ -794,10 +799,10 @@ onBeforeUnmount(() => {
               <UiIcon name="attach" />{{ f.name }}
             </button>
           </div>
-          <section v-if="editing !== 'description'" class="task-subtasks" aria-label="Подзадачи">
-            <header><span>Подзадачи<span v-if="subtasks.length"> · {{ subtasks.length }}</span></span><button type="button" aria-label="Добавить подзадачу" @click="emit('new', task._id)"><UiIcon name="plus" /></button></header>
+          <section v-if="editing !== 'description' && subtasks.length" class="task-subtasks" aria-label="Подзадачи">
+            <header><span>Подзадачи: {{ subtasks.length }}</span></header>
             <div v-for="child in subtasks" :key="child._id" role="button" tabindex="0" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" :data-deadline="deadlineFor(child).tone" @click="openTask(child._id)" @keydown.enter.self.prevent="openTask(child._id)" @keydown.space.self.prevent="openTask(child._id)">
-              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><LinkedText :text="child.description" /><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}<span v-if="deadlineFor(child).label" class="task-deadline-label"> · {{ deadlineFor(child).label }}</span></small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
+              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><LinkedText :text="child.description" /><small>{{ child.assignees.map(p => recipientName(p.name)).join(', ') }} / {{ taskDate(child) }}<span v-if="deadlineFor(child).label" class="task-deadline-label"> / {{ deadlineFor(child).label }}</span></small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
             </div>
           </section>
         </div>
@@ -884,9 +889,9 @@ onBeforeUnmount(() => {
             }}</span></button
           ><div class="list-content" role="button" tabindex="0" @click="chat.requestedTaskId = t._id" @keydown.enter.self.prevent="chat.requestedTaskId = t._id" @keydown.space.self.prevent="chat.requestedTaskId = t._id">
             <span :title="t.description">{{ t.parentTaskId ? '↳ ' : '' }}<LinkedText :text="t.description" /></span
-            ><span>{{ t.assignees.map((p) => p.name).join(", ") }}</span
+            ><span>{{ t.assignees.map((p) => recipientName(p.name)).join(", ") }}</span
             ><span
-              >{{ taskDate(t) }}<span v-if="deadlineFor(t).label" class="task-deadline-label"> · {{ deadlineFor(t).label }}</span><b v-if="t.unreadCount"> {{ t.unreadCount }}</b
+              >{{ taskDate(t) }}<span v-if="deadlineFor(t).label" class="task-deadline-label"> / {{ deadlineFor(t).label }}</span><b v-if="t.unreadCount"> {{ t.unreadCount }}</b
               ><b v-if="t.mentioned"> @</b></span
             >
           </div>

@@ -198,7 +198,9 @@ onBeforeUnmount(() => {
 .recipient-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .recipient-actions { display: flex; align-items: center; gap: 4px; }
 .recipient-line .recipient-create { display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
-.recipient-create .ui-icon { width: 16px; height: 16px; }
+.recipient-line .recipient-create { position: relative; color: var(--codex-pane-accent); }
+.recipient-create::before { content: ""; position: absolute; inset: 9px; border: 1px solid currentColor; border-radius: 50%; background: color-mix(in srgb, var(--codex-pane-accent) 14%, var(--codex-pane-surface)); }
+.recipient-create .ui-icon { position: relative; width: 16px; height: 16px; }
 .recipient-choice {
   position: relative;
   display: grid;

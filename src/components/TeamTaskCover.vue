@@ -7,6 +7,7 @@ import './teamTaskStatus.css';
 import LinkedText from './LinkedText.vue';
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import { taskDate } from "@/utils/teamTasks";
+import { recipientName } from "@/utils/recipientName";
 import { useTeamTaskDeadline } from '@/composables/useTeamTaskDeadline';
 const props = defineProps({
   taskId: String,
@@ -74,8 +75,8 @@ async function done() {
       @keydown.space.self.prevent="emit('open')"
     >
       <span class="cover-title-text"
-        >{{ task.status === "done" ? "Готово · " : ""
-        }}<span v-if="task.projectId" class="cover-project" :title="task.projectName">{{ task.projectName || 'Проект' }} · </span><LinkedText :text="task.description" :highlight="highlight" /></span
+        >{{ task.status === "done" ? "Готово / " : ""
+        }}<span v-if="task.projectId" class="cover-project" :title="task.projectName">{{ task.projectName || 'Проект' }}: </span><LinkedText :text="task.description" :highlight="highlight" /></span
       ><span
         v-if="task.latest && task.status !== 'done'"
         class="cover-inline-preview"
@@ -87,8 +88,8 @@ async function done() {
       <span class="cover-details">
         <span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>
         <span class="cover-divider" aria-hidden="true">/</span>
-        <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => p.name).join(', ')}`">Кому: {{ task.assignees.map((p) => p.name).join(", ") }}</span>
-        <span class="cover-due" :title="deadline.label || undefined" :aria-label="deadline.label ? taskDate(task) + ' · ' + deadline.label : undefined">/ Когда: {{ taskDate(task) }}</span>
+        <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => recipientName(p.name)).join(', ')}`">Кому: {{ task.assignees.map((p) => recipientName(p.name)).join(", ") }}</span>
+        <span class="cover-due" :title="deadline.label || undefined" :aria-label="deadline.label ? taskDate(task) + ' / ' + deadline.label : undefined">/ Когда: {{ taskDate(task) }}</span>
       </span><button v-if="subtaskCount" type="button" class="cover-subtasks" :aria-label="`Подзадачи: ${subtaskCount}`" @pointerdown.stop @click.stop="emit('open')">↳ {{ subtaskCount }}</button><span v-if="task.attachments.length" class="cover-files"
         ><UiIcon name="attach" />{{ task.attachments.length }}</span
       ><button

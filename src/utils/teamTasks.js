@@ -24,7 +24,7 @@ export function taskDate(task) {
             day: "numeric",
             month: "short",
           });
-  return day + (task.dueTime ? " · " + task.dueTime : "");
+  return day + (task.dueTime ? " / " + task.dueTime : "");
 }
 export function taskDeadlineState(task, now = Date.now()) {
   if (!task?.dueDate || task.timing === 'none' || task.status === 'done') return { tone: '', label: '' };
