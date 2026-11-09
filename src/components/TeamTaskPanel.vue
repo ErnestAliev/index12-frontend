@@ -414,6 +414,31 @@ const hold = useTaskHold(showTaskMenu);
 const keyboardOpen = ref(false),
   detailsOpen = ref(true);
 const detailsCollapsed = computed(() => !detailsOpen.value && !editing.value);
+let detailAnimation = null;
+const interruptedDetails = new WeakMap();
+function detailFrame(element) {
+  const style = getComputedStyle(element);
+  return Object.fromEntries(['height', 'paddingTop', 'paddingBottom', 'marginTop', 'marginBottom', 'borderTopWidth', 'borderBottomWidth', 'opacity', 'transform'].map(key => [key, style[key]]));
+}
+function cancelDetailAnimation(element) {
+  if (!detailAnimation) return;
+  interruptedDetails.set(element, detailFrame(element));
+  detailAnimation.cancel();
+  detailAnimation = null;
+}
+function animateDetails(element, done, opening) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+  const expanded = detailFrame(element);
+  const collapsed = { height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', marginBottom: '0px', borderTopWidth: '0px', borderBottomWidth: '0px', opacity: '0', transform: 'translateY(-12px)' };
+  const from = interruptedDetails.get(element) || (opening ? collapsed : expanded);
+  interruptedDetails.delete(element);
+  const animation = element.animate(
+    [{ ...from, overflow: 'hidden' }, { ...(opening ? expanded : collapsed), overflow: 'hidden' }],
+    { duration: 320, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' },
+  );
+  detailAnimation = animation;
+  animation.onfinish = () => { done(); animation.cancel(); if (detailAnimation === animation) detailAnimation = null; };
+}
 function viewport() {
   const open =
     innerHeight - (window.visualViewport?.height || innerHeight) > 120;
@@ -469,6 +494,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   generation++;
+  detailAnimation?.cancel();
   closePreview();
   window.visualViewport?.removeEventListener("resize", viewport);
   window.removeEventListener("resize", viewport);
@@ -771,7 +797,8 @@ onBeforeUnmount(() => {
     <template v-else-if="taskId">
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
-        <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status" :data-deadline="deadline.tone">
+        <Transition :css="false" @enter="(element, done) => animateDetails(element, done, true)" @leave="(element, done) => animateDetails(element, done, false)" @enter-cancelled="cancelDetailAnimation" @leave-cancelled="cancelDetailAnimation">
+        <div v-show="!detailsCollapsed" class="task-overview" :inert="detailsCollapsed" :aria-hidden="detailsCollapsed" :data-task-status="task.status" :data-deadline="deadline.tone">
           <div v-if="task.parentTaskId" class="task-parent-link" role="button" tabindex="0" @click="openTask(task.parentTaskId)" @keydown.enter.self.prevent="openTask(task.parentTaskId)" @keydown.space.self.prevent="openTask(task.parentTaskId)"><UiIcon name="back" /><LinkedText :text="parentTask?.description || 'Родительская задача'" /></div>
           <div class="task-summary">
             <div class="task-summary-header">
@@ -825,6 +852,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
         </div>
+        </Transition>
         <TeamChatConversation
           :active="editing !== 'description'"
           :key="taskId"
