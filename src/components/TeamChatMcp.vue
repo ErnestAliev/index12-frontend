@@ -35,7 +35,7 @@ onBeforeUnmount(() => { active = false; clearInterval(timer); });
       <p>{{ fullData ? 'У вас полный доступ к чтению данных системы и действиям в рабочем чате.' : 'Вам доступны общий чат и ваши задачи.' }}</p>
       <p>История вопросов остаётся в вашем ChatGPT и не отображается владельцу в INDEX12. Сообщения и действия, отправленные в рабочий чат, видны участникам.</p>
       <a v-if="pluginUrl" class="mcp-install" :href="pluginUrl" target="_blank" rel="noopener noreferrer"><UiIcon name="link" />Подключить ChatGPT</a>
-      <p v-else class="mcp-publication">Плагин готовится к публикации</p>
+      <p v-else class="mcp-publication">Плагин отправлен на проверку OpenAI</p>
       <div v-for="row in connections" :key="row._id" class="mcp-connection"><span>{{ row.clientName }}<small>{{ fullData && !row.financeAllowed ? 'Переподключите для доступа к полным данным' : row.scopes.includes('index12:write') ? 'Чтение и действия в чате' : 'Только чтение' }}</small></span><button type="button" :disabled="!!pending" :aria-label="`Отключить ${row.clientName}`" @click="disconnect(row._id)">Отключить</button></div>
     </template>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
