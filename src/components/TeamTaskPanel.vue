@@ -426,6 +426,9 @@ function composerFocus() {
   if (props.mobile || matchMedia("(max-width:1024px),(pointer:coarse)").matches)
     detailsOpen.value = false;
 }
+function collapseForReading() {
+  if (!editing.value && !picker.value) detailsOpen.value = false;
+}
 watch(
   () => [props.taskId, props.creating, props.parentTaskId],
   async () => {
@@ -832,6 +835,7 @@ onBeforeUnmount(() => {
           :mobile="mobile"
           class="task-discussion"
           @composer-focus="composerFocus"
+          @reading-scroll="collapseForReading"
           @new="emit('new', $event)"
         />
       </template>

@@ -44,7 +44,7 @@ const props = defineProps({
   targetMessageId: String,
   active: { type: Boolean, default: true },
 });
-const emit = defineEmits(["new", "composer-focus", "composer-blur"]);
+const emit = defineEmits(["new", "composer-focus", "composer-blur", "reading-scroll"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 const chat = useTeamChatStore(),
   tab = computed(() => (props.taskId ? "messages" : chat.tab)),
@@ -776,6 +776,26 @@ function trackVisibleHistory() {
   if (!props.taskId) chat.olderMessageIds = watchedIds.value;
 }
 let scrollTimer;
+let readingTouch = null;
+function readingScroll() {
+  if (props.taskId && props.active && shownMessages.value.length && !selectedMessageId.value && !quoteView.value && !preview.value)
+    emit('reading-scroll');
+}
+function readingWheel(event) {
+  if (!event.ctrlKey && event.deltaY > 0 && event.deltaY > Math.abs(event.deltaX)) readingScroll();
+}
+function startReadingTouch(event) {
+  const touch = event.touches.length === 1 ? event.touches[0] : null;
+  readingTouch = touch ? { id: touch.identifier, x: touch.clientX, y: touch.clientY } : null;
+}
+function moveReadingTouch(event) {
+  if (!readingTouch || event.touches.length !== 1) { readingTouch = null; return; }
+  const touch = event.touches[0];
+  if (touch.identifier !== readingTouch.id) return;
+  const x = touch.clientX - readingTouch.x, y = touch.clientY - readingTouch.y;
+  if (Math.abs(x) > 12 && Math.abs(x) >= Math.abs(y)) { readingTouch = null; return; }
+  if (y < -12 && -y > Math.abs(x)) { readingTouch = null; readingScroll(); }
+}
 function scrollFeed() {
   if (feed.value)
     pinnedToBottom =
@@ -1003,6 +1023,11 @@ watch(
         aria-live="polite"
         :aria-busy="historyLoading || olderLoading"
         @scroll="scrollFeed"
+        @wheel.passive="readingWheel"
+        @touchstart.passive="startReadingTouch"
+        @touchmove.passive="moveReadingTouch"
+        @touchend.passive="readingTouch = null"
+        @touchcancel.passive="readingTouch = null"
       >
         <button
           v-if="historyMore && !historyLoading && !search.open"
