@@ -58,6 +58,22 @@ try {
   await page.waitForFunction(() => window.taskCalendar.tasks.some(task => task.description === 'Сохранённый текст задачи'));
   const saved = await page.evaluate(() => window.taskCalendar.tasks.find(task => task.description === 'Сохранённый текст задачи'));
   assert.deepEqual(saved.assigneeIds, ['employee']);
+  await page.evaluate(() => { Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: () => innerHeight }); window.visualViewport.dispatchEvent(new Event('resize')); });
+  await page.waitForFunction(() => document.querySelector('.codex-chat-window').getBoundingClientRect().height > 800);
+  await page.evaluate(id => { window.taskCalendar.chat.requestedTaskId = id; }, saved._id);
+  await panel.locator('.task-due').waitFor();
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+    for (const [selector, opened] of [['.task-due', '.inline-choices'], ['.task-assignee', '.recipient-line'], ['.task-project-meta > button', '.task-project-picker'], ['.task-creator', '.task-author-details']]) {
+      const link = panel.locator(selector);
+      assert.ok((await link.evaluate(el => getComputedStyle(el).textDecorationLine)).includes('underline'));
+      await link.tap(); await panel.locator(opened).waitFor();
+      assert.equal(await link.getAttribute('aria-expanded'), 'true');
+      await link.tap(); await panel.locator(opened).waitFor({ state: 'hidden' });
+      assert.equal(await link.getAttribute('aria-expanded'), 'false');
+    }
+  }
+  assert.equal(await page.evaluate(id => window.taskCalendar.tasks.find(task => task._id === id).version, saved._id), saved.version, 'inspection and repeated taps never save a change');
   await page.goto('http://127.0.0.1:5209/tests/browser/fixtures/task-calendar.html');
   await page.waitForFunction(() => window.taskCalendar);
   await page.evaluate(() => { window.taskCalendar.chat.me.owner = false; });

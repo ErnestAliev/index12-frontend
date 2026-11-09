@@ -17,7 +17,8 @@ function measure() {
   const frame = root.value.closest('.task-panel,.team-workspace,.codex-chat-window')?.getBoundingClientRect();
   const start = Math.max(left + 12 + inset('left'), (frame?.left || left) + 8), end = Math.min(left + width - 12 - inset('right'), frame?.right || left + width);
   const panelWidth = Math.min(300, end - start - 8);
-  bounds.value = { width: panelWidth + 'px', maxHeight: Math.max(80, Math.min(bottom - inset('bottom'), frame?.bottom || bottom) - box.bottom - 16) + 'px' };
+  const centeredLeft = Math.max(start, Math.min((frame ? frame.left + frame.width / 2 : left + width / 2) - panelWidth / 2, end - panelWidth));
+  bounds.value = { left: centeredLeft - box.left + 'px', right: 'auto', width: panelWidth + 'px', maxHeight: Math.max(80, Math.min(bottom - inset('bottom'), frame?.bottom || bottom) - box.bottom - 16) + 'px' };
 }
 onMounted(() => { observer = new ResizeObserver(measure); observer.observe(root.value); const frame = root.value.closest('.task-panel,.team-workspace,.codex-chat-window'); if (frame) observer.observe(frame); });
 async function toggle() { open.value = !open.value; if (open.value) { void chat.loadTaskOptions(); await nextTick(); measure(); } }

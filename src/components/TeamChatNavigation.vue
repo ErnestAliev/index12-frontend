@@ -37,6 +37,7 @@ const chat = useTeamChatStore(),
   trigger = ref(null),
   menu = ref(null),
   menuHeight = ref(420),
+  menuOffset = ref(null),
   error = ref("");
 const menuId = useId();
 const sections = computed(() => [
@@ -53,6 +54,10 @@ const label = computed(
 );
 let observer;
 function measure() {
+  if (root.value) {
+    const box = root.value.getBoundingClientRect(), header = root.value.closest('.codex-window-header')?.getBoundingClientRect();
+    menuOffset.value = header ? header.left + header.width / 2 - (box.left + box.width / 2) + 'px' : null;
+  }
   if (!open.value || !trigger.value) return;
   const viewport = window.visualViewport;
   const bottom =
@@ -148,6 +153,7 @@ watch(
   },
 );
 onMounted(() => {
+  measure();
   document.addEventListener("pointerdown", outside, true);
   document.addEventListener("keydown", keyboardInput, true);
   window.addEventListener("resize", measure);
@@ -156,6 +162,7 @@ onMounted(() => {
     observer = new ResizeObserver(measure);
     const frame = root.value?.closest(".codex-chat-window");
     if (frame) observer.observe(frame);
+    if (root.value) observer.observe(root.value);
   }
 });
 onBeforeUnmount(() => {
@@ -171,6 +178,7 @@ onBeforeUnmount(() => {
     ref="root"
     class="team-chat-navigation"
     :data-keyboard="keyboard"
+    :style="{ '--chat-menu-offset': menuOffset }"
     aria-label="Навигация чата"
     @keydown="keys"
     @focusout="
@@ -247,6 +255,7 @@ onBeforeUnmount(() => {
 </template>
 <style scoped>
 .team-chat-navigation {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -256,13 +265,15 @@ onBeforeUnmount(() => {
   min-height: 44px;
   color: var(--codex-pane-text);
 }
-.team-navigation-actions { justify-self: center; display: flex; align-items: center; min-width: 0; }
+.team-navigation-actions { grid-column: 3; justify-self: center; display: flex; align-items: center; min-width: 0; }
 .team-navigation-identity {
   min-width: 0;
   overflow: hidden;
 }
 .team-navigation-picker {
   position: relative;
+  z-index: 90;
+  transform: translateX(var(--chat-menu-offset,0px));
   min-width: 0;
 }
 .team-chat-navigation .team-navigation-trigger {

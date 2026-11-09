@@ -68,6 +68,6 @@ chat.me = { actorId: 'owner:actor', workspaceId: 'workspace', displayName: 'Эр
 chat.state = snapshot(); chat.creatingTask = true;
 const app = createApp({ render: () => view.value === 'calendar'
   ? h(Calendar, { onClose: () => { view.value = 'chat'; } })
-  : h(Frame, { open: true, mobile, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: true }, { heading: () => h(Header), default: () => h(Pane, { mobile }) }) });
+  : h(Frame, { open: true, mobile, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: !chat.isOwner }, { heading: () => h(Header), default: () => h(Pane, { mobile }) }) });
 app.use(pinia); app.mount('#app');
 window.taskCalendar = { teamApi, chat, business, tasks, people, manualTasks, messages, projects, parties, showChat: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'messages'; chat.state.messages = messages; chat.historyReady = true; }, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };

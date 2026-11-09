@@ -43,6 +43,10 @@ try {
     });
     const mainFilter = page.getByRole('button', { name: 'Фильтры чата', exact: true });
     assert.equal(await page.locator('.team-task-filter-bar').count(), 0, 'filter takes no separate feed row');
+    const alignment = await page.locator('.team-navigation-trigger').evaluate(el => { const button = el.getBoundingClientRect(), header = el.closest('.codex-window-header').getBoundingClientRect(); return Math.abs(button.left + button.width / 2 - header.left - header.width / 2); });
+    assert.ok(alignment <= 1, `chat menu is centred in the full header, including the close button: ${alignment}`);
+    await activate(page.getByRole('button', { name: 'Меню чата', exact: true }));
+    await activate(page.getByRole('dialog', { name: 'Меню чата', exact: true }).getByRole('button', { name: 'Чат', exact: true }));
     assert.equal(await page.locator('.team-chat-navigation').getByRole('button', { name: 'Фильтры чата', exact: true }).count(), 1);
     await activate(mainFilter);
     const filters = page.getByRole('region', { name: 'Фильтры задач', exact: true });
@@ -51,6 +55,7 @@ try {
     await filters.getByLabel('Фильтр по проекту').selectOption('bbbbbbbbbbbbbbbbbbbbbbbb');
     const geometry = await filters.evaluate(el => { const rect = el.getBoundingClientRect(), frame = el.closest('.codex-chat-window').getBoundingClientRect(); return { rect: rect.toJSON(), frame: frame.toJSON(), root: el.parentElement.getBoundingClientRect().toJSON(), rootPosition: getComputedStyle(el.parentElement).position, offsetParent: el.offsetParent?.className, inline: el.getAttribute('style'), bar: el.closest('.team-chat-navigation').getBoundingClientRect().toJSON(), font: getComputedStyle(el.querySelector('select')).fontSize, outline: getComputedStyle(el.querySelector('select')).outlineStyle }; });
     assert.ok(geometry.rect.x >= geometry.frame.x && geometry.rect.right <= geometry.frame.right + 1, 'filters fit the actual chat window: ' + JSON.stringify(geometry));
+    assert.ok(Math.abs(geometry.rect.left + geometry.rect.width / 2 - geometry.frame.left - geometry.frame.width / 2) <= 1, 'filter menu is centred within the chat window');
     assert.equal(geometry.font, '13px'); assert.equal(geometry.outline, 'none');
     await activate(mainFilter);
     assert.equal(await page.locator('.task-cover:visible').count(), 1, 'an older matching task appears even without its cover in recent history');
