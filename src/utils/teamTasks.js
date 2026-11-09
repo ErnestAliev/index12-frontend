@@ -73,3 +73,7 @@ export function filterTasks(tasks, filters, actorId) {
         (a.dueTime || "99").localeCompare(b.dueTime || "99"),
     );
 }
+
+export function isSelfAssignedTask(task) {
+  return !!task?.creatorId && task.assigneeIds?.length === 1 && task.assigneeIds[0] === task.creatorId;
+}

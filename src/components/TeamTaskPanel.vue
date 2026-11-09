@@ -14,6 +14,7 @@ import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import { useChatDictation } from "@/composables/useChatDictation";
 import {
   taskDate,
+  isSelfAssignedTask,
   localDay,
   taskStatuses,
   filterTasks,
@@ -88,6 +89,7 @@ onMounted(() => chat.loadTaskOptions());
 const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
+const selfAssigned = computed(() => isSelfAssignedTask(task.value));
 const active = computed(() => (props.creating ? draft.value : task.value));
 const { deadline, state: deadlineFor } = useTeamTaskDeadline(() => task.value);
 const subtasks = computed(() => (chat.state.tasks || [])
@@ -823,10 +825,10 @@ onBeforeUnmount(() => {
               <time v-if="taskCreatedLabel" class="task-created" :datetime="task.createdAt" aria-label="Дата и время постановки задачи">{{ taskCreatedLabel }}</time>
             </div>
             <div class="task-metadata">
-              <div class="task-meta-row">
-                <span class="task-meta-group task-meta-from"><span class="task-meta-label">От:</span><button type="button" class="task-creator task-meta-link" :title="task.creatorName" :aria-expanded="editing === 'from'" @click="toggleField('from')">{{ task.creatorName }}</button></span>
+              <div class="task-meta-row" :class="{ 'is-self': selfAssigned }">
+                <span class="task-meta-group task-meta-from"><span v-if="!selfAssigned" class="task-meta-label">От:</span><button type="button" class="task-creator task-meta-link" :title="task.creatorName" :aria-expanded="editing === 'from'" @click="toggleField('from')">{{ task.creatorName }}</button></span>
                 <span class="task-meta-divider" aria-hidden="true">/</span>
-                <span class="task-meta-group task-meta-assignees"><span class="task-meta-label">Кому:</span><button class="task-assignee task-meta-link" :aria-expanded="['who', 'add'].includes(editing)" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="toggleField('who')">{{ selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="toggleField('add')"><UiIcon name="plus" /></button></span>
+                <span class="task-meta-group task-meta-assignees"><span v-if="!selfAssigned" class="task-meta-label">Кому:</span><button class="task-assignee task-meta-link" :aria-expanded="['who', 'add'].includes(editing)" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="toggleField('who')">{{ selfAssigned ? 'себе' : selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="toggleField('add')"><UiIcon name="plus" /></button></span>
               </div>
               <span class="task-meta-group task-meta-when"><span class="task-meta-label">Когда:</span><button class="task-due task-meta-link" :aria-expanded="['when', 'urgent'].includes(editing) || !!picker" :disabled="busy || !canEdit" @click="toggleDeadline">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button><span v-if="deadline.label" class="task-deadline-label">{{ deadline.label }}</span></span>
               <div class="task-project-meta"><span class="task-meta-label">Проект:</span><button type="button" class="task-meta-link" :aria-expanded="editing === 'project'" :disabled="busy || !canEdit" :title="projectName" aria-label="Изменить проект задачи" @click="toggleField('project')">{{ projectName }}</button><span class="task-meta-divider" aria-hidden="true">/</span><span class="task-party-picker" :title="partyName" :class="{ 'is-disabled': busy || !canEdit }"><span>{{ partyName }}</span><select :value="task.party ? task.party.kind + ':' + task.party.id : ''" aria-label="Контрагент задачи" :disabled="busy || !canEdit" @change="chooseParty($event.target.value)"><option value="">Без контрагента</option><option v-if="task.party && !chat.taskOptions.parties.some(party => party.kind === task.party.kind && party.id === task.party.id)" :value="task.party.kind + ':' + task.party.id">{{ partyName }}</option><option v-for="party in chat.taskOptions.parties" :key="party.kind + ':' + party.id" :value="party.kind + ':' + party.id">{{ party.name }}</option></select></span></div>

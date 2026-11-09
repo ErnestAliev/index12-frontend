@@ -85,6 +85,18 @@ try {
     }
   }
   assert.equal(await page.evaluate(id => window.taskCalendar.tasks.find(task => task._id === id).version, saved._id), saved.version, 'inspection and repeated taps never save a change');
+  await page.evaluate(id => { const f = window.taskCalendar, task = f.chat.state.tasks.find(task => task._id === id); task.assigneeIds = [task.creatorId]; task.assignees = [{ actorId: task.creatorId, name: task.creatorName }]; f.chat.state.tasks = [...f.tasks]; }, saved._id);
+  assert.match(await panel.locator('.task-meta-row').innerText(), /Эрнест\s*\/\s*себе/);
+  assert.equal(await panel.locator('.task-meta-row .task-meta-label').count(), 0);
+  await panel.locator('.task-assignee').tap();
+  assert.equal(await panel.getByRole('button', { name: 'Себе', exact: true }).count(), 0);
+  await panel.locator('.task-assignee').tap();
+  await page.evaluate(() => window.taskCalendar.showChat());
+  const cover = page.locator('.task-cover').filter({ hasText: 'Сохранённый текст задачи' }).locator('.cover-details');
+  assert.match(await cover.innerText(), /Эрнест\s*\/\s*себе/);
+  assert.doesNotMatch(await cover.innerText(), /От:|Кому:/);
+  await page.evaluate(id => { const f = window.taskCalendar, task = f.chat.state.tasks.find(task => task._id === id); task.assigneeIds.push('employee'); task.assignees.push({ actorId: 'employee', name: 'Валентина' }); f.chat.state.tasks = [...f.tasks]; }, saved._id);
+  assert.match(await cover.innerText(), /От:.*Эрнест.*Кому:.*Валентине/s);
   await page.goto('http://127.0.0.1:5209/tests/browser/fixtures/task-calendar.html');
   await page.waitForFunction(() => window.taskCalendar);
   await page.evaluate(() => { window.taskCalendar.chat.me.owner = false; });

@@ -6,7 +6,7 @@ import UiIcon from "./UiIcon.vue";
 import './teamTaskStatus.css';
 import LinkedText from './LinkedText.vue';
 import TeamTaskMenu from "./TeamTaskMenu.vue";
-import { taskDate } from "@/utils/teamTasks";
+import { taskDate, isSelfAssignedTask } from "@/utils/teamTasks";
 import { recipientName } from "@/utils/recipientName";
 import { useTeamTaskDeadline } from '@/composables/useTeamTaskDeadline';
 const props = defineProps({
@@ -20,6 +20,7 @@ const chat = useTeamChatStore(),
 const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
+const selfAssigned = computed(() => isSelfAssignedTask(task.value));
 const subtaskCount = computed(() => (chat.state.tasks || []).filter(t => t.parentTaskId === props.taskId).length);
 const { deadline } = useTeamTaskDeadline(() => task.value);
 const canEdit = computed(
@@ -86,9 +87,10 @@ async function done() {
     </div>
     <div class="cover-footer">
       <span class="cover-details">
-        <span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>
+        <template v-if="selfAssigned"><span class="cover-person" :title="task.creatorName">{{ task.creatorName }}</span><span class="cover-divider" aria-hidden="true">/</span><span class="cover-self">себе</span></template>
+        <template v-else><span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>
         <span class="cover-divider" aria-hidden="true">/</span>
-        <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => recipientName(p.name)).join(', ')}`">Кому: {{ task.assignees.map((p) => recipientName(p.name)).join(", ") }}</span>
+        <span class="cover-person" :title="`Кому: ${task.assignees.map((p) => recipientName(p.name)).join(', ')}`">Кому: {{ task.assignees.map((p) => recipientName(p.name)).join(", ") }}</span></template>
         <span class="cover-due" :title="deadline.label || undefined" :aria-label="deadline.label ? taskDate(task) + ' / ' + deadline.label : undefined">/ Когда: {{ taskDate(task) }}</span>
       </span><button v-if="subtaskCount" type="button" class="cover-subtasks" :aria-label="`Подзадачи: ${subtaskCount}`" @pointerdown.stop @click.stop="emit('open')">↳ {{ subtaskCount }}</button><span v-if="task.attachments.length" class="cover-files"
         ><UiIcon name="attach" />{{ task.attachments.length }}</span
@@ -224,7 +226,7 @@ async function done() {
   white-space: nowrap;
   flex-shrink: 0;
 }
-.cover-divider {
+.cover-divider,.cover-self {
   flex: none;
 }
 .task-cover .cover-subtasks { flex: none; padding: 0 4px; min-height: 24px; border: 0; background: transparent; color: var(--codex-pane-muted); font: inherit; font-size: 11px; }
