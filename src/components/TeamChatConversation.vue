@@ -118,7 +118,8 @@ let holdTimer,
   gesture,
   highlightTimer,
   feedObserver;
-let pinnedToBottom = true;
+let positioningThread = !!props.taskId;
+let pinnedToBottom = !props.taskId;
 
 function resetSwipe() {
   gesture = null;
@@ -420,8 +421,9 @@ onMounted(async () => {
   window.addEventListener("index12:chat-dialog-closed", scheduleReads);
   if (props.taskId) await refreshConversation();
   await nextTick();
-  if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
+  if (feed.value) feed.value.scrollTop = props.taskId ? 0 : feed.value.scrollHeight;
   await revealTarget();
+  positioningThread = false;
   scheduleReads();
 });
 onBeforeUnmount(() => {
@@ -634,10 +636,10 @@ watch(
 watch(
   () => thread.value.messages.at(-1)?._id,
   async () => {
-    const nearBottom =
+    const nearBottom = !positioningThread && (!props.taskId || pinnedToBottom) && (
       !feed.value ||
-      feed.value.scrollHeight - feed.value.scrollTop - feed.value.clientHeight <
-        100;
+      feed.value.scrollHeight - feed.value.scrollTop - feed.value.clientHeight < 100
+    );
     await nextTick();
     if (nearBottom && feed.value)
       feed.value.scrollTop = feed.value.scrollHeight;
@@ -672,6 +674,7 @@ async function send() {
   mentionedPeople.value = [];
   mentionQuery.value = null;
   files.value = [];
+  pinnedToBottom = true;
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
 }
@@ -796,7 +799,7 @@ function moveReadingTouch(event) {
   if (y < -12 && -y > Math.abs(x)) { readingTouch = null; readingScroll(); }
 }
 function scrollFeed() {
-  if (feed.value)
+  if (feed.value && !positioningThread)
     pinnedToBottom =
       feed.value.scrollHeight - feed.value.scrollTop - feed.value.clientHeight <
       80;

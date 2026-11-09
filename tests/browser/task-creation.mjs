@@ -60,7 +60,18 @@ try {
   assert.deepEqual(saved.assigneeIds, ['employee']);
   await page.evaluate(() => { Object.defineProperty(window.visualViewport, 'height', { configurable: true, get: () => innerHeight }); window.visualViewport.dispatchEvent(new Event('resize')); });
   await page.waitForFunction(() => document.querySelector('.codex-chat-window').getBoundingClientRect().height > 800);
-  await page.evaluate(id => { window.taskCalendar.chat.requestedTaskId = id; }, saved._id);
+  await page.evaluate(id => {
+    const fixture = window.taskCalendar, original = fixture.teamApi.defaults.adapter;
+    const messages = Array.from({ length: 30 }, (_, index) => ({ _id: crypto.randomUUID(), taskId: id, authorId: 'employee', authorName: 'Валентина', text: `Сообщение ${String(index + 1).padStart(2, '0')}`, attachments: [], createdAt: new Date(Date.UTC(2026, 10, 9, 1, index)).toISOString() }));
+    fixture.teamApi.defaults.adapter = async config => config.url === '/messages' && config.params?.taskId === id ? { status: 200, data: { messages, hasMore: false } } : original(config);
+    fixture.tasks.find(task => task._id === id).mentionMessageId = messages.at(-1)._id;
+    fixture.chat.requestedTaskId = id;
+  }, saved._id);
+  const feed = panel.getByRole('region', { name: 'Чат задачи', exact: true });
+  await feed.getByText('Сообщение 01', { exact: true }).waitFor();
+  assert.equal(await feed.evaluate(el => el.scrollTop), 0, 'normal task entry starts at the first loaded message, not the latest mention');
+  const opening = await panel.evaluate(el => { const card = el.querySelector('.task-overview').getBoundingClientRect(), first = el.querySelector('[data-message-id]').getBoundingClientRect(), feed = el.querySelector('.team-feed').getBoundingClientRect(); return { cardBottom: card.bottom, firstTop: first.top, feedTop: feed.top, overflowing: el.querySelector('.team-feed').scrollHeight > feed.height }; });
+  assert.ok(opening.overflowing && opening.firstTop >= opening.cardBottom && opening.firstTop >= opening.feedTop, JSON.stringify(opening));
   await panel.locator('.task-due').waitFor();
   for (const theme of ['dark', 'light']) {
     await page.evaluate(value => document.documentElement.dataset.theme = value, theme);

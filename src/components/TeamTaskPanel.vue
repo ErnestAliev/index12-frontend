@@ -878,7 +878,7 @@ onBeforeUnmount(() => {
           :key="taskId"
           :task-id="taskId"
           :target-message-id="
-            chat.requestedTaskMessageId || task.mentionMessageId
+            chat.requestedTaskMessageId
           "
           :mobile="mobile"
           class="task-discussion"
