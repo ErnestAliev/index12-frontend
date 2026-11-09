@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
+import { defaultTaskFilters } from '@/utils/teamTasks';
 const base =
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window === "undefined"
@@ -129,6 +130,21 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     open = ref(false),
     busy = ref(false),
     unread = ref(0);
+  const taskFilters = ref(defaultTaskFilters()), taskOptions = ref({ projects: [], parties: [] }), taskOptionsLoading = ref(false), taskOptionsError = ref('');
+  let optionsPending;
+  function loadTaskOptions() {
+    if (optionsPending || me.value?.status !== 'active') return optionsPending;
+    const current = generation;
+    taskOptionsLoading.value = true; taskOptionsError.value = '';
+    optionsPending = (async () => {
+      try {
+        const { data } = await teamApi.get('/task-options');
+        if (current === generation) taskOptions.value = { projects: Array.isArray(data.projects) ? data.projects : [], parties: Array.isArray(data.parties) ? data.parties : [] };
+      } catch (error) { if (current === generation) taskOptionsError.value = teamError(error); }
+      finally { if (current === generation) { taskOptionsLoading.value = false; optionsPending = null; } }
+    })();
+    return optionsPending;
+  }
   const isOwner = computed(
     () =>
       me.value?.owner === true || me.value?.permissions?.manageMembers === true,
@@ -163,6 +179,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     source?.close();
     source = null;
     me.value = null;
+    taskFilters.value = defaultTaskFilters(); taskOptions.value = { projects: [], parties: [] }; taskOptionsLoading.value = false; taskOptionsError.value = ''; optionsPending = null;
     state.value = { messages: [], tasks: [], members: [], people: [] };
     notice.value = "";
     olderMessageIds.value = [];
@@ -553,6 +570,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     me,
+    taskFilters, taskOptions, taskOptionsLoading, taskOptionsError, loadTaskOptions,
     messageDeletions,
     failedMessageDeletions,
     deleteMessage,

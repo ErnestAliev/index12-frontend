@@ -10,6 +10,8 @@ import {
 import UiIcon from "./UiIcon.vue";
 import { canSeeChatMessage } from "@/utils/teamMessageVisibility";
 import TeamSearchText from "./TeamSearchText.vue";
+import TeamTaskFilters from './TeamTaskFilters.vue';
+import { filterTasks, hasTaskFilters } from '@/utils/teamTasks';
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 const search = useTeamChatSearchStore();
 let searchScroll = 0;
@@ -482,7 +484,13 @@ const shownMessages = computed(() => {
     (search.result.taskId || null) === (props.taskId || null)
       ? search.result.messages
       : normalMessages.value;
-  return rows.filter((m) => !m.deletedAt && !chat.messageDeletions[m._id]);
+  const visible = rows.filter((m) => !m.deletedAt && !chat.messageDeletions[m._id]);
+  if (props.taskId || search.open || !hasTaskFilters(chat.taskFilters)) return visible;
+  const tasks = filterTasks(chat.state.tasks || [], chat.taskFilters, chat.me.actorId), ids = new Set(tasks.map(task => task._id));
+  const filtered = visible.filter(message => message.kind === 'task' ? ids.has(message.taskId) : !hasTaskFilters(chat.taskFilters, true) && message.authorId === chat.taskFilters.person);
+  // Task summaries cover the whole chat, including cards older than the loaded message page.
+  for (const task of tasks) if (!filtered.some(message => message.kind === 'task' && message.taskId === task._id)) filtered.push({ _id: task._id, taskId: task._id, kind: 'task', text: '', authorId: task.creatorId, authorName: task.creatorName, attachments: [], createdAt: task.createdAt || new Date(0).toISOString() });
+  return filtered.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id));
 });
 watch(
   () => search.open,
@@ -985,6 +993,7 @@ watch(
       Запрос отправлен владельцу. Ожидается одобрение
     </div>
     <template v-else>
+      <div v-if="!taskId && !search.open" class="team-task-filter-bar"><TeamTaskFilters label="Фильтры чата" /></div>
       <div
         ref="feed"
         class="team-feed"

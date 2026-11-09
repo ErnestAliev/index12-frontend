@@ -12,7 +12,7 @@ import CalendarDeletedTasks from './CalendarDeletedTasks.vue';
 const emit = defineEmits(['close']);
 const keyboardNavigation = useInputModality();
 const business = useBusinessStore(), main = useMainStore(), chat = useTeamChatStore();
-const employee = ref('all'), filterOpen = ref(false), deletedOpen = ref(false), agendaUndated = ref(false);
+const employee = ref('all'), project = ref(''), filterOpen = ref(false), deletedOpen = ref(false), agendaUndated = ref(false);
 const now = ref(Date.now()), month = ref(dayAt().slice(0, 7)), selected = ref(dayAt()), query = ref(''), party = ref(''), statuses = ref(Object.keys(statusLabels)), error = ref(''), dropDate = ref(null), popover = ref(null), editor = ref(null);
 const weekdays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const days = computed(() => monthDays(month.value));
@@ -20,7 +20,7 @@ const today = computed(() => dayAt(now.value));
 const monthLabel = computed(() => new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' }).replace(' г.', ''));
 const parties = computed(() => [{ key: 'companies', label: 'Мои компании' }, { key: 'contractors', label: 'Контрагенты' }, { key: 'individuals', label: 'Физические лица' }].map(group => ({ ...group, rows: main[group.key] || [] })));
 const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-const filtered = computed(() => business.tasks.filter(task => matchesEmployee(task, employee.value, business.status?.actorId) && (!party.value || `${task.party?.kind || 'companies'}:${task.party?.id || task.companyId}` === party.value) && normalize(`${task.title} ${task.description || ''} ${task.partyName || ''}`).includes(normalize(query.value))));
+const filtered = computed(() => business.tasks.filter(task => matchesEmployee(task, employee.value, business.status?.actorId) && (!project.value || (project.value === '__none__' ? !task.projectId : task.projectId === project.value)) && (!party.value || `${task.party?.kind || 'companies'}:${task.party?.id || task.companyId}` === party.value) && normalize(`${task.title} ${task.description || ''} ${task.partyName || ''} ${task.projectName || ''}`).includes(normalize(query.value))));
 const visible = computed(() => filtered.value.filter(task => statuses.value.includes(taskState(task, now.value))));
 const counts = computed(() => Object.fromEntries(Object.keys(statusLabels).map(key => [key, filtered.value.filter(task => taskState(task, now.value) === key).length])));
 const eventTime = task => task.dueTime || (task.startsAt ? timeAt(task.startsAt) : '');
@@ -94,6 +94,7 @@ onBeforeUnmount(() => { business.setCalendarVisible(false); clearInterval(clock)
           <div class="calendar-filter-fields"><label v-for="(label, key) in statusLabels" :key="key" class="status-filter" :data-status="key"><input v-model="statuses" type="checkbox" :value="key" /><span>{{ label }}</span><small>{{ counts[key] }}</small></label>
           <select v-model="party" aria-label="Фильтр по контрагенту" class="ui-select"><option value="">Все контрагенты</option><optgroup v-for="group in parties" :key="group.key" :label="group.label"><option v-for="row in group.rows" :key="row._id" :value="`${group.key}:${row._id}`">{{ row.name }}</option></optgroup></select>
           <select v-model="employee" aria-label="Фильтр по сотруднику" class="ui-select"><option value="all">Все сотрудники</option><option value="mine">Мои</option><option v-for="person in business.people" :key="person._id" :value="person._id">{{ person.name }}</option></select>
+          <select v-model="project" aria-label="Фильтр по проекту" class="ui-select"><option value="">Все проекты</option><option v-for="row in main.projects" :key="row._id" :value="row._id">{{ row.name }}</option><option value="__none__">Без проекта</option></select>
           </div>
           <div v-if="unscheduled.length" class="unscheduled"><h3>Без даты <small>{{ unscheduled.length }}</small></h3><button v-for="task in unscheduled" :key="task._id" type="button" @click="show(task, selected)">{{ task.title }}</button></div>
         </aside>

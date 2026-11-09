@@ -25,6 +25,8 @@ import { useTeamMedia } from "@/composables/useTeamMedia";
 import TeamTaskTextEditor from "./TeamTaskTextEditor.vue";
 import TeamTaskStatusSelect from "./TeamTaskStatusSelect.vue";
 import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
+import TeamTaskProjectPicker from './TeamTaskProjectPicker.vue';
+import TeamTaskFilters from './TeamTaskFilters.vue';
 import { useTaskHold } from "@/composables/useTaskHold";
 const props = defineProps({
   creating: Boolean,
@@ -44,6 +46,7 @@ const blank = () => ({
   dueTime: null,
   attachments: [],
   status: "open",
+  projectId: null,
 });
 const draft = ref(blank()),
   step = ref("who"),
@@ -54,16 +57,15 @@ const draft = ref(blank()),
   busy = ref(false),
   uploading = ref(false),
   field = ref(null),
-  fileInput = ref(null),
-  filterOpen = ref(false);
-const filters = ref({
-  status: "all",
-  mine: false,
-  person: "",
-  period: "",
-  from: "",
-  to: "",
-});
+  fileInput = ref(null);
+const filters = computed(() => chat.taskFilters);
+const projectName = computed(() => chat.taskOptions.projects.find(project => project._id === active.value?.projectId)?.name || active.value?.projectName || 'Без проекта');
+async function chooseProject(projectId) {
+  if (props.creating) { draft.value.projectId = projectId; go('what'); }
+  else if (await update({ projectId })) editing.value = '';
+}
+function chooseParty(value) { const [kind, id] = value.split(':'); void update({ party: value ? { kind, id } : null }); }
+onMounted(() => chat.loadTaskOptions());
 const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
@@ -175,7 +177,7 @@ function chooseTiming(value) {
     if (props.creating) {
       draft.value.dueDate = null;
       draft.value.dueTime = null;
-      go("what");
+      go("project");
     } else
       update({ timing: value, dueDate: null, dueTime: null }).then((ok) => {
         if (ok) editing.value = "";
@@ -197,7 +199,7 @@ async function chooseDate(date) {
   if (props.creating) {
     draft.value.dueDate = date;
     if (!draft.value.timing) draft.value.timing = "deadline";
-    go("what");
+    go("project");
   } else if (
     await update({
       dueDate: date,
@@ -362,7 +364,6 @@ async function saveDescription() {
 }
 function close() {
   if (editing.value === 'description') { saveDescription(); return; }
-  if (filterOpen.value) { filterOpen.value = false; return; }
   if (busy.value || uploading.value) return;
   if (picker.value) {
     picker.value = "";
@@ -664,6 +665,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+        <TeamTaskProjectPicker v-else-if="step === 'project'" :selected="draft.projectId" :disabled="busy" @select="chooseProject" />
         <div v-else class="task-description-box">
           <textarea
             ref="field"
@@ -693,6 +695,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="draft-summary">
+          <div v-if="step === 'what'"><button type="button" @click="go('project')">Проект: {{ projectName }}</button></div>
           <div v-if="draft.assigneeIds.length">
             <button @click="go('who')">Кому: {{ selectedNames }}</button
             ><button aria-label="Добавить ответственного" @click="go('who')">
@@ -756,10 +759,12 @@ onBeforeUnmount(() => {
                 <span class="task-meta-group task-meta-assignees"><span class="task-meta-label">Кому:</span><button class="task-assignee" :title="selectedNames" :aria-label="`Кому: ${selectedNames}`" :disabled="busy || !canEdit" @click="editing = 'who'; query = ''">{{ selectedNames }}</button><button class="task-meta-add" :disabled="busy || !canEdit" aria-label="Добавить ответственного" @click="editing = 'add'; query = ''"><UiIcon name="plus" /></button></span>
               </div>
               <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button><span v-if="deadline.label" class="task-deadline-label">{{ deadline.label }}</span></span>
+              <div class="task-project-meta"><button type="button" :disabled="busy || !canEdit" aria-label="Изменить проект задачи" @click="editing = 'project'">Проект: {{ projectName }}</button><select v-if="chat.taskOptions.parties.length || task.party" :value="task.party ? task.party.kind + ':' + task.party.id : ''" aria-label="Контрагент задачи" class="ui-select" :disabled="busy || !canEdit" @change="chooseParty($event.target.value)"><option value="">Без контрагента</option><option v-for="party in chat.taskOptions.parties" :key="party.kind + ':' + party.id" :value="party.kind + ':' + party.id">{{ party.name }}</option></select></div>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
             <div v-else class="task-description" :role="canEdit ? 'button' : undefined" :tabindex="canEdit ? 0 : undefined" @click="editDescription" @keydown.enter.self.prevent="editDescription" @keydown.space.self.prevent="editDescription"><LinkedText :text="task.description" /></div>
           </div>
+          <TeamTaskProjectPicker v-if="editing === 'project'" :selected="task.projectId" :disabled="busy" @select="chooseProject" />
           <TeamTaskRecipientPicker
             v-if="['who', 'add'].includes(editing)"
             :key="editing"
@@ -846,65 +851,8 @@ onBeforeUnmount(() => {
           @click="filters.status = s.id"
         >
           {{ s.label }}</button
-        ><button
-          class="task-filter-toggle"
-          aria-label="Фильтры"
-          :aria-expanded="filterOpen"
-          @click="filterOpen = !filterOpen"
-        >
-          <UiIcon name="filter" /></button
-        ><button aria-label="Новая задача" @click="emit('new')">
+        ><TeamTaskFilters /><button aria-label="Новая задача" @click="emit('new')">
           <UiIcon name="plus" />
-        </button>
-      </div>
-      <div v-if="filterOpen" class="task-filter-backdrop" @click.stop="filterOpen = false" />
-      <div v-if="filterOpen" class="task-filters" role="region" aria-label="Фильтры задач">
-        <label
-          ><input v-model="filters.mine" type="checkbox" />Поставлены
-          мной</label
-        ><label
-          >Ответственный<select
-            v-model="filters.person"
-            aria-label="Ответственный"
-          >
-            <option value="">Все</option>
-            <option v-for="p in directory" :key="p._id" :value="p._id">
-              {{ p.name }}
-            </option>
-          </select></label
-        ><label
-          >Срок<select
-            aria-label="Срок"
-            v-model="filters.period"
-            @change="
-              filters.from = '';
-              filters.to = '';
-            "
-          >
-            <option value="">Любой срок</option>
-            <option value="today">Сегодня</option>
-            <option value="none">Без срока</option>
-            <option value="range">Период</option>
-          </select></label
-        >
-        <div v-if="filters.period === 'range'">
-          <label>С<input v-model="filters.from" type="date" /></label
-          ><label>По<input v-model="filters.to" type="date" /></label>
-        </div>
-        <button
-          @click="
-            filters = {
-              status: 'all',
-              mine: false,
-              person: '',
-              period: '',
-              from: '',
-              to: '',
-            };
-            filterOpen = false
-          "
-        >
-          Сбросить
         </button>
       </div>
       <div class="task-list">

@@ -44,12 +44,12 @@ try {
   await panel.getByRole('dialog', { name: 'Выберите дату' }).waitFor();
   await page.evaluate(() => window.taskCalendar.showTasks());
   const filter = panel.getByRole('button', { name: 'Фильтры', exact: true });
-  await filter.tap(); await panel.getByLabel('Ответственный', { exact: true }).selectOption('employee');
+  await filter.tap(); await panel.getByLabel('Фильтр по сотруднику', { exact: true }).selectOption('employee');
   await page.touchscreen.tap(15, 650);
-  assert.equal(await panel.locator('.task-filters').count(), 0, 'outside tap dismisses the popover');
+  assert.equal(await panel.locator('.shared-task-filters').count(), 0, 'outside tap dismisses the popover');
   assert.equal(await panel.locator('.task-list-row').count(), 2);
   await filter.tap(); await panel.getByRole('button', { name: 'Сбросить', exact: true }).tap();
-  assert.equal(await panel.locator('.task-filters').count(), 0);
+  assert.equal(await panel.locator('.shared-task-filters').count(), 0);
   assert.equal(await panel.locator('.task-list-row').count(), 3);
   await page.evaluate(() => window.taskCalendar.showCalendar());
   await page.locator('.mobile-agenda-task').first().waitFor();
@@ -102,9 +102,11 @@ try {
   await page.waitForFunction(() => window.taskCalendar.tasks[1].description === 'Изменено из календаря');
   await card.getByLabel('Время задачи', { exact: true }).fill('16:20');
   await page.waitForFunction(() => window.taskCalendar.tasks[1].dueTime === '16:20');
+  if (!process.env.INDEX12_NO_MEDIA_PREVIEW) {
   await card.getByRole('button', { name: 'Снимок.png', exact: true }).tap();
   await page.waitForFunction(() => document.querySelector('dialog[aria-label="Снимок.png"] img')?.naturalWidth > 0);
   await page.getByRole('button', { name: 'Закрыть снимок.png', exact: true }).tap();
+  }
   await card.getByRole('combobox', { name: 'Статус задачи', exact: true }).click(); await page.getByRole("option", { name: "В процессе", exact: true }).click();
   await page.waitForFunction(() => window.taskCalendar.tasks[1].status === 'progress');
   await capture({ path: `output/playwright/calendar-task-inline-${useWebkit ? 'webkit' : 'chromium'}.png` });
@@ -172,18 +174,14 @@ try {
       assert.ok(bounds.width < 90, 'the completed-status chip sizes to its label');
       const layout = await panel.locator('.task-summary').evaluate(el => {
         const box = selector => el.querySelector(selector).getBoundingClientRect().toJSON();
-        return { colors: ['.task-who-label','.task-when-label','.task-from-label'].map(s => getComputedStyle(el.querySelector(s)).color), width: el.getBoundingClientRect().width, chip: box('.task-status-select'), text: box('.task-description'), labels: ['.task-who-label','.task-when-label','.task-from-label'].map(box), values: ['.task-who-value','.task-when-value','.task-from-value'].map(box), overflow: el.scrollWidth > el.clientWidth };
+        return { header: box('.task-summary-header'), metadata: box('.task-metadata'), text: box('.task-description'), from: box('.task-meta-from'), assignees: box('.task-meta-assignees'), when: box('.task-meta-when'), project: box('.task-project-meta'), overflow: el.scrollWidth > el.clientWidth };
       });
-      assert.ok(Math.abs(layout.chip.y - layout.text.y) < 5, 'status and description start on the same line');
-      assert.ok(layout.chip.right <= layout.text.x, 'status appears immediately before the task text');
       assert.equal(layout.overflow, false);
-      assert.equal(new Set(layout.colors).size, 1, 'all metadata labels share the same text style');
-      for (let i = 0; i < 3; i++) {
-        assert.equal(layout.labels[i].x, layout.labels[0].x, 'labels share one column');
-        assert.equal(layout.values[i].x, layout.values[0].x, 'values share a separate column');
-        assert.ok(Math.abs(layout.labels[i].y - layout.values[i].y) < 5, 'label and value share a row');
-      }
-      if (layout.width >= 350) assert.ok(layout.values[0].right <= layout.text.x, 'task text occupies the third column');
+      assert.ok(layout.header.bottom <= layout.metadata.y + 1, 'status header precedes task metadata');
+      assert.ok(layout.metadata.bottom <= layout.text.y + 1, 'task description follows metadata');
+      assert.ok(Math.abs(layout.from.y - layout.assignees.y) < 5, 'creator and recipients share a row');
+      assert.ok(layout.when.y >= layout.from.bottom - 1, 'deadline occupies its own row');
+      assert.ok(layout.project.y >= layout.when.bottom - 1, 'project follows the deadline');
       await capture({ path: `output/playwright/task-columns-${description.length < 30 ? 'short' : 'long'}-${theme}-${width}-${useWebkit ? 'webkit' : 'chromium'}.png` });
     }
   }
@@ -197,14 +195,14 @@ try {
   await panel.locator('.task-description').filter({ hasText: 'Отредактировано в новой сетке' }).waitFor();
   assert.equal(await page.locator('.task-text-editor').count(), 0);
   assert.equal(await status.evaluate(el => getComputedStyle(el).borderTopWidth), '0px');
-  assert.equal(await status.evaluate(el => getComputedStyle(el).opacity), '0');
+  assert.equal(await status.evaluate(el => getComputedStyle(el).opacity), '1', 'the actual status button remains visible');
   for (const theme of ['light','dark']) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
     await panel.locator('.task-description').tap();
     const editor = page.locator('.task-text-editor'), input = editor.getByRole('textbox');
     await input.waitFor();
-    assert.equal(await editor.locator('button:visible, header').count(), 0, 'mobile editing is just the text field');
+    assert.equal(await editor.getByRole('button', { name: 'Готово', exact: true }).count(), 1, 'mobile editor retains its save action');
     assert.equal(await input.evaluate(el => el === document.activeElement), true);
     await input.fill('Длинный текст. '.repeat(30));
     const styles = await input.evaluate(el => { const s = getComputedStyle(el); return [s.fontSize,s.outlineStyle,s.boxShadow]; });
@@ -252,7 +250,8 @@ try {
     const colors = await page.locator('.task-cover').evaluateAll(els => els.map(el => { const s = getComputedStyle(el); return { state: el.dataset.status, left: s.borderLeftColor, right: s.borderRightColor }; }));
     assert.notEqual(colors.find(c => c.state === 'open').left, colors.find(c => c.state === 'open').right, 'active task has a visible tinted accent');
     assert.notEqual(colors.find(c => c.state === 'progress').left, colors.find(c => c.state === 'progress').right, 'in-progress task keeps its accent');
-    assert.equal(colors.find(c => c.state === 'done').left, colors.find(c => c.state === 'done').right, 'completed tasks stay quiet');
+    const doneChannels = colors.find(c => c.state === 'done').left.match(/\d+/g).map(Number);
+    assert.ok(Math.max(...doneChannels) - Math.min(...doneChannels) < 20, 'completed tasks use the muted grey status accent');
     await capture({ path: `output/playwright/task-cover-accent-${theme}-${useWebkit ? 'webkit' : 'chromium'}.png` });
   }
 

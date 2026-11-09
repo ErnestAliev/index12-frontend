@@ -9,12 +9,15 @@ import { useTeamChatStore, teamApi } from '/src/stores/teamChatStore.js';
 import { useBusinessStore } from '/src/stores/businessStore.js';
 import { businessApi } from '/src/services/businessApi.js';
 import { dayAt } from '/src/utils/calendarTime.js';
+import { useMainStore } from '/src/stores/mainStore.js';
+const projects = [{ _id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Проект Пушкина' }, { _id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Проект Жандосова' }];
+const parties = [{ kind: 'contractors', id: 'cccccccccccccccccccccccc', name: 'Контрагент из системы' }];
 const people = [
   { _id: 'owner:actor', name: 'Эрнест', role: 'manager' },
   { _id: 'director', name: 'Данияр', role: 'director' },
   { _id: 'employee', name: 'Валентина', role: 'employee' },
 ];
-const day = dayAt(), view = ref('chat');
+const day = dayAt(), view = ref('chat'), mobile = !new URLSearchParams(location.search).has('desktop');
 const manualTasks = [], messages = [];
 const tasks = [
   { _id: '11111111-1111-4111-8111-111111111111', description: 'Моя задача', assigneeIds: ['owner:actor'], dueDate: day, dueTime: null },
@@ -25,11 +28,12 @@ const project = task => ({ ...task, _id: 'chat:' + task._id, source: 'team-chat'
 const projected = () => tasks.filter(task => !task.deletedAt).map(project);
 const snapshot = () => ({ tasks: tasks.filter(task => !task.deletedAt), people, messages, members: [], hasMore: false });
 teamApi.defaults.adapter = async config => {
+  if (config.url === '/task-options') return { status: 200, data: { projects, parties } };
   if (config.url.startsWith('/files/')) return { status: 200, data: new Blob([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZioAAAAASUVORK5CYII='), ch => ch.charCodeAt(0))], { type: 'image/png' }) };
   if (config.url === '/state') return { status: 200, data: snapshot() };
   if (config.url === '/tasks' && config.method === 'post') {
     const input = JSON.parse(config.data);
-    const task = { ...input, _id: input.id, workspaceId: 'workspace', creatorId: 'owner:actor', creatorName: 'Эрнест', version: 0, createdAt: new Date().toISOString(), attachments: input.attachments || [], assignees: input.assigneeIds.map(id => ({ actorId: id, name: people.find(p => p._id === id).name })) };
+    const task = { ...input, projectName: projects.find(project => project._id === input.projectId)?.name || '', _id: input.id, workspaceId: 'workspace', creatorId: 'owner:actor', creatorName: 'Эрнест', version: 0, createdAt: new Date().toISOString(), attachments: input.attachments || [], assignees: input.assigneeIds.map(id => ({ actorId: id, name: people.find(p => p._id === id).name })) };
     tasks.push(task);
     if (!task.parentTaskId) messages.push({ _id: task._id, taskId: task._id, kind: 'task', authorId: task.creatorId, authorName: task.creatorName, createdAt: task.createdAt, text: '', attachments: [] });
     return { status: 201, data: { task } };
@@ -46,7 +50,7 @@ teamApi.defaults.adapter = async config => {
   if (config.url.startsWith('/tasks/') && config.method === 'get') return { status: 200, data: { task: tasks.find(t => t._id === config.url.split('/').at(-1)) } };
   if (config.url.startsWith('/tasks/') && config.method === 'patch') {
     const task = tasks.find(t => t._id === config.url.split('/').at(-1));
-    Object.assign(task, JSON.parse(config.data)); task.version++;
+    Object.assign(task, JSON.parse(config.data)); task.projectName = projects.find(project => project._id === task.projectId)?.name || ''; task.partyName = parties.find(party => party.id === task.party?.id)?.name || ''; task.version++;
     return { status: 200, data: { task, calendarTask: project(task) } };
   }
   return { status: 200, data: {} };
@@ -59,10 +63,11 @@ businessApi.defaults.adapter = async config => {
   return { status: 200, data: {} };
 };
 const pinia = createPinia(), chat = useTeamChatStore(pinia), business = useBusinessStore(pinia);
+useMainStore(pinia).projects = projects;
 chat.me = { actorId: 'owner:actor', workspaceId: 'workspace', displayName: 'Эрнест', name: 'INDEX12', role: 'manager', status: 'active', owner: true, roles: {} };
 chat.state = snapshot(); chat.creatingTask = true;
 const app = createApp({ render: () => view.value === 'calendar'
   ? h(Calendar, { onClose: () => { view.value = 'chat'; } })
-  : h(Frame, { open: true, mobile: true, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: true }, { heading: () => h(Header), default: () => h(Pane, { mobile: true }) }) });
+  : h(Frame, { open: true, mobile, hideHeading: chat.creatingTask || !!chat.requestedTaskId, headingOwnsClose: true }, { heading: () => h(Header), default: () => h(Pane, { mobile }) }) });
 app.use(pinia); app.mount('#app');
-window.taskCalendar = { teamApi, chat, business, tasks, people, manualTasks, messages, showChat: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'messages'; chat.state.messages = messages; chat.historyReady = true; }, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };
+window.taskCalendar = { teamApi, chat, business, tasks, people, manualTasks, messages, projects, parties, showChat: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'messages'; chat.state.messages = messages; chat.historyReady = true; }, showCalendar: () => { view.value = 'calendar'; }, showTasks: () => { view.value = 'chat'; chat.creatingTask = false; chat.requestedTaskId = null; chat.tab = 'tasks'; } };

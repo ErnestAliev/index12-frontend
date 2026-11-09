@@ -40,11 +40,24 @@ export const taskStatuses = [
   { id: "delayed", label: "Не успеваю" },
   { id: "done", label: "Готово" },
 ];
+export const taskDisplayStatuses = { planned: 'Запланировано', today: 'На сегодня', done: 'Исполнено', overdue: 'Просрочено' };
+export const defaultTaskFilters = () => ({ status: 'all', statuses: Object.keys(taskDisplayStatuses), mine: false, person: '', projectId: '', party: '', period: '', from: '', to: '' });
+export function taskDisplayState(task, now = Date.now()) {
+  if (task.status === 'done') return 'done';
+  if (taskDeadlineState(task, now).tone === 'overdue') return 'overdue';
+  return task.dueDate === localDay() ? 'today' : 'planned';
+}
+export function hasTaskFilters(filters, taskOnly = false) {
+  return (!!filters.person && !taskOnly) || !!(filters.projectId || filters.party || filters.mine || filters.period || filters.from || filters.to) || (filters.status && filters.status !== 'all') || (filters.statuses && filters.statuses.length !== 4);
+}
 export function filterTasks(tasks, filters, actorId) {
   return tasks
     .filter(
       (t) =>
-        (filters.status === "all" || t.status === filters.status) &&
+        (!filters.status || filters.status === "all" || t.status === filters.status) &&
+        (!filters.statuses || filters.statuses.includes(taskDisplayState(t))) &&
+        (!filters.projectId || (filters.projectId === '__none__' ? !t.projectId : t.projectId === filters.projectId)) &&
+        (!filters.party || `${t.party?.kind}:${t.party?.id}` === filters.party) &&
         (!filters.mine || t.creatorId === actorId) &&
         (!filters.person || t.assigneeIds.includes(filters.person)) &&
         (!filters.from || (t.dueDate && t.dueDate >= filters.from)) &&

@@ -75,7 +75,7 @@ async function done() {
     >
       <span class="cover-title-text"
         >{{ task.status === "done" ? "Готово · " : ""
-        }}<LinkedText :text="task.description" :highlight="highlight" /></span
+        }}<span v-if="task.projectId" class="cover-project" :title="task.projectName">{{ task.projectName || 'Проект' }} · </span><LinkedText :text="task.description" :highlight="highlight" /></span
       ><span
         v-if="task.latest && task.status !== 'done'"
         class="cover-inline-preview"
@@ -121,6 +121,7 @@ async function done() {
   </div>
 </template>
 <style scoped>
+.cover-project { display: inline-block; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; color: var(--codex-pane-muted); font-size: 12px; }
 .task-cover {
   align-self: stretch;
   flex-shrink: 0;

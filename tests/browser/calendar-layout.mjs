@@ -64,7 +64,7 @@ try {
     for (const rect of [geometry.date, geometry.endDate, geometry.start, geometry.end]) {
       assert.ok(rect.x >= geometry.card.x && rect.right <= geometry.card.right + 1 && rect.height <= 40);
     }
-    if (width !== 320) await card.screenshot({ path: `output/playwright/calendar-manual-${theme}-${width}-${engine}.png` });
+    if (width !== 320 && !process.env.INDEX12_NO_SCREENSHOTS) await card.screenshot({ path: `output/playwright/calendar-manual-${theme}-${width}-${engine}.png` });
     await card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }).click();
     await page.getByRole('button', { name: 'Удалённые задачи', exact: true }).click();
     const trash = page.getByRole('dialog', { name: 'Удалённые задачи', exact: true });
@@ -92,7 +92,7 @@ try {
     await page.keyboard.press('Tab'); await deletedSearch.focus();
     assert.notEqual(await deletedSearch.evaluate(el => getComputedStyle(el).outlineStyle), 'none', 'keyboard navigation retains an indicator');
     await deletedSearch.click();
-    if (width !== 320) await trash.screenshot({ path: `output/playwright/calendar-trash-${theme}-${width}-${engine}.png` });
+    if (width !== 320 && !process.env.INDEX12_NO_SCREENSHOTS) await trash.screenshot({ path: `output/playwright/calendar-trash-${theme}-${width}-${engine}.png` });
     assert.deepEqual(errors, []); await page.close();
   }
   console.log(`PASS (${engine}): light/dark, 320/390/1280, compact manual title, paired dates/times, pointer/keyboard focus, opaque top-layer trash and deletion timestamps without overlap`);

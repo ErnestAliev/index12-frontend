@@ -9,18 +9,21 @@ import { teamApi, useTeamChatStore } from '@/stores/teamChatStore';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import CalendarPartySelect from './CalendarPartySelect.vue';
 import { useBusinessStore } from '@/stores/businessStore';
+import { useMainStore } from '@/stores/mainStore';
 import { businessApi, businessError } from '@/services/businessApi';
 import { addDays, dayAt, timeAt, localInstant, statusLabels, taskState, defaultSlot, oneHourEnd } from '@/utils/calendarTime';
 const props = defineProps({ task: { type: Object, default: null }, date: { type: String, required: true } });
 const emit = defineEmits(['close', 'saved', 'reload', 'open-chat']);
 const business = useBusinessStore();
 const chat = useTeamChatStore();
+const main = useMainStore();
 const keyboardNavigation = useInputModality();
 const isChat = props.task?.source === 'team-chat';
 const recipientOpen = ref(false);
 const panel = ref(null), fileInput = ref(null), busy = ref(false), uploading = ref(false), error = ref(''), saved = ref(false), conflict = ref(false), viewport = ref({});
 const original = reactive(props.task ? { ...props.task } : { ...defaultSlot(props.date), title: '', description: '', status: 'open', reminderOffsets: [10, 30, 60], reminderDates: [], overdueReminders: 1, overdueRepeatMinutes: 60, links: [], attachments: [], party: null });
 function taskDraft(original, existing = true) { return {
+  projectId: original.projectId || null,
   assigneeIds: [...(original.assigneeIds || [])], dueTime: original.dueTime || '',
   title: original.title, description: original.description || '', date: existing ? original.dueDate || (original.startsAt ? dayAt(original.startsAt) : '') : original.dueDate || props.date,
   start: timeAt(original.startsAt) || '11:00', endDate: original.endsAt ? dayAt(original.endsAt) : original.dueDate || props.date, end: timeAt(original.endsAt) || '12:00',
@@ -49,10 +52,10 @@ function payload() {
   if (!draft.title.trim()) throw new Error('Укажите название задачи');
   if (isChat) {
     if (!draft.assigneeIds.length) throw new Error('Выберите ответственного');
-    return { description: draft.title.trim(), dueDate: draft.date || null, dueTime: draft.date ? draft.dueTime || null : null, timing: draft.date ? (original.timing === 'urgent' ? 'urgent' : 'deadline') : 'none', assigneeIds: [...draft.assigneeIds], status: draft.status, fileIds: draft.attachments.map(file => file.fileId) };
+    return { projectId: draft.projectId, party: draft.party, description: draft.title.trim(), dueDate: draft.date || null, dueTime: draft.date ? draft.dueTime || null : null, timing: draft.date ? (original.timing === 'urgent' ? 'urgent' : 'deadline') : 'none', assigneeIds: [...draft.assigneeIds], status: draft.status, fileIds: draft.attachments.map(file => file.fileId) };
   }
   if (!draft.allDay && (!draft.date || !draft.start || !draft.end || !draft.endDate)) throw new Error('Укажите дату и время задачи');
-  const data = { title: draft.title.trim(), description: draft.description, dueDate: draft.date || null, allDay: draft.allDay, status: draft.status, party: draft.party,
+  const data = { projectId: draft.projectId, title: draft.title.trim(), description: draft.description, dueDate: draft.date || null, allDay: draft.allDay, status: draft.status, party: draft.party,
     reminderOffsets: draft.reminderOffsets.map(Number), reminderDates: [...draft.reminderDates], overdueReminders: Number(draft.overdueReminders), overdueRepeatMinutes: Number(draft.overdueRepeatMinutes),
     links: draft.links.filter(link => link.url.trim()).map(link => ({ ...(link.title ? { title: link.title } : {}), url: link.url.trim() })), attachmentIds: draft.attachments.map(file => file.fileId),
     startsAt: draft.allDay ? null : localInstant(draft.date, draft.start), endsAt: draft.allDay ? null : localInstant(draft.endDate, draft.end),
@@ -191,6 +194,7 @@ defineExpose({ close });
         <div class="overdue-row"><span>При просрочке</span><input v-model.number="draft.overdueReminders" type="number" min="0" max="10" aria-label="Количество напоминаний о просрочке" /><span>раз, каждые</span><input v-model.number="draft.overdueRepeatMinutes" type="number" min="5" max="10080" aria-label="Интервал просрочки, минут" /><span>мин</span></div>
         </div>
         </template>
+        <select v-model="draft.projectId" class="ui-select task-project-select" aria-label="Проект задачи"><option :value="null">Без проекта</option><option v-for="project in main.projects" :key="project._id" :value="project._id">{{ project.name }}</option></select>
         <div v-if="!isChat" class="attachment-heading"><label class="field-label">Файлы и ссылки</label><div><button type="button" class="ui-icon-button" title="Прикрепить файл" aria-label="Прикрепить файл" :disabled="uploading" @click="fileInput.click()"><UiIcon name="attach" /></button><button type="button" v-if="!isChat" class="ui-icon-button" aria-label="Добавить ссылку" title="Добавить ссылку" :disabled="draft.links.length >= 20" @click="draft.links.push({ url: '' }); changed()"><UiIcon name="plus" /></button></div></div>
         <input ref="fileInput" class="hidden-file" type="file" multiple aria-label="Файлы задачи" @change.stop="upload" />
         <span v-if="uploading" role="status" class="save-state">Загрузка файла…</span>
@@ -203,6 +207,8 @@ defineExpose({ close });
   </div>
 </template>
 <style scoped>
+.task-popover .task-project-select { display: block; width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); color: var(--color-text); font-size: 13px; }
+:global(html[data-theme="dark"]) .task-project-select { color-scheme: dark; }
 .task-dialog-backdrop { position:fixed; inset:0; z-index:3650; display:grid; place-items:center; padding:calc(16px + var(--safe-area-top)) calc(16px + var(--safe-area-right)) calc(16px + var(--dialog-safe-bottom, var(--safe-area-bottom))) calc(16px + var(--safe-area-left)); box-sizing:border-box; background:#0004; }
 .task-popover { display:flex; flex-direction:column; width:min(520px,100%); max-height:100%; overflow:hidden; box-sizing:border-box; background:var(--color-background); color:var(--color-text); border:1px solid var(--color-border); border-radius:12px; box-shadow:0 12px 48px #0005; font-size:13px; outline:0; }
 .task-popover header { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; min-height:48px; padding:8px 16px; box-sizing:border-box; }

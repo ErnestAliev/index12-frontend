@@ -1,0 +1,85 @@
+// Real Vue components, synthetic system catalogues, DOM/geometry only.
+import assert from 'node:assert/strict';
+import { createServer } from 'vite';
+import { chromium, webkit } from 'playwright-core';
+const engine = process.argv.includes('--webkit') ? 'webkit' : 'chromium';
+const server = await createServer({ root: process.cwd(), envDir: '/private/tmp', server: { host: '127.0.0.1', port: 5208, strictPort: true } });
+let browser;
+try {
+  await server.listen();
+  browser = engine === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+  for (const mobile of [false, true]) for (const theme of ['dark', 'light']) {
+    const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 }, isMobile: mobile, hasTouch: mobile });
+    context.setDefaultTimeout(10000);
+    const page = await context.newPage(), errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort());
+    await page.goto('http://127.0.0.1:5208/tests/browser/fixtures/task-calendar.html' + (mobile ? '' : '?desktop=1'));
+    await page.evaluate(({ theme, mobile }) => {
+      document.documentElement.dataset.theme = theme;
+      if (mobile) for (const [side, value] of Object.entries({ top: 24, bottom: 34, left: 16, right: 16 })) document.documentElement.style.setProperty('--safe-area-' + side, value + 'px');
+    }, { theme, mobile });
+    const activate = locator => mobile ? locator.tap() : locator.click();
+    const panel = page.locator('.task-panel');
+    await activate(panel.getByRole('button', { name: 'Себе', exact: true }));
+    await activate(panel.getByRole('button', { name: 'Без срока', exact: true }));
+    const picker = panel.getByRole('group', { name: 'Выбор проекта' });
+    await picker.getByRole('button', { name: 'Проект Пушкина', exact: true }).waitFor();
+    assert.equal(await picker.getByRole('button').first().innerText(), 'Без проекта');
+    assert.equal(await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).count(), 0, 'project precedes text entry');
+    assert.equal(await picker.getByRole('button').count(), 3, 'only two system projects plus the empty choice');
+    await activate(picker.getByRole('button', { name: 'Проект Пушкина', exact: true }));
+    await panel.getByRole('textbox', { name: 'Описание задачи', exact: true }).fill('Задача проекта A');
+    await activate(panel.getByRole('button', { name: 'Поставить задачу', exact: true }));
+    await page.waitForFunction(() => window.taskCalendar.tasks.some(task => task.description === 'Задача проекта A'));
+    const created = await page.evaluate(() => window.taskCalendar.tasks.find(task => task.description === 'Задача проекта A'));
+    assert.equal(created.projectId, 'aaaaaaaaaaaaaaaaaaaaaaaa');
+    await page.evaluate(async () => {
+      const f = window.taskCalendar;
+      Object.assign(f.tasks[0], { projectId: f.projects[1]._id, projectName: f.projects[1].name, status: 'done', party: { kind: f.parties[0].kind, id: f.parties[0].id }, partyName: f.parties[0].name });
+      Object.assign(f.tasks[1], { projectId: f.projects[0]._id, projectName: f.projects[0].name, dueDate: '2020-01-01' });
+      f.messages.push({ _id: crypto.randomUUID(), text: 'Обычная переписка', authorId: 'owner:actor', authorName: 'Эрнест', createdAt: new Date().toISOString(), attachments: [] });
+      f.showChat(); await f.chat.refresh();
+    });
+    const mainFilter = page.getByRole('button', { name: 'Фильтры чата', exact: true });
+    await activate(mainFilter);
+    const filters = page.getByRole('region', { name: 'Фильтры задач', exact: true });
+    await filters.getByLabel('Фильтр по проекту').selectOption('bbbbbbbbbbbbbbbbbbbbbbbb');
+    const geometry = await filters.evaluate(el => { const rect = el.getBoundingClientRect(), frame = el.closest('.team-workspace').getBoundingClientRect(); return { rect: rect.toJSON(), frame: frame.toJSON(), root: el.parentElement.getBoundingClientRect().toJSON(), rootPosition: getComputedStyle(el.parentElement).position, offsetParent: el.offsetParent?.className, inline: el.getAttribute('style'), bar: el.closest('.team-task-filter-bar').getBoundingClientRect().toJSON(), font: getComputedStyle(el.querySelector('select')).fontSize, outline: getComputedStyle(el.querySelector('select')).outlineStyle }; });
+    assert.ok(geometry.rect.x >= geometry.frame.x && geometry.rect.right <= geometry.frame.right + 1, 'filters fit the actual chat window: ' + JSON.stringify(geometry));
+    assert.equal(geometry.font, '13px'); assert.equal(geometry.outline, 'none');
+    await activate(mainFilter);
+    assert.equal(await page.locator('.task-cover:visible').count(), 1, 'an older matching task appears even without its cover in recent history');
+    assert.ok((await page.locator('.task-cover:visible').innerText()).includes('Моя задача'));
+    assert.equal(await page.getByText('Обычная переписка', { exact: true }).count(), 0);
+    await page.evaluate(() => window.taskCalendar.showTasks());
+    assert.equal(await panel.locator('.task-list-row').count(), 1, 'filters are shared between chat and task list');
+    await activate(panel.getByRole('button', { name: 'Фильтры', exact: true }));
+    assert.equal(await filters.getByLabel('Фильтр по проекту').inputValue(), 'bbbbbbbbbbbbbbbbbbbbbbbb');
+    await filters.getByLabel('Исполнено', { exact: true }).uncheck();
+    assert.equal(await panel.locator('.task-list-row').count(), 0);
+    await filters.getByLabel('Исполнено', { exact: true }).check();
+    await filters.getByLabel('Фильтр по контрагенту').selectOption('contractors:cccccccccccccccccccccccc');
+    await filters.getByLabel('Фильтр по сотруднику').selectOption('owner:actor');
+    assert.equal(await panel.locator('.task-list-row').count(), 1);
+    await activate(filters.getByRole('button', { name: 'Сбросить', exact: true }));
+    await page.evaluate(() => window.taskCalendar.showCalendar());
+    await page.locator('.calendar-window').waitFor();
+    if (mobile) await activate(page.getByRole('button', { name: 'Фильтры календаря', exact: true }));
+    const project = page.getByLabel('Фильтр по проекту', { exact: true });
+    assert.deepEqual(await project.locator('option').allTextContents(), ['Все проекты', 'Проект Пушкина', 'Проект Жандосова', 'Без проекта']);
+    await project.selectOption('bbbbbbbbbbbbbbbbbbbbbbbb');
+    if (mobile) await page.locator('.calendar-filter-backdrop').tap({ position: { x: 2, y: 2 } });
+    const task = page.locator(mobile ? '.mobile-agenda-task' : '.calendar-event').filter({ hasText: 'Моя задача' });
+    await activate(task.first());
+    const card = page.getByRole('dialog', { name: 'Карточка задачи', exact: true });
+    await card.getByLabel('Проект задачи', { exact: true }).selectOption('aaaaaaaaaaaaaaaaaaaaaaaa');
+    await page.waitForFunction(() => window.taskCalendar.tasks[0].projectId === 'aaaaaaaaaaaaaaaaaaaaaaaa');
+    await card.getByLabel('Проект задачи', { exact: true }).selectOption({ label: 'Без проекта' });
+    await page.waitForFunction(() => window.taskCalendar.tasks[0].projectId === null);
+    await activate(card.getByRole('button', { name: 'Закрыть карточку задачи', exact: true }));
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} ${mobile ? 'touch' : 'mouse'} ${theme}: system project step, empty choice first, shared filters, older cards, calendar project edit/clear and bounds`);
+    await context.close();
+  }
+} finally { await browser?.close(); await server.close(); }
