@@ -441,7 +441,7 @@ function animateDetails(element, done, opening) {
   interruptedDetails.delete(element);
   const animation = element.animate(
     [{ ...from, overflow: 'hidden' }, { ...(opening ? expanded : collapsed), overflow: 'hidden' }],
-    { duration: 320, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'both' },
+    { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'both' },
   );
   detailAnimation = animation;
   animation.onfinish = () => { done(); animation.cancel(); if (detailAnimation === animation) detailAnimation = null; };
