@@ -816,7 +816,7 @@ const handleMainAction = async () => {
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
-    <div class="popup-content theme-income">
+    <div class="popup-content financial-operation-popup theme-income">
       <h3>{{ title }}</h3>
 
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">

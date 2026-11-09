@@ -1,0 +1,108 @@
+/* Shared dark surfaces for income, expense and transfer forms.
+   Light surfaces continue to use the application's light-ui palette. */
+:root:not([data-theme="light"]) .financial-operation-popup {
+  color-scheme: dark;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  h3, h4, .real-input, .date-value-text, .smart-create-title, .opt-title,
+  .selected-text, .option-label
+) {
+  color: var(--color-text);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .floating-label, .read-only-info, .choice-desc, .warning-text, .offset-hint,
+  .btn-cancel-link, .small-label, .sub-text, .right-text, .placeholder,
+  .option-sub, .option-right, .arrow
+) {
+  color: var(--color-text-soft);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(input, textarea)::placeholder {
+  color: var(--color-text-soft);
+  opacity: 1;
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .custom-input-box, .form-input, .inline-create-form input, .select-trigger,
+  .smart-create-tabs button, .icon-btn, .btn-dual-action, .btn-modal-cancel,
+  .offset-toggle-btn, .btn-choice-option, .subcategory-create input,
+  .subcategory-create button
+) {
+  background: var(--color-background-soft);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .options-list, .bank-suggestions-list, .choice-box, .warning-box
+) {
+  background: var(--color-background);
+  border-color: var(--color-border);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .list-item-wrapper, .bank-suggestions-list li
+) {
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .list-item-wrapper.is-header, .list-item-wrapper.is-action-row,
+  .list-item-wrapper.is-special, .transfer-modes, .custom-input-box.is-disabled,
+  .form-input.is-disabled, .is-disabled input
+) {
+  background: var(--color-background-mute);
+  color: var(--color-text-soft);
+  border-color: var(--color-border);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .btn-dual-action:hover, .btn-inline-save:hover, .btn-modal-cancel:hover,
+  .btn-choice-option:hover, .bank-suggestions-list li:hover,
+  .list-item-wrapper:not(.is-header):not(.is-action-row):hover,
+  .list-item-wrapper.is-selected, .smart-create-tabs button.active,
+  .transfer-modes button.active
+) {
+  background: var(--color-background-mute);
+  color: var(--color-text);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(
+  .dual-action-row, .btn-dual-action.left, .smart-create-owner,
+  .smart-create-tabs button.active, .btn-inline-save
+) {
+  border-color: var(--color-border);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup .btn-inline-save {
+  color: var(--color-text);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(.calendar-icon-svg, .icon-stroke) {
+  stroke: currentColor;
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup .copy-btn:hover {
+  background: color-mix(in srgb, var(--color-income) 15%, var(--color-background));
+  border-color: var(--color-income);
+  color: var(--color-income);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(.delete-btn:hover, .offset-toggle-btn.active) {
+  background: color-mix(in srgb, var(--color-danger) 15%, var(--color-background));
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup .transfer-modes button {
+  color: var(--color-text-soft);
+}
+
+:root:not([data-theme="light"]) .financial-operation-popup :is(.right-text, .option-right).is-negative {
+  color: var(--color-danger);
+}

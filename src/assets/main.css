@@ -7,6 +7,7 @@
 @import './styles/safe-area.css';
 @import './styles/controls.css';
 @import './styles/light-ui.css';
+@import './styles/operation-popups.css';
 @import './styles/appearance.css';
 
 #app {

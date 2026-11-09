@@ -1021,7 +1021,7 @@ watch(defaultProjectId, (defId) => {
 
 <template>
   <div class="popup-overlay" @click.self="$emit('close')">
-    <div class="popup-content theme-expense">
+    <div class="popup-content financial-operation-popup theme-expense">
       <div class="header-row">
         <h3>{{ title }}</h3>
         <button class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">

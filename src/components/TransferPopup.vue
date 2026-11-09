@@ -570,7 +570,7 @@ const closePopup = () => { emit('close'); };
 
 <template>
   <div class="popup-overlay" @click.self="closePopup">
-    <div class="popup-content theme-transfer">
+    <div class="popup-content financial-operation-popup theme-transfer">
       <h3>{{ title }}</h3>
 
       <div class="transfer-modes input-spacing" role="group" aria-label="Вид операции">
