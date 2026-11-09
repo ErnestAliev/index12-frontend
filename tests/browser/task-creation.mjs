@@ -19,10 +19,10 @@ try {
   await panel.getByRole('button', { name: 'Кому?', exact: true }).tap();
   await panel.getByRole('button', { name: 'Найти сотрудника', exact: true }).tap();
   await panel.getByRole('combobox', { name: 'Найти сотрудника' }).fill('Вален');
-  await panel.getByRole('option', { name: 'Валентина', exact: true }).tap();
+  await panel.getByRole('option', { name: 'Валентине', exact: true }).tap();
   const add = () => panel.getByRole('button', { name: 'Добавить ответственного', exact: true }).tap();
   await add();
-  assert.equal(await panel.locator('.recipient-options button').filter({ hasText: 'Валентина' }).count(), 0);
+  assert.equal(await panel.locator('.recipient-options button').filter({ hasText: 'Валентине' }).count(), 0);
   await panel.getByRole('button', { name: 'Себе', exact: true }).tap();
   await panel.getByRole('button', { name: 'Без срока', exact: true }).waitFor();
   await add();
@@ -52,7 +52,7 @@ try {
     assert.equal(geometry.opacity, '1'); assert.equal(geometry.font, '16px');
   }
   await panel.getByRole('button', { name: 'Убрать ответственного Эрнест', exact: true }).tap();
-  await panel.getByRole('button', { name: 'Валентина', exact: true }).tap();
+  await panel.getByRole('button', { name: 'Валентине', exact: true }).tap();
   assert.equal(await text.inputValue(), 'Сохранённый текст задачи');
   await panel.getByRole('button', { name: 'Поставить задачу', exact: true }).tap();
   await page.waitForFunction(() => window.taskCalendar.tasks.some(task => task.description === 'Сохранённый текст задачи'));

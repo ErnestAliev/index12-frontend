@@ -39,7 +39,7 @@ try {
   const recipient = panel.getByRole('combobox');
   assert.equal(await recipient.evaluate(e => e === document.activeElement), true);
   await recipient.fill('Вален');
-  await panel.getByRole('option', { name: 'Валентина', exact: true }).tap();
+  await panel.getByRole('option', { name: 'Валентине', exact: true }).tap();
   assert.equal(await panel.getByRole('button', { name: 'Срочно', exact: true }).getAttribute('data-tone'), 'urgent');
   assert.equal(await panel.locator('.inline-choices .task-choice-chip > .task-chip-label').count(), 3, 'all chip labels paint above the tinted surface');
   await capture({ path: `output/playwright/task-timing-chips-${useWebkit ? 'webkit' : 'chromium'}.png` });

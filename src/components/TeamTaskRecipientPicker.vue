@@ -9,6 +9,7 @@ import {
   watch,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import { recipientName } from "@/utils/recipientName";
 import { useInputModality } from "@/composables/useInputModality";
 import TeamChatAccess from "./TeamChatAccess.vue";
 const props = defineProps({
@@ -163,7 +164,7 @@ onBeforeUnmount(() => {
           :disabled="disabled"
           @click="choose(p)"
         >
-          <span class="task-chip-label">{{ p._id === actorId ? "Себе" : p.name }}</span>
+          <span class="task-chip-label">{{ p._id === actorId ? "Себе" : recipientName(p.name) }}</span>
         </button>
       </div>
     </div>
@@ -188,7 +189,7 @@ onBeforeUnmount(() => {
         @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
         @click="choose(p)"
       >
-        {{ p._id === actorId ? "Себе" : p.name }}
+        {{ p._id === actorId ? "Себе" : recipientName(p.name) }}
       </button>
     </div>
   </div>
