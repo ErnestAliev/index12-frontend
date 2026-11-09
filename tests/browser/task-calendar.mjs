@@ -34,6 +34,7 @@ try {
     assert.ok(choices.y >= heading.y + heading.height, 'recipient chips sit below the heading');
     assert.equal(await panel.locator('.recipient-line').evaluate(el => getComputedStyle(el).borderTopWidth), '0px', 'chips have no surrounding input frame');
   }
+  await panel.getByRole('button', { name: 'Кому?', exact: true }).tap();
   await panel.getByRole('button', { name: 'Найти сотрудника', exact: true }).tap();
   const recipient = panel.getByRole('combobox');
   assert.equal(await recipient.evaluate(e => e === document.activeElement), true);

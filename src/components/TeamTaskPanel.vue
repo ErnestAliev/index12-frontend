@@ -53,6 +53,7 @@ const blank = () => ({
 });
 const draft = ref(blank()),
   step = ref("who"),
+  recipientReturnStep = ref(""),
   editing = ref(""),
   query = ref(""),
   text = ref(""),
@@ -102,17 +103,20 @@ const directory = computed(() =>
     (a, b) => (b._id === chat.me.actorId) - (a._id === chat.me.actorId),
   ),
 );
-const selectedNames = computed(() =>
-  active.value?.assigneeIds
-    .map(
-      (id) =>
-        directory.value.find((p) => p._id === id)?.name ||
-        active.value.assignees?.find((p) => p.actorId === id)?.name,
-    )
-    .filter(Boolean)
-    .map(recipientName)
-    .join(", "),
-);
+const selectedPeople = computed(() => (active.value?.assigneeIds || []).map(id => {
+  const name = directory.value.find(person => person._id === id)?.name || active.value.assignees?.find(person => person.actorId === id)?.name;
+  return { id, name, label: recipientName(name) };
+}).filter(person => person.name));
+const selectedNames = computed(() => selectedPeople.value.map(person => person.label).join(', '));
+function addRecipient() {
+  recipientReturnStep.value = step.value === 'who' ? 'when' : step.value;
+  go('who');
+}
+function removeRecipient(id) {
+  if (busy.value || uploading.value) return;
+  draft.value.assigneeIds = draft.value.assigneeIds.filter(value => value !== id);
+  if (!draft.value.assigneeIds.length) { recipientReturnStep.value = step.value === 'who' ? '' : step.value; go('who'); }
+}
 const shownTasks = computed(() =>
   filterTasks(chat.state.tasks || [], filters.value, chat.me.actorId),
 );
@@ -166,7 +170,9 @@ async function choosePerson(p) {
   if (props.creating) {
     if (!draft.value.assigneeIds.includes(p._id))
       draft.value.assigneeIds.push(p._id);
-    go("when");
+    const next = recipientReturnStep.value || 'when';
+    recipientReturnStep.value = '';
+    go(next);
   } else {
     const ids =
       editing.value === "add"
@@ -368,11 +374,12 @@ async function saveDescription() {
     error.value = '';
   }
 }
-const canGoBack = computed(() => !props.creating || step.value !== 'who' || !!picker.value);
+const canGoBack = computed(() => !props.creating || step.value !== 'who' || !!picker.value || !!recipientReturnStep.value);
 function back() {
   if (!props.creating) { close(); return; }
   if (busy.value || uploading.value) return;
   voice.stop();
+  if (step.value === 'who' && recipientReturnStep.value) { const previous = recipientReturnStep.value; recipientReturnStep.value = ''; go(previous); return; }
   if (picker.value === 'time') {
     if (clockPart.value === 'minute') clockPart.value = 'hour';
     else if (draft.value.timing === 'deadline') openCalendar();
@@ -466,6 +473,7 @@ watch(
     detailsOpen.value = !keyboardOpen.value;
     if (props.creating) {
       draft.value = blank();
+      recipientReturnStep.value = '';
       go("who");
     }
     if (props.taskId && !task.value) {
@@ -506,6 +514,7 @@ onBeforeUnmount(() => {
     :data-keyboard="keyboard"
     :class="{
       wizard: creating,
+      'task-writing': creating && step === 'what',
       'task-details-collapsed': detailsCollapsed,
       'task-is-editing': !!editing,
       'task-text-editing': editing === 'description',
@@ -690,14 +699,16 @@ onBeforeUnmount(() => {
         <button v-if="picker === 'time' && creating && ['when', 'urgent'].includes(step)" class="clock-skip" type="button" @click="draft.dueTime = null; go('project')">Без времени</button>
       </section>
     </div>
-    <div v-if="creating" class="task-stage">
+    <div v-if="creating" class="task-creation">
+    <div class="task-stage">
       <div class="task-focus">
-        <p class="creation-title">{{ parentTaskId ? 'Новая подзадача' : 'Новая задача' }}</p>
         <TeamTaskRecipientPicker
           v-if="step === 'who'"
           :people="directory"
           :actor-id="chat.me.actorId"
-          :can-create="chat.isOwner"
+          :excluded-ids="draft.assigneeIds"
+          :adding="!!draft.assigneeIds.length"
+          :can-create="chat.me?.owner === true"
           :disabled="busy"
           @select="choosePerson"
         />
@@ -750,10 +761,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="draft-summary">
           <div v-if="step === 'what'"><button type="button" @click="go('project')">Проект: {{ projectName }}</button></div>
-          <div v-if="draft.assigneeIds.length">
-            <button @click="go('who')">Кому: {{ selectedNames }}</button
-            ><button class="task-draft-add" type="button" aria-label="Добавить ответственного" @click="go('who')"><UiIcon name="plus" /></button>
-          </div>
+          <div v-if="draft.assigneeIds.length" class="draft-recipients"><span>Кому:</span><template v-for="(person, index) in selectedPeople" :key="person.id"><span v-if="index" aria-hidden="true">,</span><button type="button" class="draft-recipient" :aria-label="`Убрать ответственного ${person.name}`" :title="`Убрать ${person.label}`" :disabled="busy || uploading" @click="removeRecipient(person.id)">{{ person.label }}</button></template><button class="task-draft-add" type="button" aria-label="Добавить ответственного" :disabled="busy || uploading" @click="addRecipient"><UiIcon name="plus" /></button></div>
           <div v-if="draft.timing">
             <button @click="go('when')">Когда:</button
             ><button @click="draft.dueDate ? openCalendar() : go('when')">
@@ -773,7 +781,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
-        <div class="task-files">
+        <div v-if="draft.attachments.length" class="task-files">
           <span v-for="(f, i) in draft.attachments" :key="f.fileId"
             ><button @click="download(f)">{{ f.name }}</button
             ><button
@@ -784,15 +792,9 @@ onBeforeUnmount(() => {
             </button></span
           >
         </div>
-        <button
-          v-if="step === 'what'"
-          class="task-publish"
-          :disabled="busy || uploading || !draft.description.trim()"
-          @click="create"
-        >
-          {{ parentTaskId ? 'Поставить подзадачу' : 'Поставить задачу' }}
-        </button>
       </div>
+    </div>
+    <footer v-if="step === 'what'" class="task-create-footer"><button class="task-publish" :disabled="busy || uploading || !draft.description.trim() || !draft.assigneeIds.length" @click="create">{{ parentTaskId ? 'Поставить подзадачу' : 'Поставить задачу' }}</button></footer>
     </div>
     <template v-else-if="taskId">
       <div v-if="!task" class="task-empty">Задача недоступна</div>
@@ -823,7 +825,9 @@ onBeforeUnmount(() => {
             :key="editing"
             :people="directory"
             :actor-id="chat.me.actorId"
-            :can-create="chat.isOwner"
+            :excluded-ids="task.assigneeIds"
+            :adding="editing === 'add'"
+            :can-create="chat.me?.owner === true"
             :disabled="busy"
             @select="choosePerson"
           />

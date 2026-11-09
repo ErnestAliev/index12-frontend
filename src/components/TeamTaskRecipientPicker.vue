@@ -16,8 +16,12 @@ const props = defineProps({
   actorId: String,
   disabled: Boolean,
   canCreate: Boolean,
+  excludedIds: { type: Array, default: () => [] },
+  adding: Boolean,
 });
 const emit = defineEmits(["select", "cancel"]);
+const toolsOpen = ref(false);
+function toggleTools() { toolsOpen.value = !toolsOpen.value; if (!toolsOpen.value) cancel(); }
 const searching = ref(false),
   query = ref(""),
   field = ref(null),
@@ -29,10 +33,11 @@ const keyboard = useInputModality();
 const creator = ref(null);
 function addPerson() { field.value?.blur(); creator.value?.openForm(query.value.trim()); }
 function personCreated(person) { searching.value = false; query.value = ''; choose(person); }
-const initial = computed(() => props.people.slice(0, 12));
+const available = computed(() => props.people.filter(person => !props.excludedIds.includes(person._id)));
+const initial = computed(() => available.value);
 const results = computed(() =>
   query.value.trim()
-    ? props.people
+    ? available.value
         .filter((p) =>
           (p.name + ' ' + (p.position || ''))
             .toLocaleLowerCase()
@@ -42,6 +47,7 @@ const results = computed(() =>
     : [],
 );
 function search() {
+  if (!props.canCreate) return;
   searching.value = true;
   field.value?.focus({ preventScroll: true });
 }
@@ -51,6 +57,7 @@ function cancel() {
   field.value?.blur();
 }
 function choose(person) {
+  if (!person || props.disabled || props.excludedIds.includes(person._id)) return;
   field.value?.blur();
   emit("select", person);
 }
@@ -94,6 +101,7 @@ function measure() {
     maxHeight: Math.max(44, Math.min(180, up ? above : below)) + "px",
   };
 }
+watch(() => props.canCreate, value => { if (!value) { toolsOpen.value = false; cancel(); } });
 watch(query, () => {
   active.value = 0;
   nextTick(measure);
@@ -113,14 +121,15 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="recipient-line" :data-keyboard="keyboard">
     <div class="recipient-heading">
-      <h3 class="task-step-title">Кому?</h3>
-      <div class="recipient-actions">
+      <h3 class="task-step-title"><button v-if="canCreate" type="button" class="recipient-heading-toggle" :aria-expanded="toolsOpen" :disabled="disabled" @click="toggleTools">{{ adding ? 'Кому ещё добавить?' : 'Кому?' }}</button><template v-else>{{ adding ? 'Кому ещё добавить?' : 'Кому?' }}</template></h3>
+      <div v-if="canCreate" class="recipient-tools-reveal" :class="{ 'is-open': toolsOpen }" :inert="!toolsOpen" :aria-hidden="!toolsOpen"><div class="recipient-tools-clip"><div class="recipient-actions">
         <button class="recipient-toggle" type="button" :aria-label="searching ? 'Закрыть поиск' : 'Найти сотрудника'" :disabled="disabled" @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()" @click="searching ? cancel() : search()"><UiIcon :name="searching ? 'close' : 'search'" /></button>
         <button v-if="canCreate" type="button" class="recipient-create" :disabled="disabled" aria-label="Добавить сотрудника" title="Добавить сотрудника" @click="addPerson"><UiIcon name="plus" /></button>
-      </div>
+      </div></div></div>
     </div>
     <div class="recipient-choice" :class="{ 'is-searching': searching }">
       <input
+        v-if="canCreate"
         ref="field"
         v-model="query"
         class="recipient-input"
@@ -195,7 +204,12 @@ onBeforeUnmount(() => {
   flex: none;
   color: var(--codex-pane-text);
 }
-.recipient-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recipient-heading { min-width: 0; }
+.recipient-line .recipient-heading-toggle { position: relative; display: block; min-height: 28px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.recipient-heading-toggle::after { content: ""; position: absolute; inset: -8px 0; }
+.recipient-tools-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 320ms cubic-bezier(.22,1,.36,1), opacity 320ms ease; }
+.recipient-tools-reveal.is-open { grid-template-rows: 1fr; opacity: 1; }
+.recipient-tools-clip { min-height: 0; overflow: hidden; }
 .recipient-actions { display: flex; align-items: center; gap: 4px; }
 .recipient-line .recipient-create { display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
 .recipient-line .recipient-create { position: relative; color: var(--codex-pane-accent); }
@@ -323,6 +337,7 @@ onBeforeUnmount(() => {
 }
 @media (prefers-reduced-motion: reduce) {
   .recipient-options,
+  .recipient-tools-reveal,
   .recipient-line .recipient-input {
     transition: none;
   }
