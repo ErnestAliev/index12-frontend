@@ -9,6 +9,7 @@ import {
   watch,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import { useInputModality } from "@/composables/useInputModality";
 import TeamChatAccess from "./TeamChatAccess.vue";
 const props = defineProps({
   people: { type: Array, default: () => [] },
@@ -24,6 +25,7 @@ const searching = ref(false),
   active = ref(0),
   bounds = ref({});
 const listId = useId();
+const keyboard = useInputModality();
 const creator = ref(null);
 function addPerson() { field.value?.blur(); creator.value?.openForm(query.value.trim()); }
 function personCreated(person) { searching.value = false; query.value = ''; choose(person); }
@@ -109,8 +111,14 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div ref="root" class="recipient-line">
-    <span class="recipient-label">Кому:</span>
+  <div ref="root" class="recipient-line" :data-keyboard="keyboard">
+    <div class="recipient-heading">
+      <h3 class="task-step-title">Кому?</h3>
+      <div class="recipient-actions">
+        <button class="recipient-toggle" type="button" :aria-label="searching ? 'Закрыть поиск' : 'Найти сотрудника'" :disabled="disabled" @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()" @click="searching ? cancel() : search()"><UiIcon :name="searching ? 'close' : 'search'" /></button>
+        <button v-if="canCreate" type="button" class="recipient-create" :disabled="disabled" aria-label="Добавить сотрудника" title="Добавить сотрудника" @click="addPerson"><UiIcon name="plus" /></button>
+      </div>
+    </div>
     <div class="recipient-choice" :class="{ 'is-searching': searching }">
       <input
         ref="field"
@@ -149,18 +157,7 @@ onBeforeUnmount(() => {
           <span class="task-chip-label">{{ p._id === actorId ? "Себе" : p.name }}</span>
         </button>
       </div>
-      <button
-        class="recipient-toggle"
-        type="button"
-        :aria-label="searching ? 'Закрыть поиск' : 'Найти сотрудника'"
-        :disabled="disabled"
-        @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()"
-        @click="searching ? cancel() : search()"
-      >
-        <UiIcon :name="searching ? 'close' : 'search'" />
-      </button>
     </div>
-    <button v-if="canCreate" type="button" class="recipient-create" :disabled="disabled" aria-label="Добавить сотрудника" title="Добавить сотрудника" @click="addPerson"><UiIcon name="plus" /></button>
     <TeamChatAccess v-if="canCreate" ref="creator" form-only @created="personCreated" />
     <div
       v-if="searching && results.length"
@@ -190,39 +187,30 @@ onBeforeUnmount(() => {
 <style scoped>
 .recipient-line {
   position: relative;
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: 50px;
   flex: none;
-  padding: 2px 10px;
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 10px;
-  background: var(--codex-pane-surface);
   color: var(--codex-pane-text);
 }
-.recipient-label {
-  flex: none;
-  white-space: nowrap;
-  font-size: 14px;
-}
+.recipient-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.recipient-actions { display: flex; align-items: center; gap: 4px; }
 .recipient-line .recipient-create { display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-height: 44px; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; }
 .recipient-create .ui-icon { width: 16px; height: 16px; }
 .recipient-choice {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
-  grid-template-rows: 44px;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 44px;
   flex: 1;
   min-width: 0;
   align-items: center;
 }
 .recipient-line .recipient-input {
   grid-area: 1/1;
-  position: relative;
+  position: absolute;
   width: 100%;
   min-width: 0;
   max-width: none;
@@ -230,10 +218,10 @@ onBeforeUnmount(() => {
   height: 44px;
   min-height: 0;
   margin: 0;
-  padding: 0;
-  border: 0 !important;
-  border-radius: 0;
-  background: transparent !important;
+  padding: 0 10px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 6px;
+  background: var(--codex-pane-surface);
   color: inherit;
   font: inherit;
   font-size: 16px;
@@ -245,23 +233,18 @@ onBeforeUnmount(() => {
     opacity 140ms ease,
     transform 140ms ease;
 }
-.recipient-line .recipient-input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-.recipient-line:focus-within {
-  border-color: var(--codex-pane-focus, var(--codex-pane-accent, #3b6763));
-}
+.recipient-line .recipient-input:focus { outline: none; box-shadow: none; }
+.recipient-line[data-keyboard=true] .recipient-input:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 2px; }
 .recipient-options {
   grid-area: 1/1;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
-  height: 44px;
-  overflow-x: auto;
-  white-space: nowrap;
+  max-height: min(280px, 40dvh);
+  overflow-y: auto;
   scrollbar-width: none;
   opacity: 1;
   transform: translateX(0);
@@ -272,22 +255,8 @@ onBeforeUnmount(() => {
 .recipient-options::-webkit-scrollbar {
   display: none;
 }
-.recipient-line .recipient-options button {
-  flex: none;
-  min-height: 44px;
-  max-width: 100%;
-  padding: 0 2px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
+.recipient-line .recipient-options button { max-width: 100%; }
 .recipient-line .recipient-toggle {
-  grid-area: 1/2;
   display: grid;
   place-items: center;
   width: 44px;
@@ -305,12 +274,9 @@ onBeforeUnmount(() => {
   width: 18px;
   height: 18px;
 }
-.is-searching > .recipient-options {
-  opacity: 0;
-  transform: translateX(-8px);
-  pointer-events: none;
-}
+.is-searching > .recipient-options { display: none; }
 .is-searching > .recipient-input {
+  position: relative;
   opacity: 1;
   transform: translateX(0);
   pointer-events: auto;

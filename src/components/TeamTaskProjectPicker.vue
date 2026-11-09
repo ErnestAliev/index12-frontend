@@ -11,7 +11,7 @@ onMounted(() => chat.loadTaskOptions());
 </script>
 <template>
   <div class="task-project-picker" :data-keyboard="keyboard">
-    <span>Проект:</span>
+    <h3 class="task-step-title">Проект?</h3>
     <input v-if="chat.taskOptions.projects.length > 8" v-model="query" type="search" aria-label="Найти проект" placeholder="Найти проект" />
     <div class="project-options" role="group" aria-label="Выбор проекта">
       <button type="button" class="task-choice-chip" :aria-pressed="!selected" :disabled="disabled" @click="emit('select', null)"><span class="task-chip-label">Без проекта</span></button>
@@ -30,3 +30,5 @@ onMounted(() => chat.loadTaskOptions());
 .task-project-picker:not([data-keyboard=true]) input:focus { outline: none !important; box-shadow: none !important; }
 .task-project-picker [role=alert] { color: var(--color-danger); font-size: 12px; }
 </style>
+
+<style scoped src="./teamTaskChips.css"></style>

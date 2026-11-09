@@ -29,7 +29,10 @@ try {
     await page.waitForFunction(() => { const r = document.querySelector('.recipient-line').getBoundingClientRect(); return r.x >= 0 && r.right <= innerWidth; });
     const line = await panel.locator('.recipient-line').boundingBox();
     assert.ok(line.x >= 0 && line.x + line.width <= width);
-    assert.ok(line.height <= 50, 'recipient chips remain on one line');
+    const heading = await panel.getByRole('heading', { name: 'Кому?', exact: true }).boundingBox();
+    const choices = await panel.locator('.recipient-options').boundingBox();
+    assert.ok(choices.y >= heading.y + heading.height, 'recipient chips sit below the heading');
+    assert.equal(await panel.locator('.recipient-line').evaluate(el => getComputedStyle(el).borderTopWidth), '0px', 'chips have no surrounding input frame');
   }
   await panel.getByRole('button', { name: 'Найти сотрудника', exact: true }).tap();
   const recipient = panel.getByRole('combobox');

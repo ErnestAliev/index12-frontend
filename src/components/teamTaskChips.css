@@ -6,6 +6,7 @@
 .task-choice-chip[data-tone="deadline"] { --chip-tone: #558ab7; }
 .task-choice-chip[data-tone="employee"] { --chip-tone: #bc8c3d; }
 .task-choice-chip[data-tone="urgent"] { --chip-tone: #c66962; }
+.task-choice-chip,
 .recipient-line .recipient-options .task-choice-chip,
 .task-panel .inline-choices .task-choice-chip {
   flex: none;
@@ -41,3 +42,5 @@
 }
 
 /* A 30px visible surface inside the 44px touch target. */
+
+.task-step-title { margin: 0; font-size: 20px; font-weight: 600; line-height: 28px; text-align: left; }

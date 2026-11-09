@@ -199,7 +199,7 @@ async function chooseDate(date) {
   if (props.creating) {
     draft.value.dueDate = date;
     if (!draft.value.timing) draft.value.timing = "deadline";
-    go("project");
+    openClock();
   } else if (
     await update({
       dueDate: date,
@@ -236,7 +236,8 @@ async function chooseClock(value) {
   const dueTime = `${String(hour.value).padStart(2, "0")}:${String(value).padStart(2, "0")}`;
   if (props.creating) {
     draft.value.dueTime = dueTime;
-    picker.value = "";
+    if (["when", "urgent"].includes(step.value)) go("project");
+    else picker.value = "";
   } else if (await update({ dueTime })) {
     picker.value = "";
     editing.value = "";
@@ -635,6 +636,7 @@ onBeforeUnmount(() => {
             ✓
           </button>
         </div>
+        <button v-if="picker === 'time' && creating && ['when', 'urgent'].includes(step)" class="clock-skip" type="button" @click="draft.dueTime = null; go('project')">Без времени</button>
       </section>
     </div>
     <div v-if="creating" class="task-stage">
@@ -648,7 +650,7 @@ onBeforeUnmount(() => {
           @select="choosePerson"
         />
         <div v-else-if="step === 'when'" class="task-input-line">
-          <span>Когда:</span>
+          <h3 class="task-step-title">Когда?</h3>
           <div class="inline-choices">
             <button class="task-choice-chip" data-tone="urgent" @click="chooseTiming('urgent')"><span class="task-chip-label">Срочно</span></button
             ><button class="task-choice-chip" data-tone="deadline" @click="chooseTiming('deadline')"><span class="task-chip-label">К сроку</span></button
@@ -656,10 +658,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-else-if="step === 'urgent'" class="task-input-line">
-          <span>Когда:</span>
+          <h3 class="task-step-title">Когда?</h3>
           <div class="inline-choices">
-            <button @click="chooseDate(localDay())">Сегодня</button
-            ><button @click="chooseDate(localDay(1))">Завтра</button
+            <button class="task-choice-chip" @click="chooseDate(localDay())"><span class="task-chip-label">Сегодня</span></button
+            ><button class="task-choice-chip" @click="chooseDate(localDay(1))"><span class="task-chip-label">Завтра</span></button
             ><button aria-label="Выбрать дату" @click="openCalendar">
               <UiIcon name="calendar" />
             </button>
@@ -780,8 +782,8 @@ onBeforeUnmount(() => {
             ><button class="task-choice-chip" data-tone="none" @click="chooseTiming('none')"><span class="task-chip-label">Без срока</span></button>
           </div>
           <div v-if="editing === 'urgent'" class="inline-choices">
-            <button @click="chooseDate(localDay())">Сегодня</button
-            ><button @click="chooseDate(localDay(1))">Завтра</button>
+            <button class="task-choice-chip" @click="chooseDate(localDay())"><span class="task-chip-label">Сегодня</span></button
+            ><button class="task-choice-chip" @click="chooseDate(localDay(1))"><span class="task-chip-label">Завтра</span></button>
           </div>
           <div class="task-files">
             <button

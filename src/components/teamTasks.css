@@ -94,17 +94,10 @@
 }
 .task-input-line {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   min-width: 0;
-  background: var(--codex-pane-surface);
-  border: 1px solid var(--codex-pane-border);
-  border-radius: 10px;
-  padding: 2px 10px;
-  min-height: 50px;
-}
-.task-input-line > span {
-  white-space: nowrap;
 }
 .task-input-line input {
   background: transparent;
@@ -119,10 +112,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
   min-width: 0;
-  scrollbar-width: none;
 }
 .inline-choices button {
   flex: none;
@@ -719,3 +710,5 @@
 .task-project-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
 .task-panel .task-project-meta button { min-height: 28px; padding: 0; font-size: 12px; color: var(--codex-pane-muted); text-align: left; overflow-wrap: anywhere; }
 .task-project-meta select { max-width: 100%; min-height: 30px; border: 1px solid var(--codex-pane-border); border-radius: 5px; background: var(--codex-pane-surface); font-size: 12px; padding: 4px 8px; }
+
+.task-panel .clock-skip { display: block; min-height: 44px; margin: 8px auto 0; color: var(--codex-pane-muted); }
