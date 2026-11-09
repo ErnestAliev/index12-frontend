@@ -719,4 +719,3 @@
 .team-search-notice { flex:none; padding:10px 12px; color:var(--codex-pane-muted); font-size:12px; display:flex; align-items:center; gap:10px; }
 
 :deep(.team-search-match) { background:color-mix(in srgb,var(--codex-pane-accent) 24%,var(--codex-pane-surface)); color:inherit; border-radius:2px; }
-.team-task-filter-bar { display: flex; justify-content: flex-end; flex: none; padding: 0 8px; min-height: 36px; border-bottom: 1px solid var(--codex-pane-border); }

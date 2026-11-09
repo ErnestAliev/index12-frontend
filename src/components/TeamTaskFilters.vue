@@ -14,12 +14,12 @@ function measure() {
   const box = root.value.getBoundingClientRect(), viewport = window.visualViewport;
   const top = viewport?.offsetTop || 0, left = viewport?.offsetLeft || 0, width = viewport?.width || innerWidth, bottom = top + (viewport?.height || innerHeight);
   const style = getComputedStyle(document.documentElement), inset = side => parseFloat(style.getPropertyValue('--safe-area-' + side)) || 0;
-  const frame = root.value.closest('.task-panel,.team-workspace')?.getBoundingClientRect();
+  const frame = root.value.closest('.task-panel,.team-workspace,.codex-chat-window')?.getBoundingClientRect();
   const start = Math.max(left + 12 + inset('left'), (frame?.left || left) + 8), end = Math.min(left + width - 12 - inset('right'), frame?.right || left + width);
   const panelWidth = Math.min(300, end - start - 8);
   bounds.value = { width: panelWidth + 'px', maxHeight: Math.max(80, Math.min(bottom - inset('bottom'), frame?.bottom || bottom) - box.bottom - 16) + 'px' };
 }
-onMounted(() => { observer = new ResizeObserver(measure); observer.observe(root.value); const frame = root.value.closest('.task-panel,.team-workspace'); if (frame) observer.observe(frame); });
+onMounted(() => { observer = new ResizeObserver(measure); observer.observe(root.value); const frame = root.value.closest('.task-panel,.team-workspace,.codex-chat-window'); if (frame) observer.observe(frame); });
 async function toggle() { open.value = !open.value; if (open.value) { void chat.loadTaskOptions(); await nextTick(); measure(); } }
 function outside(event) { if (open.value && !root.value?.contains(event.target)) open.value = false; }
 function keys(event) { if (open.value && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); open.value = false; root.value?.querySelector('button')?.focus({ preventScroll: true }); } }

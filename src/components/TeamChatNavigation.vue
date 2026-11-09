@@ -11,6 +11,7 @@ import {
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useAppearanceStore } from "@/stores/appearanceStore";
 import UiIcon from "./UiIcon.vue";
+import TeamTaskFilters from "./TeamTaskFilters.vue";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 const search = useTeamChatSearchStore();
 function openSearch() {
@@ -241,6 +242,7 @@ onBeforeUnmount(() => {
         <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
       </section>
     </div>
+    <div class="team-navigation-actions" @click.capture="close(false)"><TeamTaskFilters v-if="chat.me?.status === 'active' && modelValue === 'messages' && !chat.creatingTask && !chat.requestedTaskId && !chat.taskNotifications && !search.open" label="Фильтры чата" /></div>
   </nav>
 </template>
 <style scoped>
@@ -254,6 +256,7 @@ onBeforeUnmount(() => {
   min-height: 44px;
   color: var(--codex-pane-text);
 }
+.team-navigation-actions { justify-self: center; display: flex; align-items: center; min-width: 0; }
 .team-navigation-identity {
   min-width: 0;
   overflow: hidden;

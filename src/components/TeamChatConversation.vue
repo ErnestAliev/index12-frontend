@@ -10,7 +10,6 @@ import {
 import UiIcon from "./UiIcon.vue";
 import { canSeeChatMessage } from "@/utils/teamMessageVisibility";
 import TeamSearchText from "./TeamSearchText.vue";
-import TeamTaskFilters from './TeamTaskFilters.vue';
 import { filterTasks, hasTaskFilters } from '@/utils/teamTasks';
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 const search = useTeamChatSearchStore();
@@ -1013,7 +1012,6 @@ watch(
       Запрос отправлен владельцу. Ожидается одобрение
     </div>
     <template v-else>
-      <div v-if="!taskId && !search.open" class="team-task-filter-bar"><TeamTaskFilters label="Фильтры чата" /></div>
       <div
         ref="feed"
         class="team-feed"

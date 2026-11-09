@@ -76,7 +76,7 @@ async function done() {
     >
       <span class="cover-title-text"
         >{{ task.status === "done" ? "Готово / " : ""
-        }}<span v-if="task.projectId" class="cover-project" :title="task.projectName">{{ task.projectName || 'Проект' }}: </span><LinkedText :text="task.description" :highlight="highlight" /></span
+        }}<span v-if="task.projectId" class="cover-project" :title="task.projectName">{{ task.projectName || 'Проект' }}:</span>{{ task.projectId ? ' ' : '' }}<LinkedText :text="task.description" :highlight="highlight" /></span
       ><span
         v-if="task.latest && task.status !== 'done'"
         class="cover-inline-preview"
