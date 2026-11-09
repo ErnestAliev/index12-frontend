@@ -368,7 +368,23 @@ async function saveDescription() {
     error.value = '';
   }
 }
+const canGoBack = computed(() => !props.creating || step.value !== 'who' || !!picker.value);
+function back() {
+  if (!props.creating) { close(); return; }
+  if (busy.value || uploading.value) return;
+  voice.stop();
+  if (picker.value === 'time') {
+    if (clockPart.value === 'minute') clockPart.value = 'hour';
+    else if (draft.value.timing === 'deadline') openCalendar();
+    else picker.value = '';
+    return;
+  }
+  if (picker.value) { picker.value = ''; return; }
+  const previous = { what: 'project', project: 'when', urgent: 'when', when: 'who' }[step.value];
+  if (previous) go(previous);
+}
 function close() {
+  if (props.creating) { back(); return; }
   if (editing.value === 'description') { saveDescription(); return; }
   if (busy.value || uploading.value) return;
   if (picker.value) {
@@ -483,7 +499,7 @@ onBeforeUnmount(() => {
       @open="chat.requestedTaskId = menuTask._id"
     />
     <header v-if="creating || taskId" class="task-header">
-      <button aria-label="Назад" :disabled="busy || uploading" @click="close">
+      <button aria-label="Назад" :disabled="busy || uploading || !canGoBack" @click="back">
         <UiIcon name="back" />
       </button>
       <span v-if="creating" aria-hidden="true" />
