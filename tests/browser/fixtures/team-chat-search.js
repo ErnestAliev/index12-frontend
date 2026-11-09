@@ -6,6 +6,7 @@ import { useTeamChatSearchStore } from "/src/stores/teamChatSearchStore.js";
 import Frame from "/src/components/ChatWindowFrame.vue";
 import Header from "/src/components/TeamChatHeader.vue";
 import Pane from "/src/components/TeamChatPane.vue";
+import TextFieldLinks from '/src/components/TextFieldLinks.vue';
 const taskId = "22222222-2222-4222-8222-222222222222";
 const rows = Array.from({ length: 95 }, (_, i) => ({
   _id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
@@ -133,7 +134,7 @@ teamApi.defaults.adapter = async (config) => {
 const pinia = createPinia();
 let chat, search;
 const app = createApp({
-  render: () =>
+  render: () => [
     h(
       Frame,
       {
@@ -143,7 +144,7 @@ const app = createApp({
         hideHeading: !!chat.requestedTaskId || chat.creatingTask,
       },
       { heading: () => h(Header), default: () => h(Pane, { mobile: true }) },
-    ),
+    ), h(TextFieldLinks)],
 });
 app.use(pinia);
 chat = useTeamChatStore(pinia);

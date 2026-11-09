@@ -1,4 +1,5 @@
 <script setup>
+import LinkedText from './LinkedText.vue';
 import {
   ref,
   computed,
@@ -742,7 +743,7 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <div v-show="!detailsCollapsed" class="task-overview" :data-task-status="task.status" :data-deadline="deadline.tone">
-          <button v-if="task.parentTaskId" class="task-parent-link" @click="openTask(task.parentTaskId)"><UiIcon name="back" /><span>{{ parentTask?.description || 'Родительская задача' }}</span></button>
+          <div v-if="task.parentTaskId" class="task-parent-link" role="button" tabindex="0" @click="openTask(task.parentTaskId)" @keydown.enter.self.prevent="openTask(task.parentTaskId)" @keydown.space.self.prevent="openTask(task.parentTaskId)"><UiIcon name="back" /><LinkedText :text="parentTask?.description || 'Родительская задача'" /></div>
           <div class="task-summary">
             <div class="task-summary-header">
               <TeamTaskStatusSelect compact :model-value="task.status" :disabled="busy || !canEdit" @update:model-value="update({ status: $event })" />
@@ -757,7 +758,7 @@ onBeforeUnmount(() => {
               <span class="task-meta-group task-meta-when"><button :disabled="busy || !canEdit" @click="editing = 'when'">Когда:</button><button class="task-due" :disabled="busy || !canEdit" @click="task.dueDate ? openCalendar() : (editing = 'when')">{{ taskDate(task) }}</button><button v-if="task.dueDate" :disabled="busy || !canEdit" aria-label="Указать время" @click="openClock"><UiIcon name="clock" /></button><span v-if="deadline.label" class="task-deadline-label">{{ deadline.label }}</span></span>
             </div>
             <TeamTaskTextEditor v-if="editing === 'description'" v-model="text" :busy="busy" :error="error" @save="saveDescription" />
-            <button v-else class="task-description" :disabled="!canEdit" @click="editDescription">{{ task.description }}</button>
+            <div v-else class="task-description" :role="canEdit ? 'button' : undefined" :tabindex="canEdit ? 0 : undefined" @click="editDescription" @keydown.enter.self.prevent="editDescription" @keydown.space.self.prevent="editDescription"><LinkedText :text="task.description" /></div>
           </div>
           <TeamTaskRecipientPicker
             v-if="['who', 'add'].includes(editing)"
@@ -788,9 +789,9 @@ onBeforeUnmount(() => {
           </div>
           <section v-if="editing !== 'description'" class="task-subtasks" aria-label="Подзадачи">
             <header><span>Подзадачи<span v-if="subtasks.length"> · {{ subtasks.length }}</span></span><button type="button" aria-label="Добавить подзадачу" @click="emit('new', task._id)"><UiIcon name="plus" /></button></header>
-            <button v-for="child in subtasks" :key="child._id" type="button" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" :data-deadline="deadlineFor(child).tone" @click="openTask(child._id)">
-              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><span>{{ child.description }}</span><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}<span v-if="deadlineFor(child).label" class="task-deadline-label"> · {{ deadlineFor(child).label }}</span></small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
-            </button>
+            <div v-for="child in subtasks" :key="child._id" role="button" tabindex="0" class="task-subtask-row" :class="{ 'is-done': child.status === 'done' }" :data-task-status="child.status" :data-deadline="deadlineFor(child).tone" @click="openTask(child._id)" @keydown.enter.self.prevent="openTask(child._id)" @keydown.space.self.prevent="openTask(child._id)">
+              <span class="subtask-status" aria-hidden="true" /><span class="subtask-content"><LinkedText :text="child.description" /><small>{{ child.assignees.map(p => p.name).join(', ') }} · {{ taskDate(child) }}<span v-if="deadlineFor(child).label" class="task-deadline-label"> · {{ deadlineFor(child).label }}</span></small></span><span v-if="child.unreadCount" class="subtask-unread">{{ child.unreadCount }}</span><UiIcon name="chevron-right" />
+            </div>
           </section>
         </div>
         <TeamChatConversation
@@ -815,20 +816,24 @@ onBeforeUnmount(() => {
         </button>
       </header>
       <div class="task-list">
-        <button
+        <div
           v-for="t in (chat.state.tasks || []).filter(
             (t) => t.mentioned || t.unreadCount,
           )"
           :key="t._id"
           class="task-notification"
+          role="button"
+          tabindex="0"
+          @keydown.enter.self.prevent="$event.currentTarget.click()"
+          @keydown.space.self.prevent="$event.currentTarget.click()"
           @click="
             chat.requestedTaskMessageId = t.mentionMessageId || t.latest?._id;
             chat.requestedTaskId = t._id;
           "
         >
-          <span>{{ t.description }}</span
+          <LinkedText :text="t.description" />
           ><span><b v-if="t.mentioned">@</b> {{ t.unreadCount || "" }}</span>
-        </button>
+        </div>
         <p v-if="!chat.actionable" class="task-empty">Нет уведомлений</p>
       </div>
     </template>
@@ -927,14 +932,14 @@ onBeforeUnmount(() => {
             <span class="list-checkmark" aria-hidden="true">{{
               t.status === "done" ? "✓" : ""
             }}</span></button
-          ><button class="list-content" @click="chat.requestedTaskId = t._id">
-            <span :title="t.description">{{ t.parentTaskId ? '↳ ' : '' }}{{ t.description }}</span
+          ><div class="list-content" role="button" tabindex="0" @click="chat.requestedTaskId = t._id" @keydown.enter.self.prevent="chat.requestedTaskId = t._id" @keydown.space.self.prevent="chat.requestedTaskId = t._id">
+            <span :title="t.description">{{ t.parentTaskId ? '↳ ' : '' }}<LinkedText :text="t.description" /></span
             ><span>{{ t.assignees.map((p) => p.name).join(", ") }}</span
             ><span
               >{{ taskDate(t) }}<span v-if="deadlineFor(t).label" class="task-deadline-label"> · {{ deadlineFor(t).label }}</span><b v-if="t.unreadCount"> {{ t.unreadCount }}</b
               ><b v-if="t.mentioned"> @</b></span
             >
-          </button>
+          </div>
         </div>
         <p v-if="!shownTasks.length" class="task-empty">Нет задач</p>
       </div>

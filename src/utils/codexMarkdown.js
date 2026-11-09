@@ -1,7 +1,8 @@
 import MarkdownIt from 'markdown-it';
 
 // Model output is untrusted: raw HTML and remotely loaded media stay disabled.
-const markdown = new MarkdownIt({ html: false, breaks: true, linkify: false, typographer: false });
+const markdown = new MarkdownIt({ html: false, breaks: true, linkify: true, typographer: false });
+markdown.linkify.set({ fuzzyLink: true, fuzzyEmail: false });
 const validateLink = markdown.validateLink.bind(markdown);
 markdown.validateLink = url => /^(https?:|mailto:|#|\/(?!\/))/i.test(url) && validateLink(url);
 const defaultLink = markdown.renderer.rules.link_open || ((tokens, index, options, env, self) => self.renderToken(tokens, index, options));

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import LinkedText from './LinkedText.vue';
 import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
 const props = defineProps({
@@ -32,7 +33,7 @@ const html = computed(() => {
 </script>
 
 <template>
-  <div v-if="plain" class="codex-text codex-plain">{{ text }}</div>
+  <div v-if="plain" class="codex-text codex-plain"><LinkedText :text="text" :highlight="highlight" /></div>
   <div v-else class="codex-text codex-markdown" v-html="html" />
 </template>
 

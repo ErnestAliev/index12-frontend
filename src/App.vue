@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
 import TeamChatHost from '@/components/TeamChatHost.vue'
+import TextFieldLinks from '@/components/TextFieldLinks.vue'
 import { useMainStore } from '@/stores/mainStore'
 import { useRepairStore } from '@/stores/repairStore' // 🟢 Импортируем repairStore
 import {setHistoryIdentity,connectPreferenceHistory} from '@/utils/preferenceHistory.js'
@@ -73,6 +74,7 @@ const forceRefresh = async () => {
 <template>
   <RouterView />
   <TeamChatHost />
+  <TextFieldLinks />
 
   <!-- 🟢 Шторка обновления базы данных (появляется только при миграции) -->
   <div v-if="repairStore.isRepairing" class="repair-overlay">

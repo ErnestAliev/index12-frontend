@@ -4,7 +4,7 @@ import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useTaskHold } from "@/composables/useTaskHold";
 import UiIcon from "./UiIcon.vue";
 import './teamTaskStatus.css';
-import TeamSearchText from "./TeamSearchText.vue";
+import LinkedText from './LinkedText.vue';
 import TeamTaskMenu from "./TeamTaskMenu.vue";
 import { taskDate } from "@/utils/teamTasks";
 import { useTeamTaskDeadline } from '@/composables/useTeamTaskDeadline';
@@ -64,21 +64,25 @@ async function done() {
     @contextmenu="hold.context($event, task)"
     @keydown="hold.keys($event, task)"
   >
-    <button
+    <div
       class="cover-title"
+      role="button"
+      tabindex="0"
       :class="{ 'has-preview': !!task.latest }"
       @click="emit('open')"
+      @keydown.enter.self.prevent="emit('open')"
+      @keydown.space.self.prevent="emit('open')"
     >
       <span class="cover-title-text"
         >{{ task.status === "done" ? "Готово · " : ""
-        }}<TeamSearchText :text="task.description" :query="highlight" /></span
+        }}<LinkedText :text="task.description" :highlight="highlight" /></span
       ><span
         v-if="task.latest && task.status !== 'done'"
         class="cover-inline-preview"
         >{{ task.latest.authorName }}:
-        {{ task.latest.text || task.latest.attachments?.[0]?.name }}</span
+        <LinkedText :text="task.latest.text || task.latest.attachments?.[0]?.name" :highlight="highlight" /></span
       >
-    </button>
+    </div>
     <div class="cover-footer">
       <span class="cover-details">
         <span class="cover-person" :title="`От: ${task.creatorName}`">От: {{ task.creatorName }}</span>

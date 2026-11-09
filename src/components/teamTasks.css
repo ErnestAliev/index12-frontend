@@ -15,13 +15,14 @@
   box-sizing: border-box;
 }
 .task-panel button,
+.task-panel [role="button"],
 .task-panel input,
 .task-panel select,
 .task-panel textarea {
   font: inherit;
   color: inherit;
 }
-.task-panel button {
+.task-panel :is(button, [role="button"]) {
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -34,6 +35,7 @@
   cursor: default;
 }
 .task-panel button:focus-visible,
+.task-panel [role="button"]:focus-visible,
 .task-panel input:focus-visible,
 .task-panel textarea:focus-visible,
 .task-panel select:focus-visible {
@@ -691,7 +693,8 @@
 .task-meta-add .ui-icon { width: 12px; height: 12px; }
 .task-summary .task-description { text-align: left; min-width: 0; line-height: 22px; }
 .task-overview[data-task-status="done"] { background: color-mix(in srgb,var(--codex-pane-muted) 8%,var(--codex-pane-bg)); }
-.task-summary .task-description:enabled { cursor: text; }
+.task-summary .task-description[role="button"] { cursor: text; }
+.task-description[role="button"]:focus-visible, .cover-title[role="button"]:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 .task-text-editing::after { content: ""; position: absolute; inset: 0; z-index: 20; background: #0006; pointer-events: none; }
 .task-text-editing .task-overview { position: relative; z-index: 21; }

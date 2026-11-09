@@ -141,7 +141,7 @@ function holdMessage(event, row) {
   if (
     event.button !== 0 ||
     selectedMessage.value ||
-    event.target.closest("input,textarea,select,[contenteditable='true']")
+    event.target.closest("input,textarea,select,a,[contenteditable='true']")
   )
     return;
   cancelHold();
@@ -255,6 +255,7 @@ async function showOriginal(quote) {
   }
 }
 function messageClick(event, row) {
+  if (event.target.closest('a')) return;
   if (suppressedClick === row._id) {
     event.preventDefault();
     event.stopPropagation();
@@ -262,10 +263,16 @@ function messageClick(event, row) {
   }
 }
 function messageKeys(event, row) {
+  if (event.target.closest('a')) return;
   if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
     event.preventDefault();
     openMessageMenu(row);
   }
+}
+function messageContext(event, row) {
+  if (event.target.closest('a')) return;
+  event.preventDefault();
+  openMessageMenu(row);
 }
 function deletedMessage(id) {
   older.value = older.value.filter((m) => m._id !== id);
@@ -1074,7 +1081,7 @@ watch(
               @pointercancel.capture="pointerCancelled"
               @dragstart.capture="pointerCancelled"
               @click.capture="messageClick($event, m)"
-              @contextmenu.capture.prevent="openMessageMenu(m)"
+              @contextmenu.capture="messageContext($event, m)"
               @keydown="messageKeys($event, m)"
             >
               <header v-if="m.kind !== 'task'">

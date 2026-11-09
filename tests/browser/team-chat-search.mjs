@@ -75,7 +75,7 @@ try {
   await noPointerFrame();
   await field.pressSequentially("test");
   await noPointerFrame();
-  await page.screenshot({
+  if (!process.env.NO_SCREENSHOTS) await page.screenshot({
     path: `output/playwright/search-first-open-${useWebkit ? "webkit" : "chromium"}.png`,
   });
   await field.fill("Договор");
@@ -112,13 +112,13 @@ try {
       .count(),
     "older history result is loaded in context",
   );
-  await page.screenshot({ path: "output/playwright/chat-search-phone.png" });
+  if (!process.env.NO_SCREENSHOTS) await page.screenshot({ path: "output/playwright/chat-search-phone.png" });
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (theme) => (document.documentElement.dataset.theme = theme),
       theme,
     );
-    await page.screenshot({
+    if (!process.env.NO_SCREENSHOTS) await page.screenshot({
       path: `output/playwright/chat-search-${theme}.png`,
     });
   }
@@ -202,7 +202,7 @@ try {
     }
   }
   await checkReactionRow();
-  await page.screenshot({ path: `output/playwright/chat-reactions-${useWebkit ? "webkit" : "chromium"}.png` });
+  if (!process.env.NO_SCREENSHOTS) await page.screenshot({ path: `output/playwright/chat-reactions-${useWebkit ? "webkit" : "chromium"}.png` });
   for (const width of [320, 736, 1280]) {
     await page.setViewportSize({ width, height: width === 736 ? 390 : 844 });
     await checkReactionRow();
@@ -250,7 +250,7 @@ try {
     "none",
     "Tab navigation keeps a visible focus indicator",
   );
-  await page.screenshot({
+  if (!process.env.NO_SCREENSHOTS) await page.screenshot({
     path: `output/playwright/search-keyboard-${useWebkit ? "webkit" : "chromium"}.png`,
   });
   assert.deepEqual(errors, []);
