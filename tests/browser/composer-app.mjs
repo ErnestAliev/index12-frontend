@@ -23,6 +23,7 @@ export async function verifyAppComposers(browser, origin, engine) {
       sent = [],
       uploads = [],
       uploadedFiles = new Map();
+    let slowJob = false, slowPolls = 0;
     await page.route("**/*", async (route) => {
       const request = route.request(),
         url = new URL(request.url()),
@@ -95,6 +96,12 @@ export async function verifyAppComposers(browser, origin, engine) {
                   : { text: "Готово", threadId: "thread" },
             },
           };
+          if (slowJob && body.kind === 'history' && slowPolls >= 3) data = { job: { status: 'completed', result: { messages: [{ id: 'slow-answer', role: 'assistant', content: 'Долгий ответ получен' }] } } };
+          if (slowJob && body.kind === 'send') data = { job: { id: 'slow-model', status: 'running' } };
+        }
+        if (path.endsWith('/codex/jobs/slow-model')) {
+          slowPolls++;
+          data = { job: { id: 'slow-model', status: slowPolls < 3 ? 'running' : 'completed', result: { text: 'Долгий ответ получен', threadId: 'thread' } } };
         }
         if (
           path.endsWith("/team-chat/messages") &&
@@ -315,6 +322,21 @@ export async function verifyAppComposers(browser, origin, engine) {
           });
           visualViewport.dispatchEvent(new Event("resize"));
         });
+      if (kind === 'codex' && width === 390) {
+        // Move the wall clock forward six minutes during an actual running job.
+        // Timers and network polling stay real: the old five-minute cutoff fails here.
+        slowJob = true;
+        await field.fill('Долгий запрос модели');
+        await send.tap();
+        await frame.getByLabel('Codex готовит ответ').waitFor();
+        await page.evaluate(() => { const now = Date.now; Date.now = () => now() + 360000; });
+        await frame.getByText('Долгий ответ получен', { exact: true }).waitFor();
+        assert.ok(slowPolls >= 3);
+        assert.equal(await frame.getByRole('alert').count(), 0);
+        assert.equal(sent.filter(row => row.text === 'Долгий запрос модели').length, 1);
+        slowJob = false;
+        console.log(`PASS ${engine}: running cloud request remains attached after six minutes and returns once without resubmission`);
+      }
       await frame
         .getByRole("button", {
           name:

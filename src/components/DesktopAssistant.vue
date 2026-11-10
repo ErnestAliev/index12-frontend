@@ -95,8 +95,10 @@ async function stopVoice() {
   if (selectedId.value && connected.value) await selectChat(selectedId.value);
 }
 async function waitJob(job, session) {
-  let deadline = Date.now() + 310000;
-  const showRequests = () => { activeJobId.value = job.id; pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + 310000; };
+  // The cloud worker has a ten-minute job budget; keep polling through its final receipt.
+  const waitBudget = 650000;
+  let deadline = Date.now() + waitBudget;
+  const showRequests = () => { activeJobId.value = job.id; pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + waitBudget; };
   showRequests();
   while (['queued', 'running'].includes(job.status)) {
     if (Date.now() > deadline) throw new Error('Ответ ещё выполняется. Обновите историю перед повторной отправкой.');
