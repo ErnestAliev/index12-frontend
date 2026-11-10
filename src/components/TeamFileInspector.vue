@@ -212,7 +212,7 @@ async function share() {
 </template>
 <style scoped>
 .file-inspector {
-  width: 340px;
+  width: auto;
   flex: none;
   min-width: 0;
   min-height: 0;
@@ -258,7 +258,7 @@ header button {
   min-height: 0;
 }
 .inspector-preview {
-  height: 250px;
+  height: clamp(240px, 68cqh, 1000px);
   background: var(--color-background-soft);
   display: flex;
   align-items: center;
@@ -417,7 +417,7 @@ button:disabled {
     z-index: 5;
   }
   .inspector-preview {
-    height: 30dvh;
+    height: max(240px, 55cqh);
   }
   header button,
   .inspector-actions button {

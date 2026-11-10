@@ -25,6 +25,7 @@ const emit = defineEmits(["source-open"]);
 const chat = useTeamChatStore(),
   search = useTeamChatSearchStore();
 const root = ref(null),
+  body = ref(null),
   scroller = ref(null),
   files = ref([]),
   facets = ref({ projects: [], people: [], viewers: [], tags: [] });
@@ -63,6 +64,7 @@ watch(
   },
 );
 const view = ref("grid"),
+  listShare = ref(null),
   size = ref(180),
   groupDates = ref(true),
   showFilters = ref(false),
@@ -77,6 +79,9 @@ const floating = ref(false),
   });
 const mobile = computed(() => viewport.width <= 700),
   context = ref(null);
+const effectiveListShare = computed(
+  () => listShare.value ?? (view.value === "list" ? 30 : 42),
+);
 const windowStyle = computed(() => ({
   left:
     (mobile.value ? viewport.left : floating.value ? geometry.left : 0) + "px",
@@ -87,6 +92,7 @@ const windowStyle = computed(() => ({
     (!mobile.value && floating.value ? geometry.height : viewport.height) +
     "px",
   "--file-size": size.value + "px",
+  "--file-list-share": effectiveListShare.value + "%",
 }));
 const groups = computed(() => {
   if (!groupDates.value || !["newest", "oldest"].includes(query.sort))
@@ -107,10 +113,16 @@ try {
   if (stored.size >= 110 && stored.size <= 320) size.value = stored.size;
   if (typeof stored.groupDates === "boolean")
     groupDates.value = stored.groupDates;
+  if (
+    Number.isFinite(stored.listShare) &&
+    stored.listShare >= 18 &&
+    stored.listShare <= 65
+  )
+    listShare.value = stored.listShare;
 } catch {
   /* Optional preferences. */
 }
-watch([view, size, groupDates], () => {
+watch([view, size, groupDates, listShare], () => {
   try {
     localStorage.setItem(
       preferenceKey,
@@ -118,6 +130,7 @@ watch([view, size, groupDates], () => {
         view: view.value,
         size: size.value,
         groupDates: groupDates.value,
+        listShare: listShare.value,
       }),
     );
   } catch {
@@ -327,12 +340,19 @@ function toggleSize() {
   else dock();
 }
 let gesture;
-function startWindow(event, resize = false) {
+const resizing = ref(false);
+const windowEdges = [
+  { edge: "w", label: "Ширина окна файлов слева", orientation: "vertical" },
+  { edge: "e", label: "Ширина окна файлов справа", orientation: "vertical" },
+  { edge: "n", label: "Высота окна файлов сверху", orientation: "horizontal" },
+  { edge: "s", label: "Высота окна файлов снизу", orientation: "horizontal" },
+];
+function startWindow(event, edge = "") {
   if (
     mobile.value ||
     !floating.value ||
     event.button !== 0 ||
-    (!resize && event.target.closest("button,input,select"))
+    (!edge && event.target.closest("button,input,select"))
   )
     return;
   event.preventDefault();
@@ -341,31 +361,105 @@ function startWindow(event, resize = false) {
     x: event.clientX,
     y: event.clientY,
     ...geometry,
-    resize,
+    edge,
   };
+  resizing.value = !!edge;
   event.currentTarget.setPointerCapture(event.pointerId);
+}
+function resizeWindow(initial, dx, dy, edge) {
+  let left = initial.left,
+    right = initial.left + initial.width,
+    top = initial.top,
+    bottom = initial.top + initial.height;
+  const minWidth = Math.min(360, viewport.width),
+    minHeight = Math.min(300, viewport.height);
+  if (edge.includes("w"))
+    left = Math.max(0, Math.min(initial.left + dx, right - minWidth));
+  if (edge.includes("e"))
+    right = Math.min(viewport.width, Math.max(right + dx, left + minWidth));
+  if (edge.includes("n"))
+    top = Math.max(0, Math.min(initial.top + dy, bottom - minHeight));
+  if (edge.includes("s"))
+    bottom = Math.min(viewport.height, Math.max(bottom + dy, top + minHeight));
+  Object.assign(geometry, {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  });
 }
 function moveWindow(event) {
   if (!gesture || event.pointerId !== gesture.id) return;
   const dx = event.clientX - gesture.x,
     dy = event.clientY - gesture.y;
-  if (gesture.resize) {
-    geometry.width = gesture.width + dx;
-    geometry.height = gesture.height + dy;
+  if (gesture.edge) {
+    resizeWindow(gesture, dx, dy, gesture.edge);
   } else {
     geometry.left = gesture.left + dx;
     geometry.top = gesture.top + dy;
   }
   clamp();
 }
-function resizeKeys(event) {
+function endWindow() {
+  gesture = null;
+  resizing.value = false;
+}
+function resizeKeys(event, edge = "se") {
   if (!event.key.startsWith("Arrow")) return;
   event.preventDefault();
-  geometry.width +=
-    event.key === "ArrowRight" ? 20 : event.key === "ArrowLeft" ? -20 : 0;
-  geometry.height +=
-    event.key === "ArrowDown" ? 20 : event.key === "ArrowUp" ? -20 : 0;
-  clamp();
+  resizeWindow(
+    geometry,
+    event.key === "ArrowRight" ? 20 : event.key === "ArrowLeft" ? -20 : 0,
+    event.key === "ArrowDown" ? 20 : event.key === "ArrowUp" ? -20 : 0,
+    edge,
+  );
+}
+let splitGesture;
+function setListShare(value, width = body.value?.clientWidth || 0) {
+  if (!width) return;
+  // Leave both the file names and the preview usable in a narrow floating window.
+  const minimum = Math.max(18, Math.min(40, (130 / width) * 100));
+  const maximum = Math.min(
+    65,
+    Math.max(minimum, ((width - 200) / width) * 100),
+  );
+  listShare.value = Math.min(maximum, Math.max(minimum, value));
+}
+function startSplit(event) {
+  if (event.button !== 0 || mobile.value) return;
+  event.preventDefault();
+  splitGesture = {
+    id: event.pointerId,
+    x: event.clientX,
+    width: body.value.clientWidth,
+    share: (scroller.value.clientWidth / body.value.clientWidth) * 100,
+  };
+  resizing.value = true;
+  event.currentTarget.setPointerCapture(event.pointerId);
+}
+function moveSplit(event) {
+  if (!splitGesture || splitGesture.id !== event.pointerId) return;
+  setListShare(
+    splitGesture.share +
+      ((event.clientX - splitGesture.x) / splitGesture.width) * 100,
+    splitGesture.width,
+  );
+}
+function endSplit() {
+  splitGesture = null;
+  resizing.value = false;
+}
+function splitKeys(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const current = (scroller.value.clientWidth / body.value.clientWidth) * 100;
+  setListShare(
+    event.key === "Home"
+      ? 18
+      : event.key === "End"
+        ? 65
+        : current + (event.key === "ArrowLeft" ? -3 : 3),
+  );
 }
 let hold,
   press,
@@ -470,7 +564,7 @@ onBeforeUnmount(() => {
     <section
       ref="root"
       class="team-file-library"
-      :class="{ floating: floating && !mobile }"
+      :class="{ floating: floating && !mobile, 'file-resizing': resizing }"
       :style="windowStyle"
       :data-keyboard="keyboard"
       role="region"
@@ -483,8 +577,9 @@ onBeforeUnmount(() => {
         class="file-library-header"
         @pointerdown="startWindow"
         @pointermove="moveWindow"
-        @pointerup="gesture = null"
-        @pointercancel="gesture = null"
+        @pointerup="endWindow"
+        @pointercancel="endWindow"
+        @lostpointercapture="endWindow"
         @dblclick.self="toggleSize"
       >
         <UiIcon name="folder" />
@@ -624,7 +719,12 @@ onBeforeUnmount(() => {
       <div v-if="error" class="file-library-error" role="alert">
         {{ error }}<button type="button" @click="load()">Обновить</button>
       </div>
-      <div class="file-library-body" :aria-busy="loading || saving">
+      <div
+        ref="body"
+        class="file-library-body"
+        :class="{ 'with-preview': selected && !mobile }"
+        :aria-busy="loading || saving"
+      >
         <div ref="scroller" class="file-library-scroll">
           <p v-if="!files.length" class="file-empty" role="status">
             {{ loading ? "Загрузка файлов…" : "Файлы не найдены" }}
@@ -715,6 +815,24 @@ onBeforeUnmount(() => {
             >Обновление…</span
           >
         </div>
+        <div
+          v-if="selected && !mobile"
+          class="file-splitter"
+          role="separator"
+          tabindex="0"
+          aria-label="Ширина списка и предпросмотра"
+          aria-orientation="vertical"
+          aria-valuemin="18"
+          aria-valuemax="65"
+          :aria-valuenow="Math.round(effectiveListShare)"
+          @pointerdown="startSplit"
+          @pointermove="moveSplit"
+          @pointerup="endSplit"
+          @pointercancel="endSplit"
+          @lostpointercapture="endSplit"
+          @keydown="splitKeys"
+          @dblclick="listShare = null"
+        />
         <TeamFileInspector
           v-if="selected"
           :file="selected"
@@ -726,17 +844,58 @@ onBeforeUnmount(() => {
           @viewed="viewed"
         />
       </div>
-      <button
-        v-if="floating && !mobile"
-        type="button"
-        class="file-resize"
-        aria-label="Изменить размер окна файлов"
-        @pointerdown="startWindow($event, true)"
-        @pointermove="moveWindow"
-        @pointerup="gesture = null"
-        @pointercancel="gesture = null"
-        @keydown="resizeKeys"
-      />
+      <template v-if="floating && !mobile">
+        <div
+          v-for="handle in windowEdges"
+          :key="handle.edge"
+          :class="['file-window-edge', 'edge-' + handle.edge]"
+          role="separator"
+          :aria-orientation="handle.orientation"
+          :aria-label="handle.label"
+          :aria-valuenow="
+            Math.round(
+              handle.orientation === 'vertical'
+                ? geometry.width
+                : geometry.height,
+            )
+          "
+          tabindex="0"
+          @pointerdown="startWindow($event, handle.edge)"
+          @pointermove="moveWindow"
+          @pointerup="endWindow"
+          @pointercancel="endWindow"
+          @lostpointercapture="endWindow"
+          @keydown="resizeKeys($event, handle.edge)"
+        />
+        <button
+          type="button"
+          class="file-resize"
+          aria-label="Изменить размер окна файлов"
+          @pointerdown="startWindow($event, 'se')"
+          @pointermove="moveWindow"
+          @pointerup="endWindow"
+          @pointercancel="endWindow"
+          @lostpointercapture="endWindow"
+          @keydown="resizeKeys($event)"
+        />
+        <div
+          v-for="edge in ['nw', 'ne', 'sw']"
+          :key="edge"
+          :class="['file-window-corner', 'corner-' + edge]"
+          role="button"
+          :aria-label="
+            'Размер окна файлов: ' +
+            { nw: 'слева сверху', ne: 'справа сверху', sw: 'слева снизу' }[edge]
+          "
+          tabindex="0"
+          @pointerdown="startWindow($event, edge)"
+          @pointermove="moveWindow"
+          @pointerup="endWindow"
+          @pointercancel="endWindow"
+          @lostpointercapture="endWindow"
+          @keydown="resizeKeys($event, edge)"
+        />
+      </template>
       <div
         v-if="context"
         class="file-context"
@@ -1223,5 +1382,180 @@ onBeforeUnmount(() => {
   :deep(:is(button, input, select, textarea):focus-visible) {
   outline: 2px solid var(--color-primary) !important;
   outline-offset: -2px;
+}
+</style>
+
+<style scoped>
+.file-library-body {
+  container-type: size;
+  --file-splitter-size: 12px;
+}
+.file-library-body.with-preview {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, min(var(--file-list-share), calc(100% - 212px)))
+    var(--file-splitter-size) minmax(0, 1fr);
+}
+.file-library-body.with-preview > .file-library-scroll {
+  padding-right: 6px;
+}
+.file-splitter {
+  position: relative;
+  min-width: 0;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  background: var(--color-background);
+}
+.file-splitter::after {
+  content: "";
+  position: absolute;
+  width: 1px;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  background: var(--color-border);
+}
+.file-splitter:hover::after,
+.file-splitter:active::after {
+  background: var(--color-primary);
+}
+.file-window-edge,
+.file-window-corner {
+  position: absolute;
+  z-index: 8;
+  touch-action: none;
+  outline: none;
+}
+.file-window-edge.edge-w,
+.file-window-edge.edge-e {
+  top: 12px;
+  bottom: 12px;
+  width: 10px;
+  cursor: ew-resize;
+}
+.edge-w {
+  left: 0;
+}
+.edge-e {
+  right: 0;
+}
+.edge-n {
+  top: 0;
+}
+.edge-s {
+  bottom: 0;
+}
+.file-window-edge.edge-n,
+.file-window-edge.edge-s {
+  left: 12px;
+  right: 12px;
+  height: 10px;
+  cursor: ns-resize;
+}
+.file-window-edge::after {
+  content: "";
+  position: absolute;
+  background: var(--color-border);
+  opacity: 0;
+}
+.file-window-edge:hover::after,
+.file-window-edge:focus-visible::after {
+  opacity: 1;
+}
+.edge-w::after,
+.edge-e::after {
+  top: 20%;
+  bottom: 20%;
+  left: 4px;
+  width: 1px;
+}
+.edge-n::after,
+.edge-s::after {
+  left: 20%;
+  right: 20%;
+  top: 4px;
+  height: 1px;
+}
+.file-window-corner {
+  width: 22px;
+  height: 22px;
+  z-index: 9;
+}
+.corner-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.corner-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.corner-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.file-resize {
+  z-index: 9;
+}
+.file-resizing {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.file-resizing :deep(iframe),
+.file-resizing :deep(video) {
+  pointer-events: none;
+}
+.team-file-library[data-keyboard="true"]
+  :is(.file-splitter, .file-window-edge, .file-window-corner):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .file-library-body {
+    --file-splitter-size: 24px;
+  }
+  .file-library-body.with-preview {
+    grid-template-columns:
+      minmax(130px, min(var(--file-list-share), calc(100% - 224px)))
+      var(--file-splitter-size) minmax(0, 1fr);
+  }
+  .file-window-edge.edge-w,
+  .file-window-edge.edge-e {
+    width: 16px;
+  }
+  .file-window-edge.edge-n,
+  .file-window-edge.edge-s {
+    height: 16px;
+  }
+  .file-window-corner {
+    width: 28px;
+    height: 28px;
+  }
+}
+</style>
+
+<style scoped>
+.with-preview > .file-library-scroll {
+  container-type: inline-size;
+}
+@container (max-width:400px) {
+  .with-preview .file-list .file-thumbnail {
+    max-width: 60px;
+    max-height: 60px;
+  }
+}
+@container (max-width:260px) {
+  .with-preview .file-list .file-thumbnail {
+    display: none;
+  }
+  .with-preview .file-list .file-open {
+    padding-right: 40px;
+  }
+  .with-preview .file-list .file-source-button {
+    display: none;
+  }
 }
 </style>

@@ -170,6 +170,55 @@ try {
         "Содержимое тестового документа",
       );
       await page.waitForFunction(() => window.fileFixture.views.length === 1);
+      await activate(
+        library.getByRole("button", { name: "Список", exact: true }),
+      );
+      if (!mobile) {
+        const list = library.locator(".file-library-scroll"),
+          divider = library.getByRole("separator", {
+            name: "Ширина списка и предпросмотра",
+            exact: true,
+          });
+        const listBefore = await list.boundingBox(),
+          previewBefore = await inspector.boundingBox(),
+          content = await inspector.locator(".inspector-preview").boundingBox();
+        assert.ok(
+          previewBefore.width > listBefore.width * 2,
+          "list defaults to a large preview on the right",
+        );
+        assert.ok(
+          content.height > 400,
+          "preview uses the window height instead of a 250px box",
+        );
+        const grip = await divider.boundingBox();
+        await page.mouse.move(grip.x + grip.width / 2, grip.y + 80);
+        await page.mouse.down();
+        await page.mouse.move(grip.x - 100, grip.y + 80);
+        await page.mouse.up();
+        const enlarged = await inspector.boundingBox();
+        assert.ok(
+          enlarged.width > previewBefore.width + 90,
+          "divider expands preview without opening a separate viewer",
+        );
+        assert.ok((await list.boundingBox()).width < listBefore.width - 90);
+        await divider.focus();
+        await divider.press("ArrowRight");
+        assert.ok(
+          (await inspector.boundingBox()).width < enlarged.width - 25,
+          "keyboard also adjusts the split",
+        );
+      } else {
+        assert.equal(
+          await library
+            .getByRole("separator", {
+              name: "Ширина списка и предпросмотра",
+              exact: true,
+            })
+            .count(),
+          0,
+          "phone keeps its full-width preview",
+        );
+      }
       await inspector
         .getByLabel("Описание файла", { exact: true })
         .fill("Новое описание");
@@ -191,6 +240,9 @@ try {
         );
         const dock = await library.boundingBox();
         assert.ok(dock.x > 500 && dock.width < 800);
+        const narrowList=library.locator('.file-library-scroll');
+        assert.ok(await narrowList.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'narrow list keeps names inside its own column');
+        assert.ok((await inspector.boundingBox()).width>(await narrowList.boundingBox()).width*1.5,'floating window preserves the generous preview');
       }
       await page.waitForFunction(() =>
         document
@@ -232,12 +284,57 @@ try {
             name: "Изменить размер окна файлов",
             exact: true,
           });
+        const leftEdge = library.getByRole("separator", {
+            name: "Ширина окна файлов слева",
+            exact: true,
+          }),
+          leftGrip = await leftEdge.boundingBox();
+        await page.mouse.move(leftGrip.x + 4, leftGrip.y + 70);
+        await page.mouse.down();
+        await page.mouse.move(leftGrip.x - 96, leftGrip.y + 70);
+        await page.mouse.up();
+        const wider = await library.boundingBox();
+        assert.equal(Math.round(wider.width - before.width), 100);
+        assert.ok(
+          Math.abs(wider.x + wider.width - before.x - before.width) < 1,
+          "left edge expands while right stays anchored",
+        );
+        await leftEdge.focus();
+        await leftEdge.press("ArrowRight");
+        assert.equal(
+          Math.round((await library.boundingBox()).width - before.width),
+          80,
+        );
+        const topEdge = library.getByRole("separator", {
+            name: "Высота окна файлов сверху",
+            exact: true,
+          }),
+          oldTop = await library.boundingBox();
+        await topEdge.focus();
+        await topEdge.press("ArrowDown");
+        const shorter = await library.boundingBox();
+        assert.equal(Math.round(oldTop.height - shorter.height), 20);
+        assert.ok(
+          Math.abs(shorter.y + shorter.height - oldTop.y - oldTop.height) < 1,
+          "top edge keeps the bottom anchored",
+        );
+        // Restore the original outer dimensions for the existing corner checks.
+        await topEdge.press("ArrowUp");
+        await leftEdge.focus();
+        for (let n = 0; n < 4; n++) await leftEdge.press("ArrowRight");
         await handle.focus();
         await handle.press("ArrowLeft");
         assert.equal((await library.boundingBox()).width, before.width - 20);
-        const corner=await handle.boundingBox();
-        await page.mouse.move(corner.x+10,corner.y+10);await page.mouse.down();await page.mouse.move(corner.x-10,corner.y-10);await page.mouse.up();
-        assert.equal((await library.boundingBox()).width,before.width-40,'corner drag resizes the actual window');
+        const corner = await handle.boundingBox();
+        await page.mouse.move(corner.x + 10, corner.y + 10);
+        await page.mouse.down();
+        await page.mouse.move(corner.x - 10, corner.y - 10);
+        await page.mouse.up();
+        assert.equal(
+          (await library.boundingBox()).width,
+          before.width - 40,
+          "corner drag resizes the actual window",
+        );
         await handle.press("ArrowUp");
         await handle.press("ArrowUp");
         await handle.press("ArrowUp");
@@ -288,12 +385,29 @@ try {
       );
       await library.waitFor();
       await library.locator(".file-inspector").waitFor();
-      await activate(library.getByRole('button',{name:'Закрыть сведения о файле',exact:true}));
-      await library.getByLabel('Тип файла',{exact:true}).selectOption('spreadsheet');
-      await page.waitForFunction(()=>document.querySelectorAll('[data-file-id]').length===1);
-      await activate(library.getByRole('button',{name:'В чат: Таблица.xlsx',exact:true}));
-      await page.waitForFunction(()=>window.fileFixture.chat.requestedTaskId===window.fileFixture.taskId);
-      await page.locator('.task-panel .task-overview').waitFor();
+      await activate(
+        library.getByRole("button", {
+          name: "Закрыть сведения о файле",
+          exact: true,
+        }),
+      );
+      await library
+        .getByLabel("Тип файла", { exact: true })
+        .selectOption("spreadsheet");
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-file-id]").length === 1,
+      );
+      await activate(
+        library.getByRole("button", {
+          name: "В чат: Таблица.xlsx",
+          exact: true,
+        }),
+      );
+      await page.waitForFunction(
+        () =>
+          window.fileFixture.chat.requestedTaskId === window.fileFixture.taskId,
+      );
+      await page.locator(".task-panel .task-overview").waitFor();
       await page.evaluate(() => window.fileFixture.chat.stop());
       await library.waitFor({ state: "detached" });
       assert.deepEqual(errors, []);
