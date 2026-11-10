@@ -1,4 +1,6 @@
 .codex-input-container {
+  --composer-send-background: #34c759;
+  --composer-send-foreground: #092a12;
   box-sizing: border-box;
   flex: none;
   width: 100%;
@@ -90,12 +92,10 @@
 .codex-mic-btn:hover:not(:disabled) {
   background: var(--codex-pane-hover);
 }
-.codex-input-wrapper .codex-send-btn,
 .codex-input-wrapper .codex-live-voice-btn {
   color: var(--codex-pane-send-text);
   background: var(--codex-pane-accent);
 }
-.codex-send-btn:hover:not(:disabled),
 .codex-live-voice-btn:hover:not(:disabled) {
   filter: brightness(1.08);
   background: var(--codex-pane-accent);
@@ -104,10 +104,29 @@
   cursor: not-allowed;
   opacity: 0.4;
 }
+.codex-input-wrapper .codex-send-btn,
 .codex-input-wrapper .codex-send-btn:disabled {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
   color: var(--codex-pane-muted);
+  -webkit-text-fill-color: currentColor;
   background: var(--codex-pane-hover);
   opacity: 1;
+  visibility: visible;
+  transition: none;
+}
+.codex-input-wrapper .codex-send-btn[data-ready="true"] {
+  color: var(--composer-send-foreground);
+  background: var(--composer-send-background);
+}
+.codex-send-btn :deep(svg) {
+  color: inherit;
+  stroke: currentColor;
+}
+:global(html[data-theme="light"] .codex-input-container) {
+  --composer-send-background: #168447;
+  --composer-send-foreground: #fff;
 }
 .codex-input-wrapper .codex-mic-btn.recording {
   color: var(--codex-pane-danger);
@@ -181,4 +200,23 @@
 }
 .touch.expanded.with-files .codex-input-wrapper .codex-input {
   grid-row: 2;
+}
+@container codex-window (max-height: 320px) {
+  .touch.expanded .codex-input-wrapper .codex-input {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 11px 2px;
+  }
+  .touch.expanded .codex-input-leading,
+  .touch.expanded .codex-input-buttons {
+    grid-row: 1;
+  }
+  .codex-composer-media {
+    max-height: 44px;
+  }
+  .touch.expanded.with-files .codex-input-wrapper .codex-input,
+  .touch.expanded.with-files .codex-input-leading,
+  .touch.expanded.with-files .codex-input-buttons {
+    grid-row: 2;
+  }
 }

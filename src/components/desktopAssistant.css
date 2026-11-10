@@ -24,3 +24,7 @@
 .desktop-file-message > :deep(.codex-file-card:first-child) { margin-top: 0; }
 
 @container codex-window (max-height: 420px) { .desktop-toolbar { min-height: 38px; padding: 4px 10px; } .desktop-chat-picker { padding: 0 10px 6px; } .desktop-error { max-height: 48px; margin-top: 4px; padding: 6px 8px; } .desktop-attachments { padding-top: 6px; padding-bottom: 2px; } }
+@container codex-window (max-height: 320px) {
+  .desktop-toolbar, .desktop-chat-picker { display: none; }
+  .desktop-error { max-height: 28px; margin-top: 0; padding: 2px 8px; }
+}

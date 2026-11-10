@@ -204,9 +204,10 @@ onBeforeUnmount(() => {
           <CodexGlyph name="waveform" />
         </button>
         <button
-          v-if="!liveVoice || payload"
+          v-show="!liveVoice || payload"
           type="submit"
           class="codex-send-btn"
+          :data-ready="!busy && payload"
           :disabled="busy || !payload"
           title="Отправить (Enter)"
           aria-label="Отправить"

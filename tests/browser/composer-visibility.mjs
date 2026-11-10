@@ -1,8 +1,10 @@
 // Shared working-chat/Codex composer; synthetic state, no screenshots or API writes.
 import assert from "node:assert/strict";
-import { createServer } from "vite";
+import { createServer, preview } from "vite";
 import { chromium, webkit } from "playwright-core";
+import { verifyAppComposers } from "./composer-app.mjs";
 const engine = process.argv.includes("--webkit") ? "webkit" : "chromium";
+const production = process.argv.includes("--production");
 const fixture = `
 import '/src/assets/main.css';
 import {createApp,h,ref} from 'vue';
@@ -12,32 +14,36 @@ const text=ref(''),files=ref(false),busy=ref(false),voice=ref(false),sent=ref(0)
 window.composerFixture={text,files,busy,voice,sent};
 createApp({render:()=>h(Frame,{open:true,title:'Проверка'},()=>h('section',{style:'display:flex;flex:1;min-height:0;flex-direction:column;justify-content:flex-end'},[h(Composer,{modelValue:text.value,'onUpdate:modelValue':v=>text.value=v,hasAttachments:files.value,busy:busy.value,liveVoice:voice.value,voiceAvailable:true,voiceSupported:true,speechSupported:true,attachmentsEnabled:true,onSend:()=>sent.value++},{attachments:()=>h('span','Документ.txt')})]))}).mount('#app');
 `;
-const server = await createServer({
-  root: process.cwd(),
-  envDir: "/private/tmp",
-  server: { host: "127.0.0.1", port: 5217, strictPort: true },
-  plugins: [
-    {
-      name: "composer-visibility-fixture",
-      resolveId: (id) =>
-        id === "virtual:composer-visibility"
-          ? "\0composer-visibility"
-          : undefined,
-      load: (id) => (id === "\0composer-visibility" ? fixture : undefined),
-      configureServer(server) {
-        server.middlewares.use("/__composer-visibility", (_req, res) => {
-          res.setHeader("Content-Type", "text/html");
-          res.end(
-            '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="app"></div><script type="module" src="/@id/__x00__composer-visibility"></script>',
-          );
-        });
-      },
-    },
-  ],
-});
+const server = production
+  ? await preview({
+      preview: { host: "127.0.0.1", port: 5217, strictPort: true },
+    })
+  : await createServer({
+      root: process.cwd(),
+      envDir: "/private/tmp",
+      server: { host: "127.0.0.1", port: 5217, strictPort: true },
+      plugins: [
+        {
+          name: "composer-visibility-fixture",
+          resolveId: (id) =>
+            id === "virtual:composer-visibility"
+              ? "\0composer-visibility"
+              : undefined,
+          load: (id) => (id === "\0composer-visibility" ? fixture : undefined),
+          configureServer(server) {
+            server.middlewares.use("/__composer-visibility", (_req, res) => {
+              res.setHeader("Content-Type", "text/html");
+              res.end(
+                '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="app"></div><script type="module" src="/@id/__x00__composer-visibility"></script>',
+              );
+            });
+          },
+        },
+      ],
+    });
 let browser;
 try {
-  await server.listen();
+  if (!production) await server.listen();
   browser =
     engine === "webkit"
       ? await webkit.launch()
@@ -45,14 +51,16 @@ try {
           executablePath:
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         });
-  for (const [width, height, touch] of [
-    [320, 720, true],
-    [390, 844, true],
-    [844, 390, true],
-    [768, 1024, true],
-    [1024, 768, true],
-    [1440, 900, false],
-  ]) {
+  for (const [width, height, touch] of production
+    ? []
+    : [
+        [320, 720, true],
+        [390, 844, true],
+        [844, 390, true],
+        [768, 1024, true],
+        [1024, 768, true],
+        [1440, 900, false],
+      ]) {
     const context = await browser.newContext({
       viewport: { width, height },
       isMobile: touch,
@@ -191,8 +199,8 @@ try {
         .getByRole("button", { name: "Начать голосовой диалог", exact: true })
         .waitFor();
       assert.equal(
-        await send.count(),
-        0,
+        await send.isVisible(),
+        false,
         "Codex live voice keeps its existing empty-state action",
       );
       await field.fill("Вопрос Codex");
@@ -213,7 +221,10 @@ try {
     }
     await context.close();
   }
+  await verifyAppComposers(browser, "http://127.0.0.1:5217", engine);
 } finally {
   await browser?.close();
-  await server.close();
+  if (production)
+    await new Promise((resolve) => server.httpServer.close(resolve));
+  else await server.close();
 }
