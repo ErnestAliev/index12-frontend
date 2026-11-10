@@ -43,6 +43,7 @@ const menuId = useId();
 const sections = computed(() => [
   { value: "messages", label: "Чат" },
   { value: "tasks", label: "Задачи" },
+  { value: 'files', label: 'Файлы' },
   ...(chat.isOwner ? [{ value: "members", label: "Доступы и роли" }] : []),
   ...(!chat.isOwner ? [{ value: 'mcp', label: 'MCP-коннектор' }] : []),
 ]);
@@ -89,6 +90,7 @@ function toggle() {
   else open.value = true;
 }
 function select(value) {
+  if (value === 'files') { chat.openFiles(); close(); return; }
   if (search.open) search.close(false);
   if (value === "members" && !chat.isOwner) return;
   if (value === 'mcp') {

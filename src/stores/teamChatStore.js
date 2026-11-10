@@ -122,6 +122,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   const creatingTask = ref(false);
   const creatingTaskParentId = ref(null);
   const requestedTaskMessageId = ref(null);
+  const requestedMessageId = ref(null), fileLibraryOpen = ref(false), requestedFileId = ref(null);
+  function openFiles(fileId = null) {
+    if (me.value?.status !== 'active') return;
+    requestedFileId.value = typeof fileId === 'string' ? fileId : null;
+    fileLibraryOpen.value = true;
+  }
   const tab = ref("messages"),
     requestedTaskId = ref(null);
   const me = ref(null),
@@ -187,6 +193,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     tab.value = "messages";
     requestedTaskId.value = null;
     requestedTaskMessageId.value = null;
+    requestedMessageId.value = null; fileLibraryOpen.value = false; requestedFileId.value = null;
     taskNotifications.value = false;
     creatingTask.value = false;
     creatingTaskParentId.value = null;
@@ -569,6 +576,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     schedule();
   }
   return {
+    requestedMessageId, fileLibraryOpen, requestedFileId, openFiles,
     me,
     taskFilters, taskOptions, taskOptionsLoading, taskOptionsError, loadTaskOptions,
     messageDeletions,

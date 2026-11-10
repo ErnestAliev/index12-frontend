@@ -47,6 +47,7 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
       </button>
 
       <button class="icon-circle team-chat-button" title="Чат сотрудников" aria-label="Открыть чат сотрудников" :aria-expanded="teamChat.open" @click="emit('open-team-chat')"><UiIcon name="chat"/><span v-if="teamChat.unread||teamChat.pending.length||teamChat.actionable" class="team-unread">{{teamChat.unread+teamChat.pending.length+teamChat.actionable}}</span></button>
+      <button class="icon-circle" title="Файлы" aria-label="Открыть файлы" @click="teamChat.openFiles()"><UiIcon name="folder"/></button>
       <button class="icon-circle" title="Выбор месяца" aria-label="Выбор месяца" :aria-expanded="monthOpen" :disabled="mainStore.workspaceRole==='manager'" @click.stop="monthOpen=!monthOpen"><UiIcon name="month"/></button>
       <div v-if="monthOpen" class="month-picker" role="dialog" aria-label="Переключение месяцев" @click.stop><button class="icon-circle" :title="prevMonthLabel||'Предыдущий месяц'" aria-label="Предыдущий месяц" @click="emit('prev-month')"><UiIcon name="chevron-left"/></button><span class="month-text">{{monthLabel}}</span><button class="icon-circle" :title="nextMonthLabel||'Следующий месяц'" aria-label="Следующий месяц" @click="emit('next-month')"><UiIcon name="chevron-right"/></button></div>
 

@@ -1767,6 +1767,7 @@ const handleRefundDelete = async (op) => {
           <button v-if="mainStore.isAdmin" class="icon-btn" type="button" data-tooltip="Календарь задач" aria-label="Открыть календарь задач" @click="showBusinessCalendar = true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2"/></svg>
           </button>
+          <button class="icon-btn" type="button" data-tooltip="Файлы" aria-label="Открыть файлы" @click="teamChat.openFiles()"><UiIcon name="folder"/></button>
           <button class="icon-btn codex-btn" :class="{ active: showCodex }" type="button"
             data-tooltip="Codex" aria-label="Открыть чат Codex" :aria-expanded="showCodex" aria-controls="codex-chat-window" @click="showCodex = !showCodex; if (showCodex) showThemeSettings = false">
             <CodexIcon />

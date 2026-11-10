@@ -920,7 +920,7 @@ watch(
 );
 async function revealTarget() {
   const id = props.targetMessageId;
-  if (!id || !props.taskId || !historyReady.value) return;
+  if (!id || !historyReady.value) return;
   while (
     !disposed &&
     historyMore.value &&
@@ -938,6 +938,7 @@ async function revealTarget() {
   el?.scrollIntoView({ block: "center" });
   if (el) {
     highlightedMessage.value = id;
+    if (!props.taskId && chat.requestedMessageId === id) chat.requestedMessageId = null;
     clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => (highlightedMessage.value = null), 2000);
   }
@@ -1142,9 +1143,8 @@ watch(
                 :highlight="search.open ? search.query.trim() : ''"
                 class="team-message-content"
               />
+              <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
               <button
-                v-for="file in m.attachments"
-                :key="file.fileId"
                 :data-media-file-id="file.fileId"
                 class="team-file"
                 :disabled="!!m._delivery"
@@ -1155,6 +1155,8 @@ watch(
                   :query="search.open ? search.query.trim() : ''"
                 />
               </button>
+              <button type="button" class="team-attachment-library" :disabled="!!m._delivery" :aria-label="'В коллекции: '+file.name" title="Показать в коллекции файлов" @pointerdown.stop @click.stop="chat.openFiles(file.fileId)"><UiIcon name="folder"/></button>
+              </div>
               <div
                 v-if="m._delivery"
                 class="team-delivery"
@@ -1323,3 +1325,7 @@ watch(
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>
+
+<style scoped>
+.team-attachment-row{display:flex;align-items:center;gap:4px;min-width:0}.team-attachment-row>.team-file{min-width:0;flex:1}.team-attachment-library{display:grid;place-items:center;flex:none;width:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.65}.team-attachment-library:hover{opacity:1}
+</style>

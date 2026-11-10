@@ -1,6 +1,15 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  folder: 'M3 7V4h6l2 3h10v13H3V7Z',
+  file: 'M14 3H5v18h14V8l-5-5ZM14 3v5h5M8 13h8M8 17h6',
+  sheet: 'M5 3h14v18H5ZM5 9h14M5 15h14M11 9v12',
+  image: 'M3 3h18v18H3ZM3 17l5-6 5 5 3-3 5 6M16 7h.01',
+  video: 'M3 5h13v14H3ZM16 10l5-4v12l-5-4',
+  audio: 'M9 18V5l12-2v13M9 8l12-2M9 18a3 3 0 1 1-3-3h3M21 16a3 3 0 1 1-3-3h3',
+  grid: 'M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h7v7h-7Z',
+  maximize: 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5',
+  minimize: 'M3 8h5V3M21 8h-5V3M8 21v-5H3M16 21v-5h5',
   key: "M15 7h.01M21 7a5 5 0 0 1-7.5 4.3L4 21H1v-3l3-3h3v-3l3.7-3.5A5 5 0 1 1 21 7Z",
   download: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5",
   ban: "M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0M6.4 6.4l11.2 11.2",

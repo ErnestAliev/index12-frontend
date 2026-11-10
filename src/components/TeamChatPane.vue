@@ -85,6 +85,7 @@ onBeforeUnmount(() => {
       v-show="!panelOpen && chat.tab === 'messages'"
       :mobile="mobile"
       :active="!panelOpen && chat.tab === 'messages'"
+      :target-message-id="chat.requestedMessageId"
       @new="startTask"
     />
     <TeamTaskPanel

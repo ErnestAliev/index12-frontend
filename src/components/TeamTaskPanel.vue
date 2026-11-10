@@ -859,13 +859,14 @@ onBeforeUnmount(() => {
             ><button class="task-choice-chip" @click="chooseDate(localDay(1))"><span class="task-chip-label">Завтра</span></button>
           </div>
           <div class="task-files">
+            <template v-for="f in task.attachments" :key="f.fileId">
             <button
-              v-for="f in task.attachments"
-              :key="f.fileId"
               @click="download(f)"
             >
               <UiIcon name="attach" />{{ f.name }}
             </button>
+            <button type="button" :aria-label="'В коллекции: '+f.name" title="Показать в коллекции файлов" @click="chat.openFiles(f.fileId)"><UiIcon name="folder"/></button>
+            </template>
           </div>
           <section v-if="editing !== 'description' && subtasks.length" class="task-subtasks" aria-label="Подзадачи">
             <header><span>Подзадачи: {{ subtasks.length }}</span></header>

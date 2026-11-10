@@ -4,7 +4,7 @@ import { cacheTeamMedia, getTeamMedia } from "@/utils/teamMediaCache";
 import { deviceFile } from "@/utils/deviceFiles";
 const previewable = (file) =>
   /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(file?.mimeType || "");
-export function useTeamMedia({ getScope, fetchFile } = {}) {
+export function useTeamMedia({ getScope, fetchFile, recordViews = true } = {}) {
   const chat = useTeamChatStore();
   const scope = computed(() => {
     if (getScope) return getScope();
@@ -73,6 +73,10 @@ export function useTeamMedia({ getScope, fetchFile } = {}) {
           url,
           error: "",
       };
+      // Only an explicit open counts. Warming thumbnails never enters this path;
+      // private Codex/calendar transports have their own scope and do not report here.
+      if (recordViews && !getScope && !fetchFile)
+        void teamApi.post(`/files/library/${file.fileId}/view`).catch(() => {});
     } catch (e) {
       if (disposed || t !== ticket || identity !== scope.value) return;
       preview.value = { ...preview.value, error: teamError(e) };

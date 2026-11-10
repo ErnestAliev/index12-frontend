@@ -7,6 +7,7 @@ import ChatWindowFrame from "./ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
+import TeamFileLibrary from './TeamFileLibrary.vue';
 const main = useMainStore(),
   chat = useTeamChatStore(),
   route = useRoute(),
@@ -93,10 +94,13 @@ function notificationOpened(event) {
 }
 navigator.serviceWorker?.addEventListener("message", notificationOpened);
 window.addEventListener("index12:open-team-chat", show);
+const openFiles = () => chat.openFiles();
+window.addEventListener('index12:open-team-files', openFiles);
 window.addEventListener("index12:team-operation-created", created);
 onBeforeUnmount(() => {
   navigator.serviceWorker?.removeEventListener("message", notificationOpened);
   window.removeEventListener("index12:open-team-chat", show);
+  window.removeEventListener('index12:open-team-files', openFiles);
   window.removeEventListener("index12:team-operation-created", created);
   chat.stop();
 });
@@ -114,6 +118,7 @@ async function decide(status) {
 }
 </script>
 <template>
+  <TeamFileLibrary v-if="!route.path.startsWith('/team/') && chat.fileLibraryOpen && chat.me?.status === 'active'"/>
   <ChatWindowFrame
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
