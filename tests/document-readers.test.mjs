@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CFB } from "xlsx";
-import { documentSamples } from "./fixtures/documentSamples.mjs";
+import { documentSamples, mxlSample } from "./fixtures/documentSamples.mjs";
+import { readMxl } from "../src/utils/mxlReader.js";
 import { documentFormat } from "../src/utils/documentFormats.js";
 import {
   readXmlDocument,
@@ -12,6 +13,77 @@ import {
   archiveBudget,
 } from "../src/utils/documentReaders.js";
 const files = documentSamples();
+test("HTML MIME and native MXL files select rendered previews rather than plain text", () => {
+  assert.equal(
+    documentFormat({
+      name: "page",
+      mimeType: "text/html;charset=windows-1251",
+    }),
+    "html",
+  );
+  assert.equal(
+    documentFormat({ name: "page", mimeType: "application/xhtml+xml" }),
+    "html",
+  );
+  assert.equal(
+    documentFormat({ name: "sheet", mimeType: "application/vnd.1c.mxl" }),
+    "mxl",
+  );
+});
+test("MXL8 preserves cell coordinates, decimal strings, leading zeros, doubled quotes, localized text and merged cells", () => {
+  const result = readMxl(files.get("Таблица.mxl"));
+  assert.deepEqual(
+    result.cells.map((cell) => cell.text),
+    ['Счёт "Тест"', "Разработка", "1234.50", "00123", "Строка MXL 101"],
+  );
+  assert.equal(result.cells.at(-1).row, 101);
+  assert.deepEqual(result.merges, [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }]);
+  assert.equal(result.limited, false);
+});
+test("MXL limits sparse coordinates and rejects unsupported, truncated, duplicate or deeply nested structures", () => {
+  assert.equal(
+    readMxl(
+      mxlSample([
+        { index: 20000, cells: [[0, [2, 0, ["S", "not allocated"]]]] },
+      ]),
+    ).limited,
+    true,
+  );
+  assert.throws(() => readMxl(files.get("Старый.mxl")), /не поддерживается/);
+  assert.throws(
+    () => readMxl(files.get("Таблица.mxl").slice(0, -1)),
+    /структуру/,
+  );
+  assert.throws(
+    () =>
+      readMxl(
+        mxlSample([
+          {
+            index: 0,
+            cells: [
+              [0, [2, 0, ["S", "one"]]],
+              [0, [2, 0, ["S", "duplicate"]]],
+            ],
+          },
+        ]),
+      ),
+    /структуру/,
+  );
+  const header = files.get("Таблица.mxl").slice(0, 16),
+    body = new TextEncoder().encode("{".repeat(100) + "}".repeat(100)),
+    deep = new Uint8Array(header.length + body.length);
+  deep.set(header);
+  deep.set(body, 16);
+  assert.throws(() => readMxl(deep), /структуру/);
+  assert.equal(
+    readMxl(
+      mxlSample([
+        { index: 0, cells: [[0, [2, 0, ["N", "123456789012345678901.50"]]]] },
+      ]),
+    ).cells[0].text,
+    "123456789012345678901.50",
+  );
+});
 test("recognizes exported spreadsheets, Word and text formats without a MIME supplied", () => {
   for (const name of files.keys()) assert.ok(documentFormat({ name }), name);
   assert.equal(

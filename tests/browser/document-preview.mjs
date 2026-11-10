@@ -197,6 +197,67 @@ try {
           );
         }
       await choose("Документ.docx");
+      await choose("Страница.html");
+      const htmlFrame = reader.frameLocator("iframe.document-html");
+      await htmlFrame
+        .getByRole("heading", { name: "Счёт на оплату HTML", exact: true })
+        .waitFor();
+      await htmlFrame
+        .getByRole("cell", { name: "1234,50", exact: true })
+        .waitFor();
+      assert.equal(
+        await htmlFrame
+          .getByRole("heading")
+          .evaluate((node) => getComputedStyle(node).color),
+        "rgb(32, 96, 144)",
+      );
+      assert.equal(await reader.locator("iframe").getAttribute("sandbox"), "");
+      assert.equal(
+        await htmlFrame.locator("script,iframe,object,form").count(),
+        0,
+      );
+      assert.equal(await htmlFrame.locator("a[href]").count(), 0);
+      assert.equal(
+        await htmlFrame.locator("body").evaluate(() => window.pwned),
+        undefined,
+      );
+      assert.ok((await reader.locator("iframe").boundingBox()).height > 200);
+      await htmlFrame
+        .getByRole("img", { name: "Встроенное изображение" })
+        .waitFor();
+      if (!mobile && theme === "dark")
+        for (const ext of ["htm", "xhtml"]) {
+          await choose("Страница." + ext);
+          await htmlFrame
+            .getByRole("heading", { name: "Счёт на оплату HTML", exact: true })
+            .waitFor();
+        }
+      await choose("Таблица.mxl");
+      await reader
+        .getByRole("cell", { name: 'Счёт "Тест"', exact: true })
+        .waitFor();
+      assert.equal(
+        await reader
+          .getByRole("cell", { name: 'Счёт "Тест"', exact: true })
+          .getAttribute("colspan"),
+        "3",
+      );
+      await reader
+        .getByRole("cell", { name: "1234.50", exact: true })
+        .waitFor();
+      await reader.getByRole("cell", { name: "00123", exact: true }).waitFor();
+      await activate(
+        reader.getByRole("button", { name: "Следующие строки", exact: true }),
+      );
+      await reader
+        .getByRole("cell", { name: "Строка MXL 101", exact: true })
+        .waitFor();
+      await choose("Старый.mxl");
+      await reader
+        .getByRole("alert")
+        .filter({ hasText: "не поддерживается" })
+        .waitFor();
+      await choose("Документ.docx");
       await reader
         .getByRole("heading", { name: "Тестовый документ DOCX", exact: true })
         .waitFor();

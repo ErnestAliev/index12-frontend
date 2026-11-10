@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { readMxl } from "@/utils/mxlReader";
 import { isSpreadsheet } from "@/utils/documentFormats";
 import {
   archiveBudget,
@@ -112,6 +113,44 @@ function parse(bytes, format) {
     throw Error(
       "Этот файл — ссылка Google Sheets. Для просмотра нужна выгрузка XLSX, ODS или CSV.",
     );
+  if (format === "mxl") {
+    const parsed = readMxl(bytes),
+      data = [],
+      sheet = { "!data": data, "!merges": parsed.merges };
+    let lastRow = -1,
+      lastCol = -1;
+    for (const cell of parsed.cells) {
+      (data[cell.row] ||= [])[cell.col] = { t: "s", v: cell.text };
+      lastRow = Math.max(lastRow, cell.row);
+      lastCol = Math.max(lastCol, cell.col);
+    }
+    for (const merge of parsed.merges) {
+      lastRow = Math.max(lastRow, merge.e.r);
+      lastCol = Math.max(lastCol, merge.e.c);
+    }
+    if (lastRow >= 0)
+      sheet["!ref"] = XLSX.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: lastRow, c: lastCol },
+      });
+    const name = "Табличный документ";
+    workbook = { SheetNames: [name], Sheets: { [name]: sheet } };
+    sheets = [metadata(sheet, name)];
+    return {
+      kind: "workbook",
+      sheets,
+      page: page(0, 0),
+      limited: parsed.limited,
+    };
+  }
+  if (["html", "htm", "xhtml"].includes(format)) {
+    const html = decodeText(bytes);
+    return {
+      kind: "html",
+      html: html.slice(0, TEXT_LIMIT),
+      limited: html.length > TEXT_LIMIT,
+    };
+  }
   if (isSpreadsheet(format)) {
     archiveBudget(bytes);
     const textFormat = ["csv", "tsv"].includes(format);

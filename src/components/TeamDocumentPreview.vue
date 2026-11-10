@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { documentFormat } from "@/utils/documentFormats";
+import { htmlPreview } from "@/utils/htmlPreview";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({ file: Object, name: String });
 const model = ref(null),
@@ -10,6 +11,9 @@ const model = ref(null),
   error = ref(""),
   zoom = ref(100);
 const sheet = computed(() => model.value?.sheets?.[sheetIndex.value]);
+const htmlSource = computed(() =>
+  model.value?.kind === "html" ? htmlPreview(model.value.html, zoom.value) : "",
+);
 let worker,
   timer,
   ticket = 0,
@@ -191,10 +195,19 @@ onBeforeUnmount(() => {
       </p>
       <div
         class="document-content"
+        :class="{ 'document-html-content': model.kind === 'html' }"
         tabindex="0"
         aria-label="Содержимое документа"
       >
-        <template v-if="model.kind === 'workbook'"
+        <iframe
+          v-if="model.kind === 'html'"
+          class="document-html"
+          :srcdoc="htmlSource"
+          sandbox=""
+          referrerpolicy="no-referrer"
+          title="Веб-страница HTML"
+        />
+        <template v-else-if="model.kind === 'workbook'"
           ><table v-if="current?.rows.length" class="spreadsheet-table">
             <thead>
               <tr>
@@ -365,6 +378,20 @@ onBeforeUnmount(() => {
   min-width: 100%;
   font-size: calc(12px * var(--document-zoom));
   line-height: 1.4;
+}
+.document-html-content {
+  display: flex;
+  overflow: hidden;
+}
+.document-html {
+  display: block;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: #fff;
 }
 .spreadsheet-table :is(th, td) {
   border-right: 1px solid var(--color-border);

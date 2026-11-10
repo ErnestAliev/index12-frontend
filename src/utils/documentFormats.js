@@ -8,6 +8,7 @@ const spreadsheets = new Set([
   "csv",
   "tsv",
   "numbers",
+  "mxl",
 ]);
 const documents = new Set(["docx", "doc", "odt", "rtf", "pptx"]);
 const texts = new Set([
@@ -19,6 +20,7 @@ const texts = new Set([
   "xml",
   "html",
   "htm",
+  "xhtml",
   "log",
   "yaml",
   "yml",
@@ -41,6 +43,9 @@ export function documentFormat(file) {
   )
     return extension;
   const mime = (file?.mimeType || file?.type || "").toLowerCase().split(";")[0];
+  if (mime === "text/html" || mime === "application/xhtml+xml") return "html";
+  if (["application/vnd.1c.mxl", "application/x-mxl"].includes(mime))
+    return "mxl";
   if (mime.includes("spreadsheetml") || mime.includes("ms-excel"))
     return "xlsx";
   if (mime === "application/vnd.oasis.opendocument.spreadsheet") return "ods";
