@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { CHAT_TRANSFER_TYPE } from '@/utils/chatTransfer';
 
-export function useFileDrop({ enabled, onFiles, onError }) {
+export function useFileDrop({ enabled, onFiles, onItem, onError }) {
   const dragging = ref(false),
     allowed = computed(enabled);
   let depth = 0;
@@ -9,6 +10,7 @@ export function useFileDrop({ enabled, onFiles, onError }) {
     dragging.value = false;
   };
   const hasFiles = (event) =>
+    (onItem && Array.from(event.dataTransfer?.types || []).includes(CHAT_TRANSFER_TYPE)) ||
     Array.from(event.dataTransfer?.types || []).includes("Files") ||
     !!event.dataTransfer?.files?.length;
   function claim(event) {
@@ -39,6 +41,11 @@ export function useFileDrop({ enabled, onFiles, onError }) {
       reset();
       if (!allowed.value) return;
       try {
+        const token = event.dataTransfer?.getData(CHAT_TRANSFER_TYPE);
+        if (token && onItem) {
+          Promise.resolve(onItem(token)).catch(error => onError(error.message));
+          return;
+        }
         const items = Array.from(event.dataTransfer?.items || []);
         if (
           items.some(

@@ -31,6 +31,7 @@ import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 import { useFileDrop } from '@/composables/useFileDrop';
+import { useChatTransfer } from '@/composables/useChatTransfer';
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
 import TeamTaskCover from "./TeamTaskCover.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
@@ -90,7 +91,8 @@ const historyLoading = computed(() =>
 );
 const watchedIds = ref([]);
 let disposed = false;
-const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } = useTeamMedia();
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch, readFile } = useTeamMedia();
+const transfer = useChatTransfer('team');
 async function refreshConversation() {
   try {
     if (props.taskId) await chat.refreshThread(props.taskId, watchedIds.value);
@@ -656,7 +658,7 @@ async function run(fn) {
   }
 }
 async function send() {
-  if (uploading.value || (!message.value.trim() && !files.value.length)) return;
+  if (uploading.value || transfer.pending.value || (!message.value.trim() && !files.value.length)) return;
   if (replyDraft.value && displayQuote(replyDraft.value).deleted) {
     localError.value =
       "Исходное сообщение удалено. Отмените ответ или выберите другое сообщение";
@@ -710,8 +712,12 @@ async function attachFiles(selectedFiles) {
   uploading.value = false;
 }
 const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
-  enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !preview.value && !quoteView.value && !selectedMessage.value,
+  enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !transfer.pending.value && !preview.value && !quoteView.value && !selectedMessage.value,
   onFiles: attachFiles,
+  onItem: async token => {
+    const item = await transfer.accept(token);
+    if (item?.file) await attachFiles([item.file]);
+  },
   onError: message => { localError.value = message; },
 });
 
@@ -1157,6 +1163,8 @@ watch(
               <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
               <button
                 :data-media-file-id="file.fileId"
+                :draggable="!!transfer.scope.value && !m._delivery"
+                @dragstart.stop="pointerCancelled(); transfer.file($event, () => readFile(file))"
                 class="team-file"
                 :disabled="!!m._delivery"
                 @click="download(file)"
@@ -1299,7 +1307,7 @@ watch(
           @change="attach"
         /><CodexComposer
           v-model="message"
-          :busy="uploading"
+          :busy="uploading || transfer.pending.value"
           :mobile="mobile"
           :focus-on-touch="chat.isOwner"
           attachments-enabled

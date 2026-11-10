@@ -22,7 +22,8 @@
     "test:file-media": "node tests/browser/file-media.mjs && node tests/browser/file-media.mjs --webkit",
     "test:documents": "node --test tests/document-readers.test.mjs && node tests/browser/document-preview.mjs && node tests/browser/document-preview.mjs --webkit",
     "test:composer": "node tests/browser/composer-visibility.mjs && node tests/browser/composer-visibility.mjs --webkit",
-    "test:purchases": "node tests/browser/intercompany-purchase.mjs && node tests/browser/intercompany-purchase.mjs --webkit"
+    "test:purchases": "node tests/browser/intercompany-purchase.mjs && node tests/browser/intercompany-purchase.mjs --webkit",
+    "test:chat-transfer": "node tests/browser/chat-transfer.mjs && node tests/browser/chat-transfer.mjs --webkit"
   },
   "dependencies": {
     "axios": "^1.13.1",

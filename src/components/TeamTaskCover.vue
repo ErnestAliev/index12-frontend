@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { useTeamChatStore } from "@/stores/teamChatStore";
 import { useTaskHold } from "@/composables/useTaskHold";
+import { useChatTransfer } from '@/composables/useChatTransfer';
 import UiIcon from "./UiIcon.vue";
 import './teamTaskStatus.css';
 import LinkedText from './LinkedText.vue';
@@ -17,6 +18,7 @@ const emit = defineEmits(["open"]);
 const chat = useTeamChatStore(),
   menu = ref(false),
   touch = ref(false);
+const transfer = useChatTransfer('team');
 const task = computed(() =>
   chat.state.tasks?.find((t) => t._id === props.taskId),
 );
@@ -54,6 +56,8 @@ async function done() {
   <div
     v-if="task"
     class="task-cover"
+    :draggable="!!transfer.scope.value"
+    @dragstart="hold.cancel(); transfer.task($event, task)"
     :class="{ completed: task.status === 'done', unread: task.unreadCount }"
     :data-status="task.status"
     :data-task-status="task.status"

@@ -31,6 +31,7 @@ import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import TeamTaskProjectPicker from './TeamTaskProjectPicker.vue';
 import TeamTaskFilters from './TeamTaskFilters.vue';
 import { useTaskHold } from "@/composables/useTaskHold";
+import { useChatTransfer } from '@/composables/useChatTransfer';
 const props = defineProps({
   creating: Boolean,
   taskId: String,
@@ -40,6 +41,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["close", "created", "new"]);
 const chat = useTeamChatStore();
+const transfer = useChatTransfer('team');
 const keyboard = useInputModality();
 const blank = () => ({
   id: crypto.randomUUID(),
@@ -334,7 +336,7 @@ async function toggleList(t) {
     error.value = teamError(e);
   }
 }
-const { preview, closePreview, download, retryPreview, cacheUpload, prefetch } = useTeamMedia();
+const { preview, closePreview, download, retryPreview, cacheUpload, prefetch, readFile } = useTeamMedia();
 async function upload(event) {
   const files = [...event.target.files];
   event.target.value = "";
@@ -817,7 +819,7 @@ onBeforeUnmount(() => {
       <div v-if="!task" class="task-empty">Задача недоступна</div>
       <template v-else>
         <Transition :css="false" @enter="(element, done) => animateDetails(element, done, true)" @leave="(element, done) => animateDetails(element, done, false)" @enter-cancelled="cancelDetailAnimation" @leave-cancelled="cancelDetailAnimation">
-        <div v-show="!detailsCollapsed" class="task-overview" :inert="detailsCollapsed" :aria-hidden="detailsCollapsed" :data-task-status="task.status" :data-deadline="deadline.tone">
+        <div v-show="!detailsCollapsed" class="task-overview" :inert="detailsCollapsed" :aria-hidden="detailsCollapsed" :data-task-status="task.status" :data-deadline="deadline.tone" :draggable="!!transfer.scope.value && !editing" @dragstart="transfer.task($event, task)">
           <div v-if="task.parentTaskId" class="task-parent-link" role="button" tabindex="0" @click="openTask(task.parentTaskId)" @keydown.enter.self.prevent="openTask(task.parentTaskId)" @keydown.space.self.prevent="openTask(task.parentTaskId)"><UiIcon name="back" /><LinkedText :text="parentTask?.description || 'Родительская задача'" /></div>
           <div class="task-summary">
             <div class="task-summary-header">
@@ -862,6 +864,8 @@ onBeforeUnmount(() => {
             <template v-for="f in task.attachments" :key="f.fileId">
             <button
               @click="download(f)"
+              :draggable="!!transfer.scope.value"
+              @dragstart.stop="transfer.file($event, () => readFile(f))"
             >
               <UiIcon name="attach" />{{ f.name }}
             </button>
@@ -940,6 +944,8 @@ onBeforeUnmount(() => {
           class="task-list-row"
           :data-deadline="deadlineFor(t).tone"
           @pointerdown="hold.down($event, t)"
+          :draggable="!!transfer.scope.value"
+          @dragstart="hold.cancel(); transfer.task($event, t)"
           @pointermove="hold.move"
           @pointerup="hold.cancel"
           @pointercancel="hold.cancel"

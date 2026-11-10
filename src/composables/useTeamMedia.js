@@ -118,6 +118,12 @@ export function useTeamMedia({ getScope, fetchFile, recordViews = true } = {}) {
     cancel();
   });
   return {
+    readFile: async (file) => {
+      const identity = scope.value;
+      const blob = await bytes(file);
+      if (disposed || !identity || identity !== scope.value) throw Error('Сеанс чата изменился');
+      return deviceFile(blob, file);
+    },
     preview,
     closePreview,
     download,

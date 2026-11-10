@@ -13,6 +13,8 @@ import CodexVoicePanel from './CodexVoicePanel.vue';
 import { useCodexVoice } from '@/composables/useCodexVoice';
 import { useChatDictation } from '@/composables/useChatDictation';
 import { useFileDrop } from '@/composables/useFileDrop';
+import { useChatTransfer } from '@/composables/useChatTransfer';
+import { taskReferenceText } from '@/utils/chatTransfer';
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
@@ -20,6 +22,7 @@ const store = useMainStore();
 const delivery = useCodexDeliveryStore();
 const scopeKey = computed(() => `${store.user?._id || store.user?.id || ''}:${store.user?.currentWorkspaceId || ''}`);
 const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref(''), attachments = ref([]);
+const taskRefs = ref([]), transfer = useChatTransfer('codex');
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const provider = ref('desktop');
 const dictation = useChatDictation({ getText: () => input.value, setText: text => { input.value = text; }, onError: message => { error.value = message; } });
@@ -36,7 +39,7 @@ const deviceSharing = typeof navigator !== 'undefined' && typeof navigator.share
 const media = useTeamMedia({
   getScope: () => (store.user?._id || store.user?.id) && store.user?.currentWorkspaceId ? JSON.stringify(['assistant', scopeKey.value]) : '',
   fetchFile: async (file, signal) => {
-    const response = await fetch(fileUrl(file), { credentials: 'include', signal });
+    const response = await fetch(file.fileId ? `${codexBase()}/files/${encodeURIComponent(file.fileId)}` : fileUrl(file), { credentials: 'include', signal });
     if (!response.ok) throw Error('Не удалось загрузить файл');
     return response.blob();
   },
@@ -161,14 +164,17 @@ async function newChat() {
   finally { if (session === controller) busy.value = false; }
 }
 async function send(forced, existing = null) {
-  const text = existing ? existing.text : (typeof forced === 'string' ? forced : input.value).trim();
-  if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || voiceActive.value) return;
+  const draft = (typeof forced === 'string' ? forced : input.value).trim();
+  const text = existing ? existing.text : draft + taskReferenceText(taskRefs.value);
+  if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || transfer.pending.value || voiceActive.value) return;
+  if (text.length > 16000) { error.value = 'Сообщение со ссылками должно быть не длиннее 16 000 символов.'; return; }
   const session = controller;
   delivery.setScope(scopeKey.value);
   const attempt = existing || delivery.add({ id: 'local:'+crypto.randomUUID(), requestId:crypto.randomUUID(), role:'user', text, chatId:selectedId.value, attachments:[...attachments.value], sourceFiles:[...attachments.value], knownIds:messages.value.filter(row=>row.role==='user').map(row=>row.id), delivery:'sending', sendError:'', accepted:false });
   if (!existing) {
-    if (typeof forced !== 'string' || input.value.trim() === text) input.value = '';
+    if (typeof forced !== 'string' || input.value.trim() === draft) input.value = '';
     attachments.value = [];
+    taskRefs.value = [];
   }
   attempt.delivery = 'sending'; attempt.sendError = '';
   busy.value = true; error.value = ''; stopRecording(); scrollBottom();
@@ -246,8 +252,16 @@ function addSelectedFiles(chosen) {
   } catch (e) { error.value = e.message; }
 }
 const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
-  enabled: () => !busy.value && !voiceActive.value && !media.preview.value,
+  enabled: () => !busy.value && !transfer.pending.value && !voiceActive.value && !media.preview.value,
   onFiles: addSelectedFiles,
+  onItem: async token => {
+    const item = await transfer.accept(token);
+    if (item?.file) addSelectedFiles([item.file]);
+    if (item?.task && !taskRefs.value.some(ref => ref.id === item.task.id)) {
+      if (taskRefs.value.length >= 5) throw Error('Можно добавить до пяти задач.');
+      taskRefs.value.push(item.task);
+    }
+  },
   onError: message => { error.value = message; },
 });
 async function downloadFile(file) {
@@ -273,7 +287,7 @@ watch(scopeKey, () => {
   voice.stop(); voiceAvailable.value = false;
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
-  input.value = ''; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; delivery.setScope(scopeKey.value);
+  input.value = ''; taskRefs.value = []; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; delivery.setScope(scopeKey.value);
   pendingRequests.value = []; activeJobId.value = null; answerErrors.value = {}; submittingAnswers.value.clear();
   refresh();
 });
@@ -303,8 +317,8 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
         <div class="codex-bubble">
           <CodexMessageText v-if="message.text" :text="message.text" :plain="message.role === 'user'" />
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
-            <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" />
-            <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />
+            <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
+            <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />
           </div>
           <div v-if="message.delivery" class="codex-delivery" :class="{failed:message.delivery==='failed'}" role="status"><span :title="message.sendError">{{ message.delivery==='sending'?'Отправляется…':message.delivery==='failed'?'Не отправлено':message.delivery==='processing'?'Обрабатывается…':'Отправлено' }}</span><button v-if="message.delivery==='failed'" type="button" class="codex-action-btn" :disabled="busy || voiceActive" @click="send(undefined,message)">Повторить отправку</button></div>
           <div v-if="message.role === 'assistant'" class="codex-actions"><button type="button" class="codex-copy-btn" @click="copy(message)"><CodexGlyph :name="message.copied ? 'check' : 'copy'" /><span>{{ message.copied ? 'Скопировано' : 'Копировать' }}</span></button></div>
@@ -317,11 +331,15 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
     <input ref="files" type="file" hidden multiple @change="addFiles" />
     <CodexVoicePanel v-if="voiceActive" :status="voiceStatus" :phase="voicePhase" :muted="voiceMuted" :caption="assistantCaption || userCaption" :playback-blocked="voicePlaybackBlocked"
       @stop="stopVoice" @mute="voice.toggleMute" @play="voice.play" />
-    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy" :recording="recording" :speech-supported="speechSupported"
-      live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length"
+    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy || transfer.pending.value" :recording="recording" :speech-supported="speechSupported"
+      live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length || !!taskRefs.length"
       @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()">
       <template #attachments>
-        <div v-if="attachments.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы" tabindex="0">
+        <div v-if="attachments.length || taskRefs.length" class="desktop-attachments" role="region" aria-label="Прикреплённые файлы и задачи" tabindex="0">
+          <div v-for="(task, i) in taskRefs" :key="task.id" class="desktop-task-reference">
+            <CodexGlyph name="file" /><a :href="task.url" target="_blank" rel="noopener">{{ task.title }}</a>
+            <button type="button" :disabled="busy" :aria-label="`Убрать задачу ${task.title}`" @click="taskRefs.splice(i, 1)"><CodexGlyph name="close" /></button>
+          </div>
           <CodexFileCard v-for="(file, i) in attachments" :key="i" :file="file" removable :disabled="busy" :loading="file.uploading" @remove="removeAttachment(i)" />
         </div>
       </template>

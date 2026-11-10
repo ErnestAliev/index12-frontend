@@ -3,7 +3,7 @@ import UiIcon from "./UiIcon.vue";
 </script>
 <template>
   <div class="chat-file-drop" role="status">
-    <UiIcon name="attach" /><span>Прикрепить файлы</span>
+    <UiIcon name="attach" /><span>Добавить в сообщение</span>
   </div>
 </template>
 <style scoped>

@@ -28,3 +28,10 @@
   .desktop-toolbar, .desktop-chat-picker { display: none; }
   .desktop-error { max-height: 28px; margin-top: 0; padding: 2px 8px; }
 }
+.desktop-task-reference { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-width: 0; max-width: 100%; width: 272px; padding: 8px; border: 1px solid var(--codex-pane-border); border-radius: 10px; background: var(--codex-pane-surface); color: var(--codex-pane-accent); }
+.desktop-task-reference > svg { width: 20px; height: 20px; flex: none; }
+.desktop-task-reference > a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font-size: 12px; line-height: 18px; text-underline-offset: 3px; }
+.desktop-task-reference > button { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--codex-pane-muted); cursor: pointer; }
+.desktop-task-reference > button svg { width: 16px; height: 16px; }
+.desktop-task-reference > button:hover { background: var(--codex-pane-hover); color: var(--codex-pane-text); }
+@media (pointer: coarse) { .desktop-task-reference > button { width: 44px; height: 44px; } }
