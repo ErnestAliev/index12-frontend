@@ -1,4 +1,4 @@
-.desktop-assistant { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; color: var(--codex-pane-text); background: var(--codex-pane-bg); font-family: var(--font-family-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); }
+.desktop-assistant { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; color: var(--codex-pane-text); background: var(--codex-pane-bg); font-family: var(--font-family-base, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif); }
 .desktop-toolbar { box-sizing: border-box; display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 8px 12px; flex: none; }
 .desktop-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-right: auto; color: var(--codex-pane-muted); font-size: 11px; line-height: 16px; white-space: nowrap; }
 .desktop-status::before { content: ''; width: 5px; height: 5px; flex: none; border-radius: 50%; background: currentColor; }

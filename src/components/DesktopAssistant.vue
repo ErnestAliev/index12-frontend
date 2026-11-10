@@ -12,6 +12,8 @@ import CodexRequestCard from './CodexRequestCard.vue';
 import CodexVoicePanel from './CodexVoicePanel.vue';
 import { useCodexVoice } from '@/composables/useCodexVoice';
 import { useChatDictation } from '@/composables/useChatDictation';
+import { useFileDrop } from '@/composables/useFileDrop';
+import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -225,9 +227,13 @@ async function refresh(manual = false) {
   finally { if (session === controller) refreshing = false; }
 }
 function addFiles(event) {
+  addSelectedFiles(Array.from(event.target.files || []));
+  event.target.value = '';
+}
+function addSelectedFiles(chosen) {
+  if (busy.value || voiceActive.value || !chosen.length) return;
   error.value = '';
   try {
-    const chosen = [...event.target.files];
     if (attachments.value.length + chosen.length > 5) throw new Error('Можно прикрепить до пяти файлов.');
     let total = attachments.value.reduce((sum, file) => sum + file.size, 0);
     for (const file of chosen) {
@@ -238,8 +244,12 @@ function addFiles(event) {
     if (total > 25 * 1024 * 1024) throw new Error('Общий размер файлов должен быть не больше 25 МБ.');
     attachments.value.push(...chosen.map(file => ({ name: file.name, mimeType: file.type, size: file.size, file, previewUrl: /^image\/(png|jpeg|webp|gif)$/.test(file.type) ? URL.createObjectURL(file) : null })));
   } catch (e) { error.value = e.message; }
-  finally { event.target.value = ''; }
 }
+const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
+  enabled: () => !busy.value && !voiceActive.value && !media.preview.value,
+  onFiles: addSelectedFiles,
+  onError: message => { error.value = message; },
+});
 async function downloadFile(file) {
   if (!file.fileId || downloadingFiles.value.has(file.fileId)) return;
   downloadingFiles.value.add(file.fileId);
@@ -272,7 +282,8 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
 </script>
 
 <template>
-  <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex">
+  <section class="desktop-assistant" :class="{ mobile }" aria-label="Помощник Codex" v-on="fileDropEvents">
+    <ChatFileDropOverlay v-if="draggingFiles" />
     <TeamMediaPreview v-if="media.preview.value" :media="media.preview.value" @close="media.closePreview" @retry="media.retryPreview" />
     <div class="desktop-toolbar">
       <span class="desktop-status" :class="{ online: connected }" :title="connected ? (provider === 'cloud' ? 'Работает на сервере INDEX12 независимо от Mac' : 'Подключён Codex на Mac') : 'Помощник недоступен'">Codex · {{ connected ? (provider === 'cloud' ? 'сервер' : 'подключён') : 'нет связи' }}</span>

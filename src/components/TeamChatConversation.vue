@@ -29,6 +29,8 @@ function syncCalendarDay() {
 }
 import CodexMessageText from "./CodexMessageText.vue";
 import CodexComposer from "./CodexComposer.vue";
+import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
+import { useFileDrop } from '@/composables/useFileDrop';
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
 import TeamTaskCover from "./TeamTaskCover.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
@@ -678,19 +680,21 @@ async function send() {
   await nextTick();
   if (feed.value) feed.value.scrollTop = feed.value.scrollHeight;
 }
-async function attach(event) {
+function attach(event) {
+  const selectedFiles = Array.from(event.target.files || []);
+  event.target.value = '';
+  return attachFiles(selectedFiles);
+}
+async function attachFiles(selectedFiles) {
+  if (uploading.value || !selectedFiles.length) return;
   uploading.value = true;
   const workspace = chat.me?.workspaceId;
-  const selectedFiles = [...event.target.files];
   await run(async () => {
+    if (files.value.length + selectedFiles.length > 5 ||
+        selectedFiles.some(file => file.size > 10 * 1024 * 1024) ||
+        [...files.value, ...selectedFiles].reduce((sum, file) => sum + file.size, 0) > 25 * 1024 * 1024)
+      throw Error('До пяти файлов: один до 10 МБ, всего до 25 МБ');
     for (const file of selectedFiles) {
-      if (
-        files.value.length >= 5 ||
-        file.size > 10 * 1024 * 1024 ||
-        files.value.reduce((s, f) => s + f.size, 0) + file.size >
-          25 * 1024 * 1024
-      )
-        throw Error("До пяти файлов: один до 10 МБ, всего до 25 МБ");
       const { data } = await teamApi.post("/files", file, {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -703,14 +707,19 @@ async function attach(event) {
       files.value.push(data.file);
     }
   });
-  event.target.value = "";
   uploading.value = false;
 }
+const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
+  enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !preview.value && !quoteView.value && !selectedMessage.value,
+  onFiles: attachFiles,
+  onError: message => { localError.value = message; },
+});
 
 function scheduleReads() {
   clearTimeout(readTimer);
   if (
     !props.active ||
+    draggingFiles.value ||
     tab.value !== "messages" ||
     document.visibilityState !== "visible" ||
     !document.hasFocus() ||
@@ -720,6 +729,7 @@ function scheduleReads() {
   readTimer = setTimeout(async () => {
     if (
       !feed.value ||
+      draggingFiles.value ||
       document.visibilityState !== "visible" ||
       !document.hasFocus() ||
       !props.active ||
@@ -754,7 +764,7 @@ function scheduleReads() {
     }
   }, 200);
 }
-watch([shownMessages, tab, selectedMessageId, quoteView], async () => {
+watch([shownMessages, tab, selectedMessageId, quoteView, draggingFiles], async () => {
   await nextTick();
   scheduleReads();
 });
@@ -953,7 +963,8 @@ watch(
 );
 </script>
 <template>
-  <div class="team-pane team-chat-conversation" style="position: relative">
+  <div class="team-pane team-chat-conversation" style="position: relative" v-on="fileDropEvents">
+    <ChatFileDropOverlay v-if="draggingFiles" />
     <TeamMediaPreview
       v-if="preview"
       :media="preview"

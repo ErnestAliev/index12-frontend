@@ -20,7 +20,9 @@ export async function verifyAppComposers(browser, origin, engine) {
       localStorage.setItem("theme", "dark");
     });
     const page = await context.newPage(),
-      sent = [];
+      sent = [],
+      uploads = [],
+      uploadedFiles = new Map();
     await page.route("**/*", async (route) => {
       const request = route.request(),
         url = new URL(request.url()),
@@ -79,7 +81,11 @@ export async function verifyAppComposers(browser, origin, engine) {
         if (path.endsWith("/codex/chats/chat/jobs")) {
           const body = request.postDataJSON();
           if (body.kind !== "history")
-            sent.push({ kind: "codex", text: body.message });
+            sent.push({
+              kind: "codex",
+              text: body.message,
+              attachments: body.attachments,
+            });
           data = {
             job: {
               status: "completed",
@@ -95,7 +101,13 @@ export async function verifyAppComposers(browser, origin, engine) {
           request.method() === "POST"
         ) {
           const body = request.postDataJSON();
-          sent.push({ kind: "team", text: body.text });
+          sent.push({
+            kind: "team",
+            text: body.text,
+            attachments: (body.fileIds || []).map((id) =>
+              uploadedFiles.get(id),
+            ),
+          });
           data = {
             message: {
               _id: crypto.randomUUID(),
@@ -105,6 +117,25 @@ export async function verifyAppComposers(browser, origin, engine) {
               createdAt: new Date().toISOString(),
             },
           };
+        }
+        if (
+          request.method() === "POST" &&
+          (path.endsWith("/team-chat/files") ||
+            path.endsWith("/codex/chats/chat/files"))
+        ) {
+          const name = decodeURIComponent(request.headers()["x-file-name"]);
+          uploads.push(name);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          data = {
+            file: {
+              fileId: crypto.randomUUID(),
+              name,
+              // WebKit's intercepted File request may omit the binary body.
+              size: request.postDataBuffer()?.length ?? 1,
+              mimeType: "text/plain",
+            },
+          };
+          uploadedFiles.set(data.file.fileId, data.file);
         }
         return route.fulfill({
           contentType: "application/json",
@@ -142,6 +173,20 @@ export async function verifyAppComposers(browser, origin, engine) {
               value + "px",
             );
         }, theme);
+        if (width === 768 || width === 1440) {
+          await verifyFileDrop({
+            page,
+            frame,
+            field,
+            send,
+            kind,
+            sent,
+            uploads,
+          });
+          console.log(
+            `PASS ${engine} ${kind} ${width} ${theme}: multi-file drop, cancellation, validation, preserved draft, removal and attachment send`,
+          );
+        }
         await field.fill("");
         await field.blur();
         if (kind === "team") {
@@ -280,4 +325,150 @@ export async function verifyAppComposers(browser, origin, engine) {
     }
     await context.close();
   }
+}
+
+async function verifyFileDrop({
+  page,
+  frame,
+  field,
+  send,
+  kind,
+  sent,
+  uploads,
+}) {
+  if (kind === "codex")
+    await page.waitForFunction(
+      (id) => {
+        const select = document.querySelector(
+          "#" + id + " .desktop-chat-picker select",
+        );
+        return select?.value === "chat" && !select.disabled;
+      },
+      await frame.getAttribute("id"),
+    );
+  const area = frame.locator(
+      kind === "team" ? ".team-chat-conversation" : ".desktop-assistant",
+    ),
+    overlay = frame.locator(".chat-file-drop");
+  const transfer = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.items.add(
+      new File(["Документ"], "Перетащен.txt", { type: "text/plain" }),
+    );
+    data.items.add(new File(["a,b\n1,2"], "Таблица.csv", { type: "text/csv" }));
+    return data;
+  });
+  assert.equal(
+    await field.evaluate((el) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", "Текст");
+      const event = new DragEvent("dragover", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: data,
+      });
+      el.dispatchEvent(event);
+      return event.defaultPrevented;
+    }),
+    false,
+    "ordinary text drags retain native behaviour",
+  );
+  const tooMany = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    for (let i = 0; i < 6; i++)
+      data.items.add(
+        new File(["x"], "Лимит" + i + ".txt", { type: "text/plain" }),
+      );
+    return data;
+  });
+  const beforeUploads = uploads.length;
+  await area.dispatchEvent("drop", { dataTransfer: tooMany });
+  await frame
+    .getByRole("alert")
+    .filter({ hasText: /пяти файлов/ })
+    .waitFor();
+  assert.equal(
+    uploads.length,
+    beforeUploads,
+    "invalid batches are not partly uploaded",
+  );
+  await area.dispatchEvent("dragenter", { dataTransfer: transfer });
+  await overlay.waitFor();
+  assert.equal(
+    await overlay.evaluate((el) => getComputedStyle(el).pointerEvents),
+    "none",
+  );
+  await field.dispatchEvent("dragenter", { dataTransfer: transfer });
+  await field.dispatchEvent("dragleave", { dataTransfer: transfer });
+  assert.ok(
+    await overlay.isVisible(),
+    "moving over nested controls keeps the drop highlight",
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("dragend")));
+  await overlay.waitFor({ state: "hidden" });
+  await field.fill("Черновик с вложениями");
+  const beforeSent = sent.length;
+  await area.dispatchEvent("dragenter", { dataTransfer: transfer });
+  await field.dispatchEvent("dragover", { dataTransfer: transfer });
+  await field.dispatchEvent("drop", { dataTransfer: transfer });
+  if (kind === "team")
+    await field.dispatchEvent("drop", { dataTransfer: transfer });
+  await overlay.waitFor({ state: "hidden" });
+  const removeName = (name) =>
+    (kind === "team" ? "Убрать файл " : "Убрать ") + name;
+  await frame
+    .getByRole("button", { name: removeName("Таблица.csv"), exact: true })
+    .waitFor();
+  assert.equal(await field.inputValue(), "Черновик с вложениями");
+  assert.equal(
+    sent.length,
+    beforeSent,
+    "a drop stages attachments without sending",
+  );
+  assert.equal(
+    await frame
+      .getByRole("button", { name: removeName("Перетащен.txt"), exact: true })
+      .count(),
+    1,
+    "a drop adds each file once",
+  );
+  await frame
+    .getByRole("button", { name: removeName("Перетащен.txt"), exact: true })
+    .click();
+  assert.equal(
+    await frame
+      .getByRole("button", { name: removeName("Перетащен.txt"), exact: true })
+      .count(),
+    0,
+  );
+  const extra = await page.evaluateHandle(() => {
+    const data = new DataTransfer();
+    data.items.add(new File(["Ещё"], "Ещё.txt", { type: "text/plain" }));
+    return data;
+  });
+  await area.dispatchEvent("drop", { dataTransfer: extra });
+  await frame
+    .getByRole("button", { name: removeName("Ещё.txt"), exact: true })
+    .waitFor();
+  const response = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      new URL(r.url()).pathname.endsWith(
+        kind === "team" ? "/team-chat/messages" : "/codex/chats/chat/jobs",
+      ),
+  );
+  await send.click();
+  await response;
+  assert.equal(sent.length, beforeSent + 1);
+  assert.deepEqual(
+    sent.at(-1).attachments.map((file) => file.name),
+    ["Таблица.csv", "Ещё.txt"],
+  );
+  assert.equal(sent.at(-1).text, "Черновик с вложениями");
+  await frame
+    .getByRole("button", { name: removeName("Ещё.txt"), exact: true })
+    .waitFor({ state: "hidden" });
+  await transfer.dispose();
+  await tooMany.dispose();
+  await extra.dispose();
 }
