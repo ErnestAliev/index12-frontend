@@ -93,7 +93,7 @@ async function share() {
           </button>
         </div>
         <img
-          v-else-if="/^image\/(png|jpeg|webp|gif)$/.test(fileMime(file))"
+        v-else-if="fileMime(file).startsWith('image/')"
           :src="preview.url"
           :alt="file.name"
           @dblclick="expanded = true"

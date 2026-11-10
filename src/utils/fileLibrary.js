@@ -17,6 +17,7 @@ export const fileIcon = (type) =>
     audio: "audio",
   })[type] || "file";
 export function fileMime(file) {
+  if (file.mimeType?.toLowerCase() === "image/jpg") return "image/jpeg";
   if (file.mimeType && file.mimeType !== "application/octet-stream")
     return file.mimeType;
   const ext = file.name?.split(".").at(-1)?.toLowerCase();
@@ -27,10 +28,18 @@ export function fileMime(file) {
       jpeg: "image/jpeg",
       webp: "image/webp",
       gif: "image/gif",
+      avif: "image/avif",
+      heic: "image/heic",
+      heif: "image/heif",
+      bmp: "image/bmp",
+      svg: "image/svg+xml",
+      tif: "image/tiff",
+      tiff: "image/tiff",
       pdf: "application/pdf",
       mp4: "video/mp4",
       webm: "video/webm",
       mov: "video/quicktime",
+      m4v: "video/mp4",
       mp3: "audio/mpeg",
       wav: "audio/wav",
       ogg: "audio/ogg",

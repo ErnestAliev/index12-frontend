@@ -63,6 +63,10 @@ const view = ref("grid"),
   size = ref(180),
   groupDates = ref(true),
   keyboard = ref(false);
+const headerSide = ref(0),
+  headerTitle = ref(null),
+  headerTrailing = ref(null),
+  headerActions = ref(null);
 const floating = ref(false),
   geometry = reactive({ left: 0, top: 0, width: 600, height: 600 }),
   viewport = reactive({
@@ -87,6 +91,7 @@ const windowStyle = computed(() => ({
     "px",
   "--file-size": size.value + "px",
   "--file-list-share": effectiveListShare.value + "%",
+  "--file-header-side": headerSide.value + "px",
 }));
 const groups = computed(() => {
   if (!groupDates.value || !["newest", "oldest"].includes(query.sort))
@@ -346,7 +351,7 @@ function startWindow(event, edge = "") {
     mobile.value ||
     !floating.value ||
     event.button !== 0 ||
-    (!edge && event.target.closest("button,input,select"))
+    (!edge && event.target.closest("button,input,select,.file-search-field"))
   )
     return;
   event.preventDefault();
@@ -530,9 +535,33 @@ function menuKeys(event) {
           items.length;
   items[next]?.focus();
 }
+let headerObserver;
+function measureHeader() {
+  if (!headerTitle.value || !headerTrailing.value || !headerActions.value)
+    return;
+  const right =
+    getComputedStyle(headerTrailing.value).display === "contents"
+      ? headerActions.value
+      : headerTrailing.value;
+  headerSide.value = Math.ceil(
+    Math.max(
+      headerTitle.value.getBoundingClientRect().width,
+      right.getBoundingClientRect().width,
+    ),
+  );
+}
 onMounted(async () => {
   previousFocus = document.activeElement;
   measure();
+  headerObserver = new ResizeObserver(measureHeader);
+  for (const element of [
+    root.value,
+    headerTitle.value,
+    headerTrailing.value,
+    headerActions.value,
+  ])
+    if (element) headerObserver.observe(element);
+  measureHeader();
   window.addEventListener("resize", measure);
   window.visualViewport?.addEventListener("resize", measure);
   window.visualViewport?.addEventListener("scroll", measure);
@@ -542,6 +571,7 @@ onMounted(async () => {
   await revealRequested();
 });
 onBeforeUnmount(() => {
+  headerObserver?.disconnect();
   disposed = true;
   ++request;
   controller?.abort();
@@ -577,7 +607,7 @@ onBeforeUnmount(() => {
         @lostpointercapture="endWindow"
         @dblclick.self="toggleSize"
       >
-        <div class="file-library-title">
+        <div ref="headerTitle" class="file-library-title">
           <UiIcon name="folder" />
           <h2>Файлы</h2>
           <span class="file-count"
@@ -587,48 +617,52 @@ onBeforeUnmount(() => {
             ></span
           >
         </div>
-        <input
-          v-model="query.q"
-          type="search"
-          placeholder="Поиск файлов"
-          aria-label="Поиск файлов"
-          maxlength="300"
-        />
-        <div class="file-header-controls">
-          <TeamFileControls
-            :query="query"
-            :facets="facets"
-            v-model:view="view"
-            v-model:size="size"
-            v-model:group-dates="groupDates"
-            @filter="Object.assign(query, $event)"
-            @reset="clearFilters"
+        <div class="file-search-field">
+          <input
+            v-model="query.q"
+            type="search"
+            placeholder="Поиск файлов"
+            aria-label="Поиск файлов"
+            maxlength="300"
           />
         </div>
-        <div class="file-window-actions">
-          <button
-            type="button"
-            class="file-refresh"
-            aria-label="Обновить файлы"
-            :disabled="loading"
-            @click="load()"
-          >
-            <UiIcon name="refresh" /><span
-              v-if="outdated"
-              class="file-refresh-dot"
+        <div ref="headerTrailing" class="file-header-trailing">
+          <div class="file-header-controls">
+            <TeamFileControls
+              :query="query"
+              :facets="facets"
+              v-model:view="view"
+              v-model:size="size"
+              v-model:group-dates="groupDates"
+              @filter="Object.assign(query, $event)"
+              @reset="clearFilters"
             />
-          </button>
-          <button
-            v-if="!mobile"
-            type="button"
-            :aria-label="floating ? 'На весь экран' : 'Уменьшить окно файлов'"
-            @click="toggleSize"
-          >
-            <UiIcon :name="floating ? 'maximize' : 'minimize'" />
-          </button>
-          <button type="button" aria-label="Закрыть файлы" @click="close">
-            <UiIcon name="close" />
-          </button>
+          </div>
+          <div ref="headerActions" class="file-window-actions">
+            <button
+              type="button"
+              class="file-refresh"
+              aria-label="Обновить файлы"
+              :disabled="loading"
+              @click="load()"
+            >
+              <UiIcon name="refresh" /><span
+                v-if="outdated"
+                class="file-refresh-dot"
+              />
+            </button>
+            <button
+              v-if="!mobile"
+              type="button"
+              :aria-label="floating ? 'На весь экран' : 'Уменьшить окно файлов'"
+              @click="toggleSize"
+            >
+              <UiIcon :name="floating ? 'maximize' : 'minimize'" />
+            </button>
+            <button type="button" aria-label="Закрыть файлы" @click="close">
+              <UiIcon name="close" />
+            </button>
+          </div>
         </div>
       </header>
       <div v-if="error" class="file-library-error" role="alert">
@@ -1428,7 +1462,10 @@ onBeforeUnmount(() => {
 }
 .file-library-header {
   display: grid;
-  grid-template-columns: auto minmax(80px, 1fr) auto auto;
+  grid-template-columns: minmax(max-content, 1fr) minmax(80px, 440px) minmax(
+      max-content,
+      1fr
+    );
   gap: 8px;
   position: relative;
 }
@@ -1456,9 +1493,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 2px;
 }
-@container (max-width:740px) {
+@container (max-width:1000px) {
   .file-library-header {
-    grid-template-columns: auto minmax(60px, 1fr) auto;
+    grid-template-columns: minmax(max-content, 1fr) minmax(60px, 440px) minmax(
+        max-content,
+        1fr
+      );
     gap: 2px 8px;
   }
   .file-library-title > .ui-icon {
@@ -1466,9 +1506,6 @@ onBeforeUnmount(() => {
   }
   .file-library-title .file-count {
     max-width: 50px;
-  }
-  .file-library-header > input {
-    font-size: 16px;
   }
   .file-header-controls {
     grid-row: 2;
@@ -1485,15 +1522,115 @@ onBeforeUnmount(() => {
     width: 44px;
     min-height: 44px;
   }
-  .file-library-header > input {
-    height: 44px;
-    font-size: 16px;
-  }
 }
 </style>
 
 <style scoped>
 .file-context {
   position: absolute;
+}
+</style>
+
+<style scoped>
+.file-header-trailing {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+}
+.file-search-field {
+  grid-column: 2;
+  justify-self: center;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-background-soft);
+}
+.file-library-header .file-search-field > input {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(100% / 0.8125);
+  height: calc(100% / 0.8125);
+  min-height: 0;
+  margin: 0;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px !important;
+  appearance: none;
+  -webkit-appearance: none;
+  transform: translateY(-50%) scale(0.8125);
+  transform-origin: left center;
+}
+.team-file-library[data-keyboard="true"] .file-search-field:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.team-file-library[data-keyboard="true"]
+  .file-search-field
+  > input:focus-visible {
+  outline: none !important;
+}
+@container (max-width:1000px) {
+  .file-header-trailing {
+    display: contents;
+  }
+  .file-library-title {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+  .file-search-field {
+    grid-row: 1;
+  }
+  .file-library-header {
+    column-gap: 4px;
+  }
+}
+@media (pointer: coarse) {
+  .file-search-field {
+    height: 44px;
+  }
+}
+</style>
+
+<style scoped>
+.file-library-header {
+  grid-template-columns:
+    minmax(var(--file-header-side), 1fr) minmax(60px, 440px)
+    minmax(var(--file-header-side), 1fr);
+  padding-left: max(
+    12px,
+    var(--safe-area-left, 0px),
+    var(--safe-area-right, 0px)
+  );
+  padding-right: max(
+    12px,
+    var(--safe-area-left, 0px),
+    var(--safe-area-right, 0px)
+  );
+}
+.file-library-title {
+  justify-self: start;
+}
+.file-header-trailing {
+  width: max-content;
+}
+</style>
+
+<style scoped>
+.file-window-actions {
+  width: max-content;
+  justify-self: end;
 }
 </style>

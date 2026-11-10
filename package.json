@@ -18,7 +18,8 @@
     "test:task-calendar": "node tests/browser/task-calendar.mjs && node tests/browser/task-calendar.mjs --webkit && npm run test:calendar-layout",
     "test:chat-ui": "node tests/browser/team-chat-search.mjs && node tests/browser/team-chat-search.mjs --webkit && node tests/browser/team-chat-interactions.mjs && node tests/browser/team-chat-interactions.mjs --webkit && node tests/browser/text-links.mjs && node tests/browser/text-links.mjs --webkit && node tests/browser/task-projects.mjs && node tests/browser/task-projects.mjs --webkit && npm run test:task-creation",
     "test:task-creation": "node tests/browser/task-creation.mjs && node tests/browser/task-creation.mjs --webkit",
-    "test:files": "node tests/browser/file-library.mjs && node tests/browser/file-library.mjs --webkit"
+    "test:files": "node tests/browser/file-library.mjs && node tests/browser/file-library.mjs --webkit",
+    "test:file-media": "node tests/browser/file-media.mjs && node tests/browser/file-media.mjs --webkit"
   },
   "dependencies": {
     "axios": "^1.13.1",

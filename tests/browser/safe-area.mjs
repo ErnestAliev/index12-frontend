@@ -148,15 +148,19 @@ try {
           .evaluate((el) => getComputedStyle(el.parentElement).paddingBottom),
         variant.bottom + 12 + "px",
       );
-      await page.screenshot({
-        path:
-          root +
-          "output/playwright/safe-area-" +
-          variant.name +
-          "-" +
-          theme +
-          ".png",
-      });
+      if (
+        process.env.NO_SCREENSHOTS !== "1" &&
+        process.env.INDEX12_NO_SCREENSHOTS !== "1"
+      )
+        await page.screenshot({
+          path:
+            root +
+            "output/playwright/safe-area-" +
+            variant.name +
+            "-" +
+            theme +
+            ".png",
+        });
     }
     await page.evaluate(() => window.safeVoice());
     await bottomGap(".codex-voice-controls");
@@ -198,11 +202,18 @@ try {
             .locator(".chart-controls-row button")
             .last()
             .boundingBox();
-        assert.ok(first.x >= (variant.left || 0) + 11);
+        assert.ok(first.x >= (variant.left || 0) + 7);
         assert.ok(
-          last.x + last.width <= variant.width - (variant.right || 0) - 11,
+          last.x + last.width <= variant.width - (variant.right || 0) - 7,
         );
-        assert.ok(first.width >= 44 && first.height >= 44);
+        assert.ok(first.width >= 36 && first.height >= 44);
+        const rows = await page
+          .locator(".chart-controls-row>button")
+          .evaluateAll((items) =>
+            items.map((el) => el.getBoundingClientRect().y),
+          );
+        assert.equal(rows.length, 7);
+        assert.equal(new Set(rows).size, 1);
       }
     }
     if (variant.width <= 700) {

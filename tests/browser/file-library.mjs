@@ -514,7 +514,7 @@ try {
         ),
         "touch targets stay usable",
       );
-      if (width >= 768) {
+      if (width > 1000) {
         const input = await library.getByRole("searchbox").boundingBox();
         assert.equal(
           Math.round(input.y + input.height / 2),
@@ -523,6 +523,34 @@ try {
         );
         assert.ok(headerBox.height < 90);
       } else assert.ok(headerBox.height < 145);
+      await page.waitForFunction(() => {
+        const field = document
+            .querySelector(".file-search-field")
+            .getBoundingClientRect(),
+          header = document
+            .querySelector(".file-library-header")
+            .getBoundingClientRect();
+        return (
+          Math.abs(field.x + field.width / 2 - header.x - header.width / 2) < 1
+        );
+      });
+      const searchStyle = await library
+        .locator(".file-search-field")
+        .evaluate((el) => {
+          const input = el.querySelector("input"),
+            style = getComputedStyle(input);
+          return {
+            radius: parseFloat(getComputedStyle(el).borderRadius),
+            renderedFont:
+              parseFloat(style.fontSize) *
+              new DOMMatrixReadOnly(style.transform).a,
+          };
+        });
+      assert.equal(searchStyle.radius, 14);
+      assert.ok(
+        Math.abs(searchStyle.renderedFont - 13) < 0.1,
+        "search text is smaller without iOS focus zoom",
+      );
       const projects = library.getByRole("button", {
         name: "Проект файлов",
         exact: true,

@@ -184,3 +184,9 @@ const monthLabel = computed(() => props.currentMonthLabel || '—');
 <style scoped>
 .icon-circle{border-color:var(--color-border);border-radius:10px;width:44px;height:44px;transition:background-color .15s,color .15s,border-color .15s}.icon-circle :deep(svg){width:20px;height:20px;display:block}.icon-circle:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}.month-picker{position:absolute;bottom:calc(100% + 8px);left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px;background:var(--color-background);color:var(--color-text);border:1px solid var(--color-border);border-radius:12px;box-shadow:0 4px 16px #0002}.month-text{font-weight:500}.team-chat-button{position:relative}.team-unread{position:absolute;right:-4px;top:-4px;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:var(--color-primary);color:white;font-size:10px;line-height:16px}.icon-circle:active{color:var(--color-text);background:var(--color-background-soft);border-color:var(--color-border)}
 </style>
+
+<style scoped>
+.chart-controls-row{grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:0 max(8px,var(--safe-area-right,0px)) 0 max(8px,var(--safe-area-left,0px))}
+.chart-controls-row>.icon-circle{width:100%;max-width:44px;min-width:0;height:44px;box-sizing:border-box;border-radius:9px}
+.chart-controls-row>.icon-circle :deep(svg){width:18px;height:18px}
+</style>
