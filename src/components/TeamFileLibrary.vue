@@ -11,15 +11,10 @@ import {
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 import { defaultTaskFilters } from "@/utils/teamTasks";
-import {
-  dayLabel,
-  fileDay,
-  fileSize,
-  fileDate,
-  fileTypeLabels,
-} from "@/utils/fileLibrary";
+import { dayLabel, fileDay, fileSize, fileDate } from "@/utils/fileLibrary";
 import TeamFileThumbnail from "./TeamFileThumbnail.vue";
 import TeamFileInspector from "./TeamFileInspector.vue";
+import TeamFileControls from "./TeamFileControls.vue";
 import UiIcon from "./UiIcon.vue";
 const emit = defineEmits(["source-open"]);
 const chat = useTeamChatStore(),
@@ -67,7 +62,6 @@ const view = ref("grid"),
   listShare = ref(null),
   size = ref(180),
   groupDates = ref(true),
-  showFilters = ref(false),
   keyboard = ref(false);
 const floating = ref(false),
   geometry = reactive({ left: 0, top: 0, width: 600, height: 600 }),
@@ -465,10 +459,11 @@ let hold,
   press,
   suppressUntil = 0;
 function menu(file, x, y) {
+  const frame = root.value.getBoundingClientRect();
   context.value = {
     file,
-    x: Math.max(8, Math.min(x, viewport.width - 228)),
-    y: Math.max(8, Math.min(y, viewport.height - 360)),
+    x: Math.max(8, Math.min(x - frame.left, frame.width - 228)),
+    y: Math.max(8, Math.min(y - frame.top, frame.height - 360)),
   };
 }
 function holdStart(event, file) {
@@ -582,14 +577,16 @@ onBeforeUnmount(() => {
         @lostpointercapture="endWindow"
         @dblclick.self="toggleSize"
       >
-        <UiIcon name="folder" />
-        <h2>Файлы</h2>
-        <span class="file-count"
-          >{{ total
-          }}<template v-if="total !== allTotal">
-            / {{ allTotal }}</template
-          ></span
-        >
+        <div class="file-library-title">
+          <UiIcon name="folder" />
+          <h2>Файлы</h2>
+          <span class="file-count"
+            >{{ total
+            }}<template v-if="total !== allTotal">
+              / {{ allTotal }}</template
+            ></span
+          >
+        </div>
         <input
           v-model="query.q"
           type="search"
@@ -597,125 +594,43 @@ onBeforeUnmount(() => {
           aria-label="Поиск файлов"
           maxlength="300"
         />
-        <button
-          type="button"
-          aria-label="Фильтры файлов"
-          :aria-expanded="showFilters"
-          @click="showFilters = !showFilters"
-        >
-          <UiIcon name="filter" />
-        </button>
-        <button
-          type="button"
-          class="file-refresh"
-          aria-label="Обновить файлы"
-          :disabled="loading"
-          @click="load()"
-        >
-          <UiIcon name="refresh" /><span
-            v-if="outdated"
-            class="file-refresh-dot"
+        <div class="file-header-controls">
+          <TeamFileControls
+            :query="query"
+            :facets="facets"
+            v-model:view="view"
+            v-model:size="size"
+            v-model:group-dates="groupDates"
+            @filter="Object.assign(query, $event)"
+            @reset="clearFilters"
           />
-        </button>
-        <button
-          v-if="!mobile"
-          type="button"
-          :aria-label="floating ? 'На весь экран' : 'Уменьшить окно файлов'"
-          @click="toggleSize"
-        >
-          <UiIcon :name="floating ? 'maximize' : 'minimize'" />
-        </button>
-        <button type="button" aria-label="Закрыть файлы" @click="close">
-          <UiIcon name="close" />
-        </button>
+        </div>
+        <div class="file-window-actions">
+          <button
+            type="button"
+            class="file-refresh"
+            aria-label="Обновить файлы"
+            :disabled="loading"
+            @click="load()"
+          >
+            <UiIcon name="refresh" /><span
+              v-if="outdated"
+              class="file-refresh-dot"
+            />
+          </button>
+          <button
+            v-if="!mobile"
+            type="button"
+            :aria-label="floating ? 'На весь экран' : 'Уменьшить окно файлов'"
+            @click="toggleSize"
+          >
+            <UiIcon :name="floating ? 'maximize' : 'minimize'" />
+          </button>
+          <button type="button" aria-label="Закрыть файлы" @click="close">
+            <UiIcon name="close" />
+          </button>
+        </div>
       </header>
-      <div class="file-toolbar">
-        <select v-model="query.projectId" aria-label="Проект файлов">
-          <option value="">Все проекты</option>
-          <option value="__none__">Без проекта</option>
-          <option
-            v-for="project in facets.projects"
-            :key="project._id"
-            :value="project._id"
-          >
-            {{ project.name }}
-          </option>
-        </select>
-        <select v-model="query.uploader" aria-label="Кто загрузил">
-          <option value="">Все сотрудники</option>
-          <option
-            v-for="person in facets.people"
-            :key="person.actorId"
-            :value="person.actorId"
-          >
-            {{ person.name }}
-          </option>
-        </select>
-        <select v-model="query.type" aria-label="Тип файла">
-          <option value="">Все типы</option>
-          <option v-for="(label, id) in fileTypeLabels" :key="id" :value="id">
-            {{ label }}
-          </option>
-        </select>
-        <select v-model="query.sort" aria-label="Сортировка файлов">
-          <option value="newest">Сначала новые</option>
-          <option value="oldest">Сначала старые</option>
-          <option value="name">По имени</option>
-          <option value="size">По размеру</option>
-        </select>
-        <span class="file-view-controls"
-          ><button
-            type="button"
-            aria-label="Галерея"
-            :aria-pressed="view === 'grid'"
-            @click="view = 'grid'"
-          >
-            <UiIcon name="grid" /></button
-          ><button
-            type="button"
-            aria-label="Список"
-            :aria-pressed="view === 'list'"
-            @click="view = 'list'"
-          >
-            <UiIcon name="menu" /></button
-          ><input
-            v-model.number="size"
-            type="range"
-            min="110"
-            max="320"
-            step="10"
-            aria-label="Размер миниатюр"
-        /></span>
-      </div>
-      <div v-if="showFilters" class="file-extra-filters">
-        <select v-model="query.tag" aria-label="Метка файла">
-          <option value="">Все метки</option>
-          <option v-for="tag in facets.tags" :key="tag.id" :value="tag.id">
-            {{ tag.name }}
-          </option>
-        </select>
-        <select v-model="query.viewer" aria-label="Кто просмотрел">
-          <option value="">Все просмотры</option>
-          <option
-            v-for="person in facets.viewers"
-            :key="person.actorId"
-            :value="person.actorId"
-          >
-            {{ person.name }}
-          </option>
-        </select>
-        <label
-          >С
-          <input
-            v-model="query.from"
-            type="date"
-            aria-label="Файлы с даты" /></label
-        ><label
-          >По <input v-model="query.to" type="date" aria-label="Файлы по дату"
-        /></label>
-        <label><input v-model="groupDates" type="checkbox" />По дням</label
-        ><button type="button" @click="clearFilters">Сбросить</button>
-      </div>
       <div v-if="error" class="file-library-error" role="alert">
         {{ error }}<button type="button" @click="load()">Обновить</button>
       </div>
@@ -1016,7 +931,6 @@ onBeforeUnmount(() => {
   min-height: 36px;
 }
 .file-library-header button,
-.file-view-controls button,
 .file-row-actions button {
   display: grid;
   place-items: center;
@@ -1029,41 +943,6 @@ onBeforeUnmount(() => {
 .team-file-library button:disabled {
   opacity: 0.45;
   cursor: default;
-}
-.file-toolbar,
-.file-extra-filters {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px max(12px, var(--safe-area-right, 0px)) 8px
-    max(12px, var(--safe-area-left, 0px));
-  border-bottom: 1px solid var(--color-border);
-  flex: none;
-}
-.file-extra-filters label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-}
-.file-extra-filters input[type="date"] {
-  max-width: 145px;
-}
-.file-view-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-.file-view-controls input {
-  width: 100px;
-  accent-color: var(--color-primary);
-}
-.file-view-controls [aria-pressed="true"] {
-  background: var(--color-background-soft);
-  color: var(--color-primary);
-  border-radius: 5px;
 }
 .file-library-body {
   display: flex;
@@ -1312,22 +1191,12 @@ onBeforeUnmount(() => {
     font-size: 16px !important;
     width: 100px;
   }
-  .file-toolbar select {
-    flex: 1;
-    max-width: 100%;
-    width: calc(50% - 6px);
-  }
-  .file-toolbar .file-view-controls {
-    width: 100%;
-    justify-content: flex-end;
-  }
   .team-file-library
     :is(button, select, input:not([type="checkbox"], [type="range"])) {
     min-height: 44px;
   }
   .file-library-header button,
-  .file-row-actions button,
-  .file-view-controls button {
+  .file-row-actions button {
     width: 44px;
   }
   .file-info {
@@ -1338,13 +1207,6 @@ onBeforeUnmount(() => {
   }
   .file-library-scroll {
     padding-right: max(8px, var(--safe-area-right, 0px));
-  }
-  .file-view-controls input {
-    width: 130px;
-  }
-  .file-extra-filters {
-    max-height: 30dvh;
-    overflow: auto;
   }
   .file-list .file-open {
     padding-right: 90px;
@@ -1557,5 +1419,81 @@ onBeforeUnmount(() => {
   .with-preview .file-list .file-source-button {
     display: none;
   }
+}
+</style>
+
+<style scoped>
+.team-file-library {
+  container-type: size;
+}
+.file-library-header {
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr) auto auto;
+  gap: 8px;
+  position: relative;
+}
+.file-library-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.file-library-title .file-count {
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-library-header > input {
+  width: 100%;
+  margin-left: 0;
+}
+.file-header-controls {
+  min-width: 0;
+}
+.file-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+@container (max-width:740px) {
+  .file-library-header {
+    grid-template-columns: auto minmax(60px, 1fr) auto;
+    gap: 2px 8px;
+  }
+  .file-library-title > .ui-icon {
+    display: none;
+  }
+  .file-library-title .file-count {
+    max-width: 50px;
+  }
+  .file-library-header > input {
+    font-size: 16px;
+  }
+  .file-header-controls {
+    grid-row: 2;
+    grid-column: 1/-1;
+    justify-self: center;
+  }
+  .file-window-actions {
+    grid-row: 1;
+    grid-column: 3;
+  }
+}
+@media (pointer: coarse) {
+  .file-window-actions button {
+    width: 44px;
+    min-height: 44px;
+  }
+  .file-library-header > input {
+    height: 44px;
+    font-size: 16px;
+  }
+}
+</style>
+
+<style scoped>
+.file-context {
+  position: absolute;
 }
 </style>

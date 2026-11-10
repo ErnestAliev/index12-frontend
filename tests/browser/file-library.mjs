@@ -58,7 +58,40 @@ try {
       );
       const library = page.getByRole("region", { name: "Файлы рабочего чата" }),
         activate = (locator) => (mobile ? locator.tap() : locator.click());
+      const chooseFilter = async (name, title, choice) => {
+        await activate(library.getByRole("button", { name, exact: true }));
+        await activate(
+          page
+            .getByRole("dialog", { name: title, exact: true })
+            .getByRole("button", { name: choice, exact: true }),
+        );
+      };
       await library.locator("[data-file-id]").first().waitFor();
+      assert.equal(
+        await library.locator(".file-toolbar").count(),
+        0,
+        "no permanent filter row",
+      );
+      const header = await library
+          .locator(".file-library-header")
+          .boundingBox(),
+        strip = await library
+          .getByRole("toolbar", { name: "Фильтры и отображение файлов" })
+          .boundingBox();
+      assert.ok(
+        header.height <= (mobile ? 140 : 64),
+        "compact header preserves preview space",
+      );
+      const filterButtons = library.getByRole("toolbar").getByRole("button");
+      const rows = await filterButtons.evaluateAll((items) =>
+        items.map((el) => Math.round(el.getBoundingClientRect().y)),
+      );
+      assert.equal(
+        new Set(rows).size,
+        1,
+        "filters and gallery/list share one row",
+      );
+
       const bounds = await library.boundingBox();
       assert.equal(bounds.width, mobile ? 390 : 1280);
       assert.equal(bounds.height, mobile ? 844 : 900);
@@ -83,24 +116,16 @@ try {
         library.getByRole("button", { name: "Показать ещё", exact: true }),
       );
       assert.equal(await library.locator("[data-file-id]").count(), 83);
-      await library
-        .getByLabel("Проект файлов", { exact: true })
-        .selectOption("aaaaaaaaaaaaaaaaaaaaaaaa");
+      await chooseFilter("Проект файлов", "Проекты", "Проект системы");
       await page.waitForFunction(
         () => document.querySelectorAll("[data-file-id]").length === 41,
       );
-      await library
-        .getByLabel("Проект файлов", { exact: true })
-        .selectOption("__none__");
+      await chooseFilter("Проект файлов", "Проекты", "Без проекта");
       await page.waitForFunction(
         () => document.querySelectorAll("[data-file-id]").length === 42,
       );
-      await library
-        .getByLabel("Проект файлов", { exact: true })
-        .selectOption("");
-      await library
-        .getByLabel("Тип файла", { exact: true })
-        .selectOption("document");
+      await chooseFilter("Проект файлов", "Проекты", "Все проекты");
+      await chooseFilter("Тип файла", "Типы файлов", "Документы");
       await page.waitForFunction(
         () => document.querySelectorAll("[data-file-id]").length === 1,
       );
@@ -108,7 +133,17 @@ try {
         library.getByRole("button", { name: "Список", exact: true }),
       );
       assert.equal(await library.locator(".file-list").count(), 1);
-      await library.getByLabel("Размер миниатюр", { exact: true }).fill("300");
+      await activate(
+        library.getByRole("button", { name: "Фильтры файлов", exact: true }),
+      );
+      const extra = page.getByRole("dialog", {
+        name: "Фильтры и вид",
+        exact: true,
+      });
+      await extra.getByLabel("Размер миниатюр", { exact: true }).fill("300");
+      await activate(
+        extra.getByRole("button", { name: "Закрыть фильтр", exact: true }),
+      );
       assert.equal(
         await library.evaluate((el) =>
           getComputedStyle(el).getPropertyValue("--file-size"),
@@ -240,9 +275,18 @@ try {
         );
         const dock = await library.boundingBox();
         assert.ok(dock.x > 500 && dock.width < 800);
-        const narrowList=library.locator('.file-library-scroll');
-        assert.ok(await narrowList.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'narrow list keeps names inside its own column');
-        assert.ok((await inspector.boundingBox()).width>(await narrowList.boundingBox()).width*1.5,'floating window preserves the generous preview');
+        const narrowList = library.locator(".file-library-scroll");
+        assert.ok(
+          await narrowList.evaluate(
+            (el) => el.scrollWidth <= el.clientWidth + 1,
+          ),
+          "narrow list keeps names inside its own column",
+        );
+        assert.ok(
+          (await inspector.boundingBox()).width >
+            (await narrowList.boundingBox()).width * 1.5,
+          "floating window preserves the generous preview",
+        );
       }
       await page.waitForFunction(() =>
         document
@@ -391,9 +435,7 @@ try {
           exact: true,
         }),
       );
-      await library
-        .getByLabel("Тип файла", { exact: true })
-        .selectOption("spreadsheet");
+      await chooseFilter("Тип файла", "Типы файлов", "Таблицы");
       await page.waitForFunction(
         () => document.querySelectorAll("[data-file-id]").length === 1,
       );
@@ -413,6 +455,186 @@ try {
       assert.deepEqual(errors, []);
       console.log(
         `PASS ${engine} ${mobile ? "touch" : "mouse"} ${theme}: filters, pages, list/gallery, sizing, tags, real previews, source links, old attachments and session cleanup`,
+      );
+      await context.close();
+    }
+  for (const width of [320, 768, 1024])
+    for (const theme of ["dark", "light"]) {
+      const context = await browser.newContext({
+        viewport: { width, height: width === 320 ? 700 : 1024 },
+        hasTouch: true,
+        isMobile: width === 320,
+      });
+      context.setDefaultTimeout(10000);
+      const page = await context.newPage(),
+        errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.route("**/*", (route) =>
+        new URL(route.request().url()).hostname === "127.0.0.1"
+          ? route.continue()
+          : route.abort(),
+      );
+      await page.goto(
+        "http://127.0.0.1:5211/tests/browser/fixtures/file-library.html",
+      );
+      await page.evaluate((theme) => {
+        document.documentElement.dataset.theme = theme;
+        for (const [side, value] of Object.entries({
+          left: 16,
+          right: 16,
+          top: 24,
+          bottom: 34,
+        }))
+          document.documentElement.style.setProperty(
+            "--safe-area-" + side,
+            value + "px",
+          );
+      }, theme);
+      const library = page.getByRole("region", { name: "Файлы рабочего чата" });
+      await library.locator("[data-file-id]").first().waitFor();
+      const strip = library.getByRole("toolbar", {
+          name: "Фильтры и отображение файлов",
+        }),
+        header = library.locator(".file-library-header");
+      const headerBox = await header.boundingBox(),
+        stripBox = await strip.boundingBox();
+      assert.ok(
+        stripBox.x >= 16 && stripBox.x + stripBox.width <= width - 16 + 1,
+        "all common icons fit within safe areas",
+      );
+      const buttons = strip.getByRole("button");
+      assert.equal(await buttons.count(), 6);
+      assert.ok(
+        await buttons.evaluateAll((items) =>
+          items.every(
+            (el) =>
+              el.getBoundingClientRect().height >= 44 &&
+              el.getBoundingClientRect().width >= 44,
+          ),
+        ),
+        "touch targets stay usable",
+      );
+      if (width >= 768) {
+        const input = await library.getByRole("searchbox").boundingBox();
+        assert.equal(
+          Math.round(input.y + input.height / 2),
+          Math.round(stripBox.y + stripBox.height / 2),
+          "iPad puts controls in the header",
+        );
+        assert.ok(headerBox.height < 90);
+      } else assert.ok(headerBox.height < 145);
+      const projects = library.getByRole("button", {
+        name: "Проект файлов",
+        exact: true,
+      });
+      await projects.tap();
+      const picker = page.getByRole("dialog", { name: "Проекты", exact: true });
+      await picker.waitFor();
+      let box = await picker.boundingBox();
+      assert.ok(
+        box.x >= 8 && box.x + box.width <= width - 8,
+        "filter is centred and bounded",
+      );
+      await projects.tap();
+      await picker.waitFor({ state: "detached" });
+      await projects.tap();
+      await picker
+        .getByRole("button", { name: "Без проекта", exact: true })
+        .tap();
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-file-id]").length === 42,
+      );
+      assert.equal(await projects.getAttribute("aria-pressed"), "true");
+      await projects.tap();
+      assert.equal(
+        await picker
+          .getByRole("button", { name: "Без проекта", exact: true })
+          .getAttribute("aria-pressed"),
+        "true",
+      );
+      await picker
+        .getByRole("button", { name: "Все проекты", exact: true })
+        .tap();
+      const people = library.getByRole("button", {
+        name: "Кто загрузил",
+        exact: true,
+      });
+      const tint = await people
+        .locator(".file-icon-surface")
+        .evaluate((el) => getComputedStyle(el).color);
+      assert.equal(
+        tint,
+        theme === "dark" ? "rgb(141, 188, 204)" : "rgb(40, 95, 115)",
+        "soft icon colours follow the selected theme",
+      );
+      await people.tap();
+      const employees = page.getByRole("dialog", {
+        name: "Сотрудники",
+        exact: true,
+      });
+      await employees
+        .getByRole("button", { name: "Эрнест", exact: true })
+        .tap();
+      await page.waitForFunction(() =>
+        window.fileFixture.requests.some(
+          (req) => req.params?.uploader === "owner:fixture",
+        ),
+      );
+      assert.equal(await people.getAttribute("aria-pressed"), "true");
+      await people.tap();
+      await employees
+        .getByRole("button", { name: "Все сотрудники", exact: true })
+        .tap();
+      const more = library.getByRole("button", {
+        name: "Фильтры файлов",
+        exact: true,
+      });
+      await more.tap();
+      const extra = page.getByRole("dialog", {
+        name: "Фильтры и вид",
+        exact: true,
+      });
+      await extra.getByRole("button", { name: "По имени", exact: true }).tap();
+      await page.waitForFunction(
+        () => window.fileFixture.requests.at(-1)?.params?.sort === "name",
+      );
+      await extra.getByRole("button", { name: "Важное", exact: true }).tap();
+      await page.waitForFunction(
+        () => window.fileFixture.requests.at(-1)?.params?.tag === "important",
+      );
+      await extra
+        .getByRole("button", { name: "Сбросить фильтры", exact: true })
+        .tap();
+      await extra
+        .getByRole("button", { name: "Закрыть фильтр", exact: true })
+        .tap();
+      await projects.tap();
+      await page.keyboard.press("Escape");
+      await picker.waitFor({ state: "detached" });
+      await projects.tap();
+      await library.getByRole("searchbox").tap();
+      await picker.waitFor({ state: "detached" });
+      if (width >= 768) {
+        await library
+          .getByRole("button", { name: "Уменьшить окно файлов", exact: true })
+          .tap();
+        await projects.tap();
+        box = await picker.boundingBox();
+        const frame = await library.boundingBox();
+        assert.ok(
+          box.x >= frame.x + 8 &&
+            box.x + box.width <= frame.x + frame.width - 8,
+          "floating window also contains its filter",
+        );
+        await page.setViewportSize({ width: 390, height: 410 });
+        await page.waitForFunction(() => {
+          const popup = document.querySelector(".file-filter-popover");
+          return popup && popup.getBoundingClientRect().right <= 390;
+        });
+      }
+      assert.deepEqual(errors, []);
+      console.log(
+        `PASS ${engine} ${width}px ${theme}: compact icon row, safe areas, iPad header, chips, toggle, dismissal and floating bounds`,
       );
       await context.close();
     }

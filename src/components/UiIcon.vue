@@ -1,6 +1,9 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  people: 'M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 21v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75',
+  'folder-open': 'M3 8V4h6l2 3h10v4M3 20h16l3-9H6l-3 9ZM3 8v12',
+  'file-types': 'M14 2H6v15h13V7l-5-5ZM14 2v5h5M3 6v15h12M9 11h7M9 14h5',
   folder: 'M3 7V4h6l2 3h10v13H3V7Z',
   file: 'M14 3H5v18h14V8l-5-5ZM14 3v5h5M8 13h8M8 17h6',
   sheet: 'M5 3h14v18H5ZM5 9h14M5 15h14M11 9v12',
