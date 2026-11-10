@@ -70,6 +70,7 @@ const contractorOptions = computed(() => {
       filteredIndividuals.forEach(i => group.options.push({ value: `ind_${i._id}`, label: i.name }));
       opts.push(group);
   }
+  opts.push({ label: 'Мои компании', options: mainStore.companies.map(company => ({ value: `company_${company._id}`, label: company.name })) });
   return opts;
 });
 
@@ -106,7 +107,9 @@ const getAccountName = (accId) => {
 const getContractorName = (contrValue) => {
     if (!contrValue) return '-';
     const [prefix, id] = contrValue.split('_');
-    if (prefix === 'contr') {
+    if (prefix === 'company') {
+        return mainStore.companies.find(company => company._id === id)?.name || '-';
+    } else if (prefix === 'contr') {
         const c = mainStore.contractors.find(x => x._id === id);
         return c ? c.name : '-';
     } else if (prefix === 'ind') {
@@ -183,7 +186,9 @@ const loadOperations = () => {
       let contrVal = null;
       const contrId = op.contractorId?._id || op.contractorId;
       const indContrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
-      if (contrId) contrVal = `contr_${contrId}`;
+      const ownCompanyId = op.counterpartyCompanyId?._id || op.counterpartyCompanyId;
+      if (ownCompanyId) contrVal = `company_${ownCompanyId}`;
+      else if (contrId) contrVal = `contr_${contrId}`;
       else if (indContrId) contrVal = `ind_${indContrId}`;
 
       let amount = Math.abs(op.amount);
@@ -588,7 +593,7 @@ const showCopySuccess = ref(false);
         @save="handleSave" 
     />
 
-    <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="showDeleteConfirm = false"><div class="delete-confirm-box"><h4>Удалить операцию?</h4><p class="confirm-text">Вы действительно хотите удалить эту операцию? Это действие необратимо.</p><div class="delete-actions"><button class="btn-delete-confirm" @click="confirmDelete">Да, удалить</button><button class="btn-cancel" @click="showDeleteConfirm = false">Отмена</button></div></div></div>
+    <div v-if="showDeleteConfirm" class="inner-overlay" @click.self="showDeleteConfirm = false"><div class="delete-confirm-box"><h4>Удалить операцию?</h4><p class="confirm-text">{{ itemToDelete?.originalOp?.purchaseGroupId ? 'Удалить связанный расход и доход?' : 'Вы действительно хотите удалить эту операцию? Это действие необратимо.' }}</p><div class="delete-actions"><button class="btn-delete-confirm" @click="confirmDelete">Да, удалить</button><button class="btn-cancel" @click="showDeleteConfirm = false">Отмена</button></div></div></div>
   </div>
 </template>
 

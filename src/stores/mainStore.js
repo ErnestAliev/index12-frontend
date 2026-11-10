@@ -10,6 +10,7 @@ import { useSocketStore } from './socketStore';
 import { useWidgetStore } from './widgetStore';
 import { aggregateSubcategories, getCategoryDetailLabel, getSubcategoryName } from '@/utils/subcategories.js';
 import { createOperationSync } from '@/utils/operationSync';
+import { purchaseCell, previewPurchase } from '@/utils/intercompanyPurchase';
 import { detectCompanyLegalForm, getDefaultTaxPercentByName, normalizeTaxRegime } from '@/utils/companyTax';
 import { accountOwnerUpdates, getAccountOwnerKey } from '@/utils/accountOwnership.js';
 
@@ -587,7 +588,7 @@ export const useMainStore = defineStore('mainStore', () => {
     };
 
     const _isInterCompanyOp = (op) => {
-        if (!op || !op.categoryId) return false;
+        if (!op || !op.categoryId || op.purchaseGroupId) return false;
         const name = (op.categoryId.name || '').toLowerCase().trim();
         if (!name && typeof op.categoryId === 'string') {
             const cat = categories.value.find(c => _idsMatch(c._id, op.categoryId));
@@ -929,6 +930,7 @@ export const useMainStore = defineStore('mainStore', () => {
         s.timestamp = new Date().toISOString();
 
         if (op.isWorkAct) return;
+        if (op.purchaseGroupId && op.excludeFromTotals) return;
 
         const absAmt = Math.abs(Number(op.amount) || 0);
         const updateMap = (map, id, delta) => {
@@ -961,7 +963,7 @@ export const useMainStore = defineStore('mainStore', () => {
             }
             updateMap(s.companyBalances, op.companyId, netChange);
             updateMap(s.individualBalances, op.individualId, netChange);
-            updateMap(s.individualBalances, op.counterpartyIndividualId, netChange);
+            if (!op.purchaseGroupId) updateMap(s.individualBalances, op.counterpartyIndividualId, netChange);
             updateMap(s.contractorBalances, op.contractorId, netChange);
             updateMap(s.projectBalances, projectGroupId(op), netChange);
 
@@ -1238,7 +1240,7 @@ export const useMainStore = defineStore('mainStore', () => {
             } else {
                 if (entityIdField === 'individualId') {
                     const ownerId = op.individualId?._id || op.individualId;
-                    const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+                    const contrId = op.purchaseGroupId ? null : op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
                     if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (Number(op.amount) || 0); else futureMap[ownerId] -= amt; }
                     if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (Number(op.amount) || 0); else futureMap[contrId] -= amt; }
                 } else {
@@ -1332,7 +1334,7 @@ export const useMainStore = defineStore('mainStore', () => {
             } else {
                 if (entityIdField === 'individualId') {
                     const ownerId = op.individualId?._id || op.individualId;
-                    const contrId = op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
+                    const contrId = op.purchaseGroupId ? null : op.counterpartyIndividualId?._id || op.counterpartyIndividualId;
                     if (ownerId) { if (futureMap[ownerId] === undefined) futureMap[ownerId] = 0; if (op.type === 'income') futureMap[ownerId] += (Number(op.amount) || 0); else futureMap[ownerId] -= amt; }
                     if (contrId) { if (futureMap[contrId] === undefined) futureMap[contrId] = 0; if (op.type === 'income') futureMap[contrId] += (Number(op.amount) || 0); else futureMap[contrId] -= amt; }
                 } else {
@@ -1632,6 +1634,7 @@ export const useMainStore = defineStore('mainStore', () => {
         bindEntity('contractorId', contractors);
         bindEntity('individualId', individuals);
         bindEntity('counterpartyIndividualId', individuals);
+        bindEntity('counterpartyCompanyId', companies);
 
         const hasTransferRouteFields = !!(
             populated.fromAccountId || populated.toAccountId ||
@@ -1934,6 +1937,13 @@ export const useMainStore = defineStore('mainStore', () => {
             if (!eventData.dateKey && eventData.date) eventData.dateKey = _getDateKey(new Date(eventData.date));
             reservation = await _reserveCreationSlot(eventData.dateKey, eventData.cellIndex);
             eventData.cellIndex = reservation.cellIndex;
+            if (eventData.purchaseAccountId) {
+                const response = await axios.post(`${API_BASE_URL}/intercompany-purchases`, eventData);
+                if (!response.data.purchaseGroupId || !response.data.linkedOperations?.length) throw new Error('Не удалось создать связанную пару операций.');
+                response.data.linkedOperations.forEach(onSocketOperationAdded);
+                await fetchSnapshot();
+                return response.data;
+            }
 
             const projectIds = Array.isArray(eventData.projectIds) ? eventData.projectIds.filter(Boolean) : [];
             const isSplit = eventData.projectScope !== 'all' && projectIds.length > 1 && (eventData.type === 'income' || eventData.type === 'expense');
@@ -2042,6 +2052,47 @@ export const useMainStore = defineStore('mainStore', () => {
         return index;
     };
 
+    async function updatePurchaseOperation(source, patch) {
+        if (source.isSplitChild) throw new Error('Измените основную операцию связанной пары.');
+        if (!allKnownOperations.value.some(op => _idsMatch(op._id, source.purchasePeerId))) await refreshDay(source.dateKey);
+        const group = allKnownOperations.value.filter(op => op.purchaseGroupId === source.purchaseGroupId);
+        if (group.some(op => !_canCurrentUserEditOperation(op))) throw new Error('Нет прав на изменение всей связанной пары.');
+        const date = patch.date ? new Date(patch.date) : patch.dateKey && patch.dateKey !== source.dateKey ? _parseDateKey(patch.dateKey) : new Date(source.date);
+        const dateKey = _getDateKey(date), offset = source.type === 'income' ? 1 : 0;
+        if (!Array.isArray(displayCache.value[dateKey])) await fetchOperations(dateKey, true);
+        const requested = Number.isInteger(patch.cellIndex) ? patch.cellIndex - offset : dateKey === source.dateKey ? source.cellIndex - offset : 0;
+        const base = purchaseCell(_getTimelineOpsForDate(dateKey), requested, source.purchaseGroupId);
+        const previews = previewPurchase(group, source, patch, accounts.value, date, dateKey, base).map(_populateOp);
+        const tokens = new Map();
+        for (const op of previews) {
+            const old = group.find(row => _idsMatch(row._id, op._id));
+            _transitionSnapshot(old, op);
+            tokens.set(_toStr(op._id), operationSync.begin(op, 'upsert', old));
+            _clearPendingOperationMove(op._id);
+        }
+        const days = [source.dateKey, dateKey];
+        _bumpDayMutationVersions(...days); _publishOperationState(...days);
+        try {
+            const response = await operationSync.enqueue('purchase:' + source.purchaseGroupId, () => axios.put(`${API_BASE_URL}/events/${source._id}`, {...patch,date,dateKey,cellIndex:base+offset}));
+            for (const raw of response.data.linkedOperations || []) {
+                const op = _populateOp(raw), token = tokens.get(_toStr(op._id));
+                if (token === undefined) { onSocketOperationAdded(op); continue; }
+                const before = operationSync.entries.value[_toStr(op._id)]?.op;
+                if (operationSync.acknowledge(op._id, token, op)) _transitionSnapshot(before, operationSync.entries.value[_toStr(op._id)]?.op);
+            }
+            for (const id of response.data.deletedOperationIds || []) onSocketOperationDeleted(id);
+            _bumpDayMutationVersions(...days,response.data.dateKey); _publishOperationState(...days,response.data.dateKey);
+            await fetchSnapshot();
+            return response.data;
+        } catch (error) {
+            for (const old of group) {
+                const before = operationSync.entries.value[_toStr(old._id)]?.op;
+                if (operationSync.reject(old._id,tokens.get(_toStr(old._id)))) _transitionSnapshot(before,operationSync.entries.value[_toStr(old._id)]?.op);
+            }
+            _bumpDayMutationVersions(...days); _publishOperationState(...days);
+            throw error;
+        }
+    }
     async function updateOperation(opId, opData, options = {}) {
         options.beforeWrite?.catch(() => {});
         if (!canEdit.value) throw new Error('У вас нет прав на редактирование операций');
@@ -2049,6 +2100,7 @@ export const useMainStore = defineStore('mainStore', () => {
             || options.originalOperation
             || { ...opData, _id: opId };
         if (operationSync.isDeleted(oldOp)) throw new Error('Операция уже удалена');
+        if (oldOp.purchaseGroupId && !options.write) return updatePurchaseOperation(oldOp, opData);
         const oldDateKey = oldOp.dateKey;
         const newDateKey = opData.date ? _getDateKey(new Date(opData.date)) : (opData.dateKey || oldDateKey);
         if (!newDateKey) throw new Error('Не указана дата операции');
@@ -2117,7 +2169,8 @@ export const useMainStore = defineStore('mainStore', () => {
         if (operationSync.entries.value[opId]?.kind === 'delete') return;
         const original = allKnownOperations.value.find(op => _idsMatch(op._id, opId)) || operation;
         const affected = allKnownOperations.value.filter(op =>
-            _idsMatch(op._id, opId) || _idsMatch(op._id2, opId) || _idsMatch(op.parentOpId, opId));
+            _idsMatch(op._id, opId) || _idsMatch(op._id2, opId) || _idsMatch(op.parentOpId, opId) ||
+            (original.purchaseGroupId && op.purchaseGroupId === original.purchaseGroupId));
         if (!affected.length) affected.push(original);
         affected.forEach(op => _transitionSnapshot(op, null));
         const ids = new Set([opId, _toStr(original._id2)].filter(Boolean));
@@ -2643,10 +2696,14 @@ export const useMainStore = defineStore('mainStore', () => {
     async function moveOperation(operation, oldDateKey, newDateKey, desiredCellIndex, specificTargetDate = null) {
         if (!operation?._id || !oldDateKey || !newDateKey) return;
         const source = allKnownOperations.value.find(op => _idsMatch(op._id, operation._id)) || operation;
+        if (source.purchaseGroupId) {
+            const date = specificTargetDate ? new Date(specificTargetDate) : oldDateKey === newDateKey ? new Date(source.date) : _parseDateKey(newDateKey);
+            return updateOperation(source._id, {date,dateKey:newDateKey,cellIndex:desiredCellIndex}, {originalOperation:source});
+        }
         const targetIndex = Number.isInteger(desiredCellIndex) ? desiredCellIndex : 0;
         const target = _getTimelineOpsForDate(newDateKey).find(op =>
             op.cellIndex === targetIndex && !_idsMatch(op._id, source._id) && !_idsMatch(op.parentOpId, source._id));
-        const swap = oldDateKey === newDateKey && target && _canCurrentUserEditOperation(target);
+        const swap = oldDateKey === newDateKey && target && !target.purchaseGroupId && _canCurrentUserEditOperation(target);
         const finalIndex = target && !swap ? _findFreeCachedCell(newDateKey, targetIndex, [source._id]) : targetIndex;
         const date = specificTargetDate ? new Date(specificTargetDate)
             : (oldDateKey === newDateKey ? new Date(source.date) : _parseDateKey(newDateKey));
@@ -2683,7 +2740,7 @@ export const useMainStore = defineStore('mainStore', () => {
         const uniqueOperations = Array.from(new Map(
             (Array.isArray(operations) ? operations : [])
                 .filter((op) => op?._id)
-                .map((op) => [String(op._id), op])
+                .map((op) => [op.purchaseGroupId || String(op._id), op])
         ).values());
 
         if (!uniqueOperations.length || !targetDateKey) return;

@@ -160,7 +160,9 @@ const chipLabel = computed(() => {
   
   const categoryName = resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
   const childName = mainStore.getOperationSubcategoryName(op);
-  return childName ? `${categoryName} → ${childName}` : categoryName;
+  const label = childName ? `${categoryName} → ${childName}` : categoryName;
+  const party = op.counterpartyCompanyId?.name || op.counterpartyIndividualId?.name || '';
+  return op.purchaseGroupId ? `${label} / ${op.type === 'expense' ? 'Кому' : 'От'}: ${party}` : label;
 });
 
 // Отображаемая сумма с учетом взаимозачетов (для доходов)
@@ -284,6 +286,7 @@ const tooltipOwner = computed(() => {
 const tooltipContractor = computed(() => {
   const op = props.operation;
   if (!op) return TOOLTIP_EMPTY;
+  if (op.counterpartyCompanyId) return resolveEntityName(op.counterpartyCompanyId, mainStore.companies);
   if (op.contractorId) return resolveEntityName(op.contractorId, mainStore.contractors);
   if (op.counterpartyIndividualId) return resolveEntityName(op.counterpartyIndividualId, mainStore.individuals);
   return TOOLTIP_EMPTY;

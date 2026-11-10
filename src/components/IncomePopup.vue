@@ -11,6 +11,7 @@ import BaseSelect from './BaseSelect.vue';
 import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
 import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
 import { getAccountOwnerKey } from '@/utils/accountOwnership.js';
+import { useManagedCounterparty } from '@/composables/useManagedCounterparty';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
  
@@ -348,6 +349,14 @@ const ownerOptions = computed(() => {
 });
 
 // 🟢 КОНТРАГЕНТЫ
+const managedParty = useManagedCounterparty({
+  store: mainStore, selected: selectedContractorValue, accountId: selectedAccountId,
+  operation: () => props.operationToEdit,
+  canChoose: () => !props.operationToEdit || isCloneMode.value || !!props.operationToEdit.purchaseGroupId,
+  canAccess: id => permissions.canAccessAccount(id), direction: 'income'
+});
+const { isManaged: isManagedCounterparty, peerAccountId: purchaseAccountId, peerOptions: purchaseAccountOptions } = managedParty;
+
 const contractorOptions = computed(() => {
   const opts = [];
   const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
@@ -365,6 +374,10 @@ const contractorOptions = computed(() => {
       opts.push({ value: `ind_${i._id}`, label: i.name });
   });
 
+  if (managedParty.ownOptions.value.length) {
+    opts.push({ label: 'Мои компании', isHeader: true });
+    opts.push(...managedParty.ownOptions.value);
+  }
   opts.push({ isActionRow: true });
   return opts;
 });
@@ -450,7 +463,7 @@ watch(selectedContractorValue, (newVal) => {
     }
     let entity = null;
     if (prefix === 'contr') entity = mainStore.contractors.find(c => c._id === id);
-    else entity = mainStore.individuals.find(i => i._id === id);
+    else if (prefix === 'ind') entity = mainStore.individuals.find(i => i._id === id);
     if (entity) {
         if (entity.defaultProjectId) {
             const pid = normalizeId(entity.defaultProjectId);
@@ -482,12 +495,13 @@ const isSelectedContractorBank = computed(() => {
 });
 
 const buildCounterpartyDefaultsPayload = () => {
+    if (isManagedCounterparty.value) return null;
     let contrId = null;
     let contrIndId = null;
     if (selectedContractorValue.value) {
         const [type, id] = selectedContractorValue.value.split('_');
         if (type === 'contr') contrId = id;
-        else contrIndId = id;
+        else if (type === 'ind') contrIndId = id;
     }
     if (!contrId && !contrIndId) return null;
 
@@ -513,7 +527,7 @@ const preparePayload = (options = {}) => {
     let cId = null, iId = null;
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
     let contrId = null, contrIndId = null;
-    if (selectedContractorValue.value) { const [type, id] = selectedContractorValue.value.split('_'); if (type === 'contr') contrId = id; else contrIndId = id; }
+    if (selectedContractorValue.value) { const [type, id] = selectedContractorValue.value.split('_'); if (type === 'contr') contrId = id; else if (type === 'ind') contrIndId = id; }
 
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     const finalAmount = Math.abs(rawAmount);
@@ -530,6 +544,7 @@ const preparePayload = (options = {}) => {
         accountId: selectedAccountId.value,
         companyId: cId, individualId: iId,
         contractorId: contrId, counterpartyIndividualId: contrIndId,
+        ...(isManagedCounterparty.value ? { purchaseAccountId: purchaseAccountId.value } : {}),
         categoryId: selectedCategoryId.value,
         subcategoryId: selectedSubcategoryId.value,
         ...projectData,
@@ -540,6 +555,8 @@ const preparePayload = (options = {}) => {
 const handleSave = async (options = {}) => {
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
+    const purchaseError = managedParty.validate();
+    if (purchaseError) { showError(purchaseError); return; }
     if (!selectedAccountId.value) { ensureAccountOwnership(); if (!showOwnerRepair.value) showError('Выберите счет'); return; }
     if (!ensureAccountOwnership()) return;
     
@@ -625,6 +642,7 @@ onMounted(async () => {
         else if (op.individualId) selectedOwner.value = `individual-${op.individualId._id || op.individualId}`;
         if (op.contractorId) selectedContractorValue.value = `contr_${op.contractorId._id || op.contractorId}`;
         else if (op.counterpartyIndividualId) selectedContractorValue.value = `ind_${op.counterpartyIndividualId._id || op.counterpartyIndividualId}`;
+        managedParty.restore(op);
     } else {
         nextTick(() => amountInput.value?.focus());
     }
@@ -880,6 +898,10 @@ const handleMainAction = async () => {
           <ul v-if="showContractorBankSuggestions && contractorBankSuggestionsList.length" class="bank-suggestions-list"><li v-for="(bank, idx) in contractorBankSuggestionsList" :key="idx" @mousedown.prevent="selectContractorBankSuggestion(bank)">{{ bank.name }}</li></ul>
       </div>
 
+      <div v-if="isManagedCounterparty" class="input-spacing">
+        <BaseSelect v-model="purchaseAccountId" :options="purchaseAccountOptions" label="Счёт списания второй компании" placeholder="Счёт списания второй компании" :disabled="isReadOnly" />
+      </div>
+
       <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
       </div>
@@ -949,7 +971,7 @@ const handleMainAction = async () => {
     <ConfirmationPopup 
         v-if="showDeleteConfirm" 
         title="Подтвердите удаление" 
-        message="Вы уверены, что хотите удалить эту операцию?" 
+        :message="props.operationToEdit?.purchaseGroupId ? 'Удалить связанный расход и доход?' : 'Вы уверены, что хотите удалить эту операцию?'"
         confirmText="Да, удалить"
         @close="showDeleteConfirm = false" 
         @confirm="confirmDelete" 

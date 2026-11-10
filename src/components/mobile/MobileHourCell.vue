@@ -153,7 +153,9 @@ const chipLabel = computed(() => {
   if (isTechnicalOp.value) return op.description || 'Техническая';
   const categoryName = resolveCategoryNameForChip(getPrimaryCategoryValueForChip(op)) || 'Без категории';
   const childName = mainStore.getOperationSubcategoryName(op);
-  return childName ? `${categoryName} → ${childName}` : categoryName;
+  const label = childName ? `${categoryName} → ${childName}` : categoryName;
+  const party = op.counterpartyCompanyId?.name || op.counterpartyIndividualId?.name || '';
+  return op.purchaseGroupId ? `${label} / ${op.type === 'expense' ? 'Кому' : 'От'}: ${party}` : label;
 });
 
 const showCheckmark = computed(() => {

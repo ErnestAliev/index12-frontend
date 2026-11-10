@@ -22,6 +22,7 @@ function cardPayload(kind, clone, dateChanged = false) {
     props, isCloneMode: ref(clone), isDateChanged: ref(dateChanged),
     isEditMode: { get value() { return !clone; } },
     selectedOwner: ref(null), selectedContractorValue: ref(null),
+    isManagedCounterparty: ref(false), purchaseAccountId: ref(null),
     selectedAccountId: ref('account'), selectedCategoryId: ref('category'), selectedSubcategoryId: ref('subcategory'),
     selectedProjectIds: ref(['project']), primaryProjectId: ref('project'), defaultProjectId: ref(null),
     amount: ref('100'), editableDate: ref('2026-10-09'), description: ref('Копия'), comment:ref('Комментарий к оплате'),

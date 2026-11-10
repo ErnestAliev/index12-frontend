@@ -48,7 +48,10 @@ export const useTransferStore = defineStore('transfer', () => {
           const catName = typeof op.categoryId === 'object' ? op.categoryId?.name : op.categoryName;
           const projName = op.projectScope === 'all' ? 'Все проекты' : typeof op.projectId === 'object' ? op.projectId?.name : op.projectName;
           const accName = typeof op.accountId === 'object' ? op.accountId?.name : op.accountName;
-          const contrName = typeof op.contractorId === 'object' ? op.contractorId?.name : op.contractorName;
+          const ownCompanyId = op.counterpartyCompanyId?._id || op.counterpartyCompanyId;
+          const contrName = (ownCompanyId && useMainStore().companies.find(company => String(company._id) === String(ownCompanyId))?.name)
+              || op.counterpartyCompanyId?.name || op.counterpartyIndividualId?.name
+              || (typeof op.contractorId === 'object' ? op.contractorId?.name : op.contractorName);
 
           // Базовая строка
           const row = {
