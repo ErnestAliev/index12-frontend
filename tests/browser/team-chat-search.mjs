@@ -128,10 +128,18 @@ try {
     "navigation preserves the search keyboard",
   );
 
+  for (const query of ['Показани','показани','ПОКАЗАНИ']) {
+    await field.fill(query);
+    await page.waitForFunction(() => window.chatSearch.total===1 && !window.chatSearch.busy);
+    assert.equal(await page.locator('.team-search-count').innerText(),'1/1');
+    await page.locator('.search-current mark:visible').waitFor();
+    assert.equal(await page.getByText('Ничего не найдено',{exact:true}).count(),0);
+  }
   await field.fill("Дог");
   await page.waitForTimeout(300);
   await field.fill("ничего-не-найдено");
   await page.getByText("Ничего не найдено", { exact: true }).waitFor();
+  assert.equal(await page.locator('[data-message-id]:visible').count(),0,'zero results do not show unrelated stale messages or highlighted task cards');
   await page.waitForTimeout(700);
   assert.equal(
     await page.locator(".team-search-count").innerText(),

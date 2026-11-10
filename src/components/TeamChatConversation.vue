@@ -483,12 +483,12 @@ const normalMessages = computed(() =>
     ),
 );
 const shownMessages = computed(() => {
-  const rows =
-    search.open &&
-    search.result?.messageId &&
-    (search.result.taskId || null) === (props.taskId || null)
-      ? search.result.messages
-      : normalMessages.value;
+  let rows = normalMessages.value;
+  if (search.open && search.hasQuery) {
+    rows = (search.result?.taskId || null) === (props.taskId || null)
+      ? search.result?.messages || []
+      : [];
+  }
   const visible = rows.filter((m) => !m.deletedAt && !chat.messageDeletions[m._id]);
   if (props.taskId || search.open || !hasTaskFilters(chat.taskFilters)) return visible;
   const tasks = filterTasks(chat.state.tasks || [], chat.taskFilters, chat.me.actorId), ids = new Set(tasks.map(task => task._id));

@@ -55,6 +55,8 @@ const task = {
   status: "open",
   unreadCount: 0,
 };
+const coverTask = { ...task, _id: '44444444-4444-4444-8444-444444444444', description: 'Снять показания счётчиков', createdAt: new Date().toISOString() };
+const cover = { _id: coverTask._id, kind: 'task', taskId: coverTask._id, text: '', attachments: [], authorId: 'actor', authorName: 'Эрнест', createdAt: coverTask.createdAt };
 teamApi.defaults.adapter = async (config) => {
   if (config.url.endsWith("/reaction")) {
     window.reactionRequests.push(JSON.parse(config.data));
@@ -82,10 +84,10 @@ teamApi.defaults.adapter = async (config) => {
     await new Promise((r) =>
       setTimeout(r, config.params.q === "Дог" ? 650 : 60),
     );
-    const matches = rows.filter(
+    const matches = [...rows, cover].filter(
       (m) =>
         !deleted.has(m._id) &&
-        m.text
+        (m.kind === 'task' ? coverTask.description : m.text)
           .toLocaleLowerCase()
           .includes(config.params.q.toLocaleLowerCase()),
     );
@@ -101,9 +103,9 @@ teamApi.defaults.adapter = async (config) => {
             total: matches.length,
             index,
             messageId: target._id,
-            taskId: target.taskId || null,
-            task: target.taskId ? task : null,
-            messages: rows
+            taskId: target.kind === 'task' ? null : target.taskId || null,
+            task: target.kind === 'task' ? coverTask : target.taskId ? task : null,
+            messages: target.kind === 'task' ? [cover] : rows
               .filter(
                 (m) =>
                   (m.taskId || null) === (target.taskId || null) &&
