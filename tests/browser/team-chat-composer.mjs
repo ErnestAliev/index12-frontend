@@ -67,8 +67,8 @@ export async function verifyStaffComposer({
     assert.equal(
       await composer
         .getByRole("button", { name: "Отправить", exact: true })
-        .count(),
-      0,
+        .isDisabled(),
+      true,
     );
     for (const width of [390, 820]) {
       await page.setViewportSize({ width, height: width === 820 ? 1180 : 844 });
