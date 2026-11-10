@@ -1,5 +1,11 @@
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from "vue";
+import {
+  computed,
+  ref,
+  watch,
+  onBeforeUnmount,
+  defineAsyncComponent,
+} from "vue";
 import { useTeamMedia } from "@/composables/useTeamMedia";
 import { teamApi, teamError } from "@/stores/teamChatStore";
 import { fileMime, fileSize, fileDate } from "@/utils/fileLibrary";
@@ -10,11 +16,14 @@ import {
 } from "@/utils/deviceFiles";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
 import UiIcon from "./UiIcon.vue";
+import { documentFormat } from "@/utils/documentFormats";
+const TeamDocumentPreview = defineAsyncComponent(
+  () => import("./TeamDocumentPreview.vue"),
+);
 const props = defineProps({ file: Object, tags: Array });
 const emit = defineEmits(["close", "source", "tag", "description", "viewed"]);
 const { preview, download } = useTeamMedia({ recordViews: false });
 const expanded = ref(false),
-  text = ref(""),
   description = ref(""),
   actionError = ref("");
 const sharable = computed(
@@ -24,18 +33,12 @@ let generation = 0;
 async function retryPreview() {
   const ticket = ++generation,
     id = props.file.fileId;
-  text.value = "";
   actionError.value = "";
   description.value = props.file.description;
   expanded.value = false;
   await download({ ...props.file, mimeType: fileMime(props.file) });
   if (ticket !== generation || preview.value?.error || !preview.value?.file)
     return;
-  if (/^text\/|application\/json/.test(fileMime(props.file))) {
-    const value = await preview.value.file.slice(0, 200000).text();
-    if (ticket !== generation) return;
-    text.value = value;
-  }
   try {
     await teamApi.post("/files/library/" + id + "/view");
     if (ticket === generation) emit("viewed", id);
@@ -93,7 +96,7 @@ async function share() {
           </button>
         </div>
         <img
-        v-else-if="fileMime(file).startsWith('image/')"
+          v-else-if="fileMime(file).startsWith('image/')"
           :src="preview.url"
           :alt="file.name"
           @dblclick="expanded = true"
@@ -118,7 +121,11 @@ async function share() {
           preload="metadata"
           :aria-label="file.name"
         />
-        <pre v-else-if="text">{{ text }}</pre>
+        <TeamDocumentPreview
+          v-else-if="preview?.file && documentFormat(file)"
+          :file="preview.file"
+          :name="file.name"
+        />
         <div v-else class="preview-state">
           <UiIcon name="file" /><span>{{ file.name }}</span>
         </div>

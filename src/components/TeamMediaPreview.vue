@@ -1,8 +1,10 @@
 <script setup>
-import { computed, ref, watch, onBeforeUnmount } from 'vue';
+import { computed, ref, watch, onBeforeUnmount, defineAsyncComponent } from 'vue';
 import TeamChatDialog from './TeamChatDialog.vue';
 import TeamZoomableImage from './TeamZoomableImage.vue';
 import UiIcon from './UiIcon.vue';
+import { documentFormat } from '@/utils/documentFormats';
+const TeamDocumentPreview=defineAsyncComponent(()=>import('./TeamDocumentPreview.vue'));
 import { canShareDeviceFile, shareDeviceFile, saveDeviceFile } from '@/utils/deviceFiles';
 const props = defineProps({ media: { type: Object, required: true } });
 const emit = defineEmits(['close', 'retry']);
@@ -27,7 +29,7 @@ async function share() {
 }
 </script>
 <template>
-  <TeamChatDialog class="media-preview-dialog" :title="media.name" :busy="sharing" @close="emit('close')">
+  <TeamChatDialog class="media-preview-dialog" :class="{'document-preview-dialog':!!documentFormat(media)}" :title="media.name" :busy="sharing" @close="emit('close')">
     <div v-if="!media.url" class="media-state" :role="media.error ? 'alert' : 'status'">
       <span>{{ media.error || 'Загрузка…' }}</span>
       <button v-if="media.error" type="button" @click="emit('retry')">Повторить</button>
@@ -36,6 +38,7 @@ async function share() {
     <iframe v-else-if="media.url && media.mimeType === 'application/pdf'" :src="media.url" :title="media.name" class="media-pdf-preview" />
     <div v-else-if="media.url && media.mimeType.startsWith('video/')" class="media-player"><video :src="media.url" :aria-label="media.name" controls playsinline preload="metadata" /></div>
     <div v-else-if="media.url && media.mimeType.startsWith('audio/')" class="media-player"><audio :src="media.url" :aria-label="media.name" controls preload="metadata" /></div>
+    <TeamDocumentPreview v-else-if="media.url && media.file && documentFormat(media)" :file="media.file" :name="media.name" class="expanded-document-preview"/>
     <div v-else-if="media.url" class="media-state"><UiIcon name="attach" /><span>{{ media.name }}</span><small v-if="media.size">{{ Math.max(1, Math.ceil(media.size / 1024)) }} КБ</small></div>
     <p v-if="actionError" class="media-action-error" role="alert">{{ actionError }}</p>
     <footer ref="actions" class="media-actions">
@@ -46,6 +49,8 @@ async function share() {
 </template>
 <style scoped>
 .media-preview-dialog { height: min(80dvh,760px); }
+.document-preview-dialog{width:min(1100px,calc(100vw - var(--safe-area-left,0px) - var(--safe-area-right,0px) - 24px))!important}
+.expanded-document-preview{flex:1;height:auto;min-height:0}
 .media-state { display: flex; flex: 1; min-height: 0; gap: 12px; align-items: center; justify-content: center; flex-direction: column; padding: 16px; overflow: auto; text-align: center; overflow-wrap: anywhere; }
 .media-state > .ui-icon { width: 32px; height: 32px; color: var(--codex-pane-muted,var(--color-text)); }
 .media-state > small { color: var(--codex-pane-muted,var(--color-text)); }

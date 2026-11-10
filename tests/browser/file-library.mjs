@@ -32,7 +32,8 @@ try {
         errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.route("**/*", (route) =>
-        new URL(route.request().url()).hostname === "127.0.0.1"
+        (new URL(route.request().url()).hostname === "127.0.0.1" ||
+          route.request().url().startsWith("blob:http://127.0.0.1:5211/"))
           ? route.continue()
           : route.abort(),
       );
