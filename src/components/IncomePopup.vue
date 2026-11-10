@@ -359,8 +359,7 @@ const { isManaged: isManagedCounterparty, peerAccountId: purchaseAccountId, peer
 
 const contractorOptions = computed(() => {
   const opts = [];
-  const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-  const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+  const filteredContractors = mainStore.contractors;
 
   opts.push({ label: 'От контрагента', isHeader: true });
   filteredContractors.forEach(c => {
@@ -882,7 +881,7 @@ const handleMainAction = async () => {
 
       <!-- КОНТРАГЕНТ -->
       <div v-if="!showCreateContractorModal" class="input-spacing">
-          <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
+          <BaseSelect searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
               <template #action-item>
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>

@@ -600,7 +600,7 @@ const closePopup = () => { emit('close'); };
     </div>
       
       <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
-      <BaseSelect v-if="!isCreatingFromAccount" v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
+      <BaseSelect v-if="!isCreatingFromAccount" searchable v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
           <template #action-item v-if="canEdit">
               <div class="dual-action-row">
                   <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
@@ -619,7 +619,7 @@ const closePopup = () => { emit('close'); };
 
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
       <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
-          <BaseSelect v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
+          <BaseSelect searchable v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
@@ -637,7 +637,7 @@ const closePopup = () => { emit('close'); };
 
       <template v-if="!isWithdrawal">
       <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
-      <BaseSelect v-if="!isCreatingToAccount" v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
+      <BaseSelect v-if="!isCreatingToAccount" searchable v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
           <template #action-item v-if="canEdit">
               <div class="dual-action-row">
                   <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
@@ -656,7 +656,7 @@ const closePopup = () => { emit('close'); };
 
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
       <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
-          <BaseSelect v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
+          <BaseSelect searchable v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
@@ -683,8 +683,7 @@ const closePopup = () => { emit('close'); };
       <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
 
       <div v-if="isWithdrawal" class="input-spacing">
-        <input v-model="withdrawalRecipient" class="form-input" aria-label="Получатель средств" placeholder="Получатель средств" list="withdrawal-recipients" maxlength="300" :disabled="isReadOnly" />
-        <datalist id="withdrawal-recipients"><option v-for="name in recipientOptions" :key="name" :value="name" /></datalist>
+        <BaseSelect searchable allow-custom v-model="withdrawalRecipient" :options="recipientOptions.map(name => ({ value: name, label: name }))" label="Получатель средств" placeholder="Получатель средств" :disabled="isReadOnly" />
       </div>
       <input v-model="description" class="form-input input-spacing" aria-label="Комментарий" placeholder="Комментарий (необязательно)" maxlength="10000" :disabled="isReadOnly" />
 

@@ -373,8 +373,7 @@ const { isManaged: isManagedCounterparty, peerAccountId: purchaseAccountId, peer
 
 const contractorOptions = computed(() => {
   const opts = [];
-  const myCompanyNames = new Set(mainStore.companies.map(c => c.name.trim().toLowerCase()));
-  const filteredContractors = mainStore.contractors.filter(c => !myCompanyNames.has(c.name.trim().toLowerCase()));
+  const filteredContractors = mainStore.contractors;
 
   opts.push({ label: 'Контрагенты (Кому платим)', isHeader: true });
   filteredContractors.forEach(c => {
@@ -1104,7 +1103,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- КОНТРАГЕНТ (Кому) -->
       <div v-if="!isIncomeOffsetMode && !showCreateContractorModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly || isOffsetEditLocked }">
-          <BaseSelect v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
+          <BaseSelect searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>

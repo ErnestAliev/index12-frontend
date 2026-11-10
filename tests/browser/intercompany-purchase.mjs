@@ -62,7 +62,7 @@ try {
       await choose("Счет списания", "UUU основной");
       const party = page
         .locator(".base-select")
-        .filter({ has: page.getByText("Кому (Контрагент)", { exact: true }) });
+        .filter({ has: page.getByRole("combobox", { name: "Кому (Контрагент)", exact: true }) });
       await activate(party.locator(".select-trigger"));
       const headers = await party.locator(".group-header").allTextContents();
       assert.ok(
@@ -108,9 +108,7 @@ try {
       );
       await page.evaluate(() => window.purchaseTest.openIncome());
       await page.locator(".popup-content").waitFor();
-      assert.ok(
-        (await page.locator(".popup-content").innerText()).includes("TOO UUU"),
-      );
+      assert.equal(await page.getByRole('combobox',{name:'От кого',exact:true}).inputValue(),'TOO UUU');
       assert.ok(
         (await page.locator(".popup-content").innerText()).includes(
           "UUU основной",

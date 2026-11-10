@@ -1,6 +1,7 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, useId, watch } from 'vue';
+import { searchOptions } from '@/utils/selectSearch';
 
 /**
  * * --- КОМПОНЕНТ: BaseSelect v4.5 - OWNER LABEL SUPPORT ---
@@ -17,13 +18,31 @@ const props = defineProps({
   placeholder: { type: String, default: 'Выберите...' },
   label: { type: String, default: '' }, 
   disabled: { type: Boolean, default: false },
-  multiple: { type: Boolean, default: false }
+  multiple: { type: Boolean, default: false },
+  searchable: { type: Boolean, default: false },
+  allowCustom: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['update:modelValue', 'change']);
 
 const isOpen = ref(false);
 const containerRef = ref(null);
+const searchRef = ref(null), query = ref(''), activeIndex = ref(-1), listId = useId(), keyboardFocus=ref(false);
+const markKeyboard = event => { if(event.key==='Tab')keyboardFocus.value=true; };
+const markPointer = event => { keyboardFocus.value=false; if(containerRef.value && !containerRef.value.contains(event.target))closeSearch(); };
+const visibleOptions = computed(() => props.searchable ? searchOptions(props.options, query.value) : props.options);
+const selectable = computed(() => visibleOptions.value.map((option,index)=>({option,index})).filter(({option})=>!option.isHeader && !option.isActionRow && !option.disabled));
+const openSearch = () => { if(props.disabled)return; if(!isOpen.value){ query.value=''; isOpen.value=true; } searchRef.value?.focus(); };
+const searchInput = event => { query.value=event.target.value; isOpen.value=true; if(props.allowCustom)emit('update:modelValue',query.value); };
+const closeSearch = () => { isOpen.value=false; query.value=''; activeIndex.value=-1; };
+const move = direction => {
+  if(!isOpen.value)openSearch();
+  const values=selectable.value.map(row=>row.index), position=values.indexOf(activeIndex.value);
+  activeIndex.value=values[position<0 ? (direction>0?0:values.length-1) : (position+direction+values.length)%values.length] ?? -1;
+  nextTick(()=>containerRef.value?.querySelector(`[data-option-index="${activeIndex.value}"]`)?.scrollIntoView({block:'nearest'}));
+};
+const accept = () => { const option=visibleOptions.value[activeIndex.value] || selectable.value[0]?.option; if(option)selectOption(option); else if(props.allowCustom)closeSearch(); };
+watch(query,()=>{activeIndex.value=isOpen.value ? (selectable.value[0]?.index ?? -1) : -1;});
 
 const selectedOptions = computed(() => {
   if (props.multiple) {
@@ -35,7 +54,7 @@ const selectedOptions = computed(() => {
 });
 
 const displayText = computed(() => {
-  if (!props.multiple) return selectedOptions.value[0]?.label || '';
+  if (!props.multiple) return selectedOptions.value[0]?.label || (props.allowCustom ? String(props.modelValue || '') : '');
   if (!selectedOptions.value.length) return '';
   if (selectedOptions.value.length <= 2) return selectedOptions.value.map(o => o.label).join(', ');
   return `${selectedOptions.value.length} выбрано`;
@@ -43,6 +62,7 @@ const displayText = computed(() => {
 
 const toggle = () => {
   if (props.disabled) return;
+  if(props.searchable){ if(isOpen.value){closeSearch();searchRef.value?.blur();}else openSearch(); return; }
   isOpen.value = !isOpen.value;
 };
 
@@ -60,25 +80,35 @@ const selectOption = (option) => {
     emit('update:modelValue', option.value);
     emit('change', option.value);
     isOpen.value = false;
+    query.value = ''; searchRef.value?.blur();
   }
 };
 
 const close = (e) => {
   if (containerRef.value && !containerRef.value.contains(e.target)) {
     isOpen.value = false;
+    query.value = '';
   }
 };
 
-onMounted(() => document.addEventListener('click', close));
-onBeforeUnmount(() => document.removeEventListener('click', close));
+onMounted(() => { document.addEventListener('click', close); document.addEventListener('keydown',markKeyboard);document.addEventListener('pointerdown',markPointer); });
+onBeforeUnmount(() => { document.removeEventListener('click', close);document.removeEventListener('keydown',markKeyboard);document.removeEventListener('pointerdown',markPointer); });
 </script>
 
 <template>
-  <div class="base-select" ref="containerRef" :class="{ 'is-open': isOpen, 'is-disabled': disabled }">
+  <div class="base-select" ref="containerRef" :class="{ 'is-open': isOpen, 'is-disabled': disabled, 'is-keyboard-focus':keyboardFocus }">
     
     <!-- Триггер -->
     <div class="select-trigger" @click="toggle">
-      <div class="trigger-content">
+      <div v-if="searchable" class="trigger-content searchable-content">
+        <span v-if="label && (isOpen || displayText)" class="small-label">{{ label }}</span>
+        <div class="value-row">
+          <input ref="searchRef" class="select-search-input" type="text" autocomplete="off" :value="isOpen ? query : displayText" :placeholder="isOpen ? 'Поиск…' : placeholder" :aria-label="label || placeholder" role="combobox" aria-autocomplete="list" :aria-expanded="isOpen" :aria-controls="listId" :aria-activedescendant="isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined" :disabled="disabled" @focus="openSearch" @click.stop="openSearch" @input="searchInput" @keydown.down.stop.prevent="move(1)" @keydown.up.stop.prevent="move(-1)" @keydown.enter.stop.prevent="accept" @keydown.esc.stop.prevent="closeSearch" @keydown.tab="closeSearch" />
+          <span v-if="!isOpen && selectedOptions[0]?.subLabel" class="sub-text">{{ selectedOptions[0].subLabel }}</span>
+          <span v-if="!isOpen && selectedOptions[0]?.rightText" class="right-text" :class="selectedOptions[0].rightTextClass">{{ selectedOptions[0].rightText }}</span>
+        </div>
+      </div>
+      <div v-else class="trigger-content">
         
         <!-- СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
         <div v-if="selectedOptions.length && displayText" class="filled-state">
@@ -101,15 +131,20 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
 
     <!-- Список -->
     <transition name="fade">
-      <ul v-if="isOpen" class="options-list">
+      <ul v-if="isOpen" :id="listId" class="options-list" role="listbox" :aria-label="label || placeholder">
+        <li v-if="searchable && !selectable.length" class="select-empty" role="status">Ничего не найдено</li>
         <li 
-          v-for="(option, index) in options" 
+          v-for="(option, index) in visibleOptions"
           :key="index"
+          :id="`${listId}-${index}`" :data-option-index="index"
+          :role="option.isHeader || option.isActionRow ? 'presentation' : 'option'"
+          :aria-selected="option.isHeader || option.isActionRow ? undefined : multiple ? (Array.isArray(modelValue) && modelValue.includes(option.value)) : option.value === modelValue"
           class="list-item-wrapper"
           :class="{ 
              'is-header': option.isHeader, 
              'is-special': option.isSpecial,
              'is-action-row': option.isActionRow,
+             'is-active': searchable && activeIndex === index,
              'is-selected': multiple ? (Array.isArray(modelValue) && modelValue.includes(option.value)) : option.value === modelValue
           }"
           :title="option.tooltip || ''"
@@ -273,10 +308,19 @@ onBeforeUnmount(() => document.removeEventListener('click', close));
   z-index: 2000;
   max-height: 280px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+.select-search-input{width:100%;height:22px!important;min-height:22px;min-width:0;flex:1;margin:0;padding:0!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0;background:transparent!important;color:inherit;font:inherit;line-height:22px;text-overflow:ellipsis}
+.select-search-input::placeholder{color:var(--color-text-soft,#888)}
+.searchable-content{color:var(--color-text,#1a1a1a)}
+.searchable-content .value-row{align-items:center;gap:6px}
+.select-empty{padding:12px 14px;font-size:13px;color:var(--color-text-soft,#888)}
+.list-item-wrapper.is-active{background:var(--color-background-soft,#f0f0f0)}
+.base-select.is-keyboard-focus .select-search-input:focus{outline:1px solid var(--color-primary,#598477)!important;outline-offset:2px}
+@media(max-width:600px){.select-search-input{font-size:16px!important}}
 
 .list-item-wrapper {
   padding: 12px 14px;
