@@ -134,7 +134,7 @@ function cancelHold() {
   holdTimer = null;
 }
 function openMessageMenu(row, touchHold = false) {
-  if (row.kind === "task") return;
+  if (["task", "task-files"].includes(row.kind)) return;
   window.getSelection()?.removeAllRanges();
   cancelHold();
   resetSwipe();
@@ -143,7 +143,7 @@ function openMessageMenu(row, touchHold = false) {
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
-  if (row.kind === "task") return;
+  if (["task", "task-files"].includes(row.kind)) return;
   if (
     event.button !== 0 ||
     selectedMessage.value ||
@@ -1154,6 +1154,10 @@ watch(
                 :highlight="search.open ? search.query.trim() : ''"
                 @open="openTask(m.taskId)"
               />
+              <button
+                v-if="search.open && search.result?.taskMatch?.taskId === m.taskId && m.kind === 'task'"
+                type="button" class="team-search-inside" @click="openTask(m.taskId)"
+              ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
               <CodexMessageText
                 v-if="m.text && m.kind !== 'task'"
                 :text="m.text"
@@ -1347,4 +1351,9 @@ watch(
 
 <style scoped>
 .team-attachment-row{display:flex;align-items:center;gap:4px;min-width:0}.team-attachment-row>.team-file{min-width:0;flex:1}.team-attachment-library{display:grid;place-items:center;flex:none;width:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.65}.team-attachment-library:hover{opacity:1}
+</style>
+
+<style scoped>
+.team-search-inside { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; min-height: 44px; padding: 6px 0; border: 0; background: transparent; color: var(--codex-pane-accent); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.team-search-inside > :last-child:not(:first-child) { color: var(--codex-pane-muted); }
 </style>

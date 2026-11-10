@@ -9,7 +9,7 @@ import Transfer from '/src/components/TransferPopup.vue';
 const pinia=createPinia(),store=useMainStore(pinia),kind=ref('income'),id=n=>String(n).padStart(24,'0');
 const companies=[{_id:id(1),name:'ТОО Своя компания'}],individuals=[{_id:id(2),name:'Ернест Тест'}],accounts=[{_id:id(3),name:'Счёт Основной Бурабай',companyId:id(1),initialBalance:100000},{_id:id(4),name:'Личный счёт',individualId:id(2),initialBalance:10000}];
 const contractors=Array.from({length:350},(_,n)=>({_id:id(100+n),name:`ИП Компания ${n} Бурабай`}));contractors.push({_id:id(500),name:'ТОО Своя компания'});
-Object.assign(store,{user:{_id:'fixture-owner',id:'fixture-owner',role:'admin',workspaceRole:'admin',createdAt:'2026-01-01'},contractors,companies,individuals,accounts,categories:[],projects:[]});
+Object.assign(store,{user:{_id:'fixture-owner',id:'fixture-owner',role:'admin',workspaceRole:'admin',createdAt:'2026-01-01'},contractors,companies,individuals,accounts,categories:[{_id:id(600),name:"Тестовая категория",type:"both"}],projects:[{_id:id(601),name:"Тестовый проект"}],subcategories:[{_id:id(602),parentCategoryId:id(600),name:"Тестовая подкатегория"}]});
 axios.defaults.adapter=async config=>({status:200,data:config.url.includes('/snapshot')?{timestamp:new Date().toISOString(),accountBalances:{[id(3)]:100000,[id(4)]:10000},companyBalances:{[id(1)]:100000},individualBalances:{[id(2)]:10000},contractorBalances:{}}:[]});
 createApp({render:()=>h(({income:Income,expense:Expense,transfer:Transfer})[kind.value],{key:kind.value,date:new Date(2026,10,10,12),cellIndex:0,onClose:()=>{}})}).use(pinia).mount('#app');
 window.partyFixture={kind,store};

@@ -37,7 +37,7 @@ window.fixtureOpen = shown;
 window.failDelete = false;
 const snapshot = () => ({
   messages: rows.filter((m) => !m.taskId && !deleted.has(m._id)).slice(-50),
-  tasks: [task],
+  tasks: [task, coverTask],
   people: [{ _id: "actor", name: "Эрнест" }],
   members: [],
   hasMore: true,
@@ -50,11 +50,12 @@ const task = {
   creatorName: "Эрнест",
   assigneeIds: ["actor"],
   assignees: [{ actorId: "actor", name: "Эрнест" }],
-  attachments: [],
+  attachments: [{fileId:"55555555-5555-4555-8555-555555555555",name:"Отчёт.xlsx",mime:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",size:100}],
   timing: "none",
   status: "open",
   unreadCount: 0,
 };
+const taskCover = { _id:taskId, kind:"task", taskId, text:"", attachments:[], authorId:"actor", authorName:"Эрнест", createdAt:new Date().toISOString() };
 const coverTask = { ...task, _id: '44444444-4444-4444-8444-444444444444', description: 'Снять показания счётчиков', createdAt: new Date().toISOString() };
 const cover = { _id: coverTask._id, kind: 'task', taskId: coverTask._id, text: '', attachments: [], authorId: 'actor', authorName: 'Эрнест', createdAt: coverTask.createdAt };
 teamApi.defaults.adapter = async (config) => {
@@ -84,40 +85,25 @@ teamApi.defaults.adapter = async (config) => {
     await new Promise((r) =>
       setTimeout(r, config.params.q === "Дог" ? 650 : 60),
     );
-    const matches = [...rows, cover].filter(
-      (m) =>
-        !deleted.has(m._id) &&
-        (m.kind === 'task' ? coverTask.description : m.text)
-          .toLocaleLowerCase()
-          .includes(config.params.q.toLocaleLowerCase()),
-    );
-    const index = Math.min(
-        config.params.index ?? matches.length - 1,
-        matches.length - 1,
-      ),
-      target = matches[index];
-    return {
-      status: 200,
-      data: target
-        ? {
-            total: matches.length,
-            index,
-            messageId: target._id,
-            taskId: target.kind === 'task' ? null : target.taskId || null,
-            task: target.kind === 'task' ? coverTask : target.taskId ? task : null,
-            messages: target.kind === 'task' ? [cover] : rows
-              .filter(
-                (m) =>
-                  (m.taskId || null) === (target.taskId || null) &&
-                  !deleted.has(m._id),
-              )
-              .filter(
-                (m) => Math.abs(rows.indexOf(m) - rows.indexOf(target)) < 6,
-              ),
-          }
-        : { total: 0, index: -1, messages: [] },
-    };
+    const q=config.params.q.toLocaleLowerCase(), scope=config.params.taskId || null;
+    const hit=m=>(m.text || '').toLocaleLowerCase().includes(q);
+    const discussion=rows.filter(m=>m.taskId===taskId && hit(m));
+    const taskFiles={...taskCover,kind:'task-files',attachments:task.attachments};
+    const fileHit=scope===taskId && task.attachments.some(file=>file.name.toLocaleLowerCase().includes(q));
+    const matches = scope ? [...rows.filter(m=>m.taskId===scope && hit(m)),...(fileHit?[taskFiles]:[])] : [
+      ...rows.filter(m=>!m.taskId && hit(m)),
+      ...[{row:taskCover,task},{row:cover,task:coverTask}].filter(item=>item.task.description.toLocaleLowerCase().includes(q)).map(item=>item.row),
+      ...(!task.description.toLocaleLowerCase().includes(q) && discussion.length ? [taskCover] : []),
+    ];
+    const live=matches.filter(m=>!deleted.has(m._id)),index=Math.min(config.params.index ?? 0,live.length-1),target=live[index];
+    return {status:200,data:target?{
+      total:live.length,index,messageId:target._id,taskId:scope,
+      task:target.kind==='task'?(target.taskId===taskId?task:coverTask):scope?task:null,
+      taskMatch:!scope && target.taskId===taskId && discussion.length?{taskId,count:discussion.length,preview:discussion[0].text}:null,
+      messages:scope?[...rows.filter(m=>m.taskId===scope),...(fileHit?[taskFiles]:[])]:[...rows.filter(m=>!m.taskId),taskCover,cover],
+    }:{total:0,index:-1,messages:[]}};
   }
+
   if (config.url === "/state") return { status: 200, data: snapshot() };
   if (config.url === "/messages")
     return {

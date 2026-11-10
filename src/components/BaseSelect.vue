@@ -20,6 +20,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   multiple: { type: Boolean, default: false },
   searchable: { type: Boolean, default: false },
+  hideSelectedLabel: { type: Boolean, default: false },
   allowCustom: { type: Boolean, default: false }
 });
 
@@ -96,12 +97,12 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
 </script>
 
 <template>
-  <div class="base-select" ref="containerRef" :class="{ 'is-open': isOpen, 'is-disabled': disabled, 'is-keyboard-focus':keyboardFocus }">
+  <div class="base-select" ref="containerRef" :class="{ 'is-open': isOpen, 'hide-selected-label': hideSelectedLabel, 'is-disabled': disabled, 'is-keyboard-focus':keyboardFocus }">
     
     <!-- Триггер -->
     <div class="select-trigger" @click="toggle">
       <div v-if="searchable" class="trigger-content searchable-content">
-        <span v-if="label && (isOpen || displayText)" class="small-label">{{ label }}</span>
+        <span v-if="!hideSelectedLabel && label && (isOpen || displayText)" class="small-label">{{ label }}</span>
         <div class="value-row">
           <input ref="searchRef" class="select-search-input" type="text" autocomplete="off" :value="isOpen ? query : displayText" :placeholder="isOpen ? 'Поиск…' : placeholder" :aria-label="label || placeholder" role="combobox" aria-autocomplete="list" :aria-expanded="isOpen" :aria-controls="listId" :aria-activedescendant="isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined" :disabled="disabled" @focus="openSearch" @click.stop="openSearch" @input="searchInput" @keydown.down.stop.prevent="move(1)" @keydown.up.stop.prevent="move(-1)" @keydown.enter.stop.prevent="accept" @keydown.esc.stop.prevent="closeSearch" @keydown.tab="closeSearch" />
           <span v-if="!isOpen && selectedOptions[0]?.subLabel" class="sub-text">{{ selectedOptions[0].subLabel }}</span>
@@ -112,7 +113,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
         
         <!-- СОСТОЯНИЕ 1: ЗНАЧЕНИЕ ВЫБРАНО -->
         <div v-if="selectedOptions.length && displayText" class="filled-state">
-          <span class="small-label">{{ label }}</span>
+          <span v-if="!hideSelectedLabel" class="small-label">{{ label }}</span>
           <div class="value-row">
              <div class="text-group">
                  <span class="selected-text">{{ displayText }}</span>
@@ -421,4 +422,6 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
       font-size: 12px;
   }
 }
+
+.hide-selected-label .filled-state { padding-top: 0; }
 </style>

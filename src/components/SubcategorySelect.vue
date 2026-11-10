@@ -8,7 +8,8 @@ import { entityId } from '@/utils/subcategories.js';
 const props = defineProps({
   modelValue: { type: [String, Object], default: null },
   categoryIds: { type: Array, default: () => [] },
-  disabled: { type: Boolean, default: false }
+  disabled: { type: Boolean, default: false },
+  hideSelectedLabel: { type: Boolean, default: false }
 });
 const emit = defineEmits(['update:modelValue']);
 const store = useMainStore();
@@ -53,9 +54,9 @@ const save = async () => {
 
 <template>
   <div class="subcategory-field input-spacing" data-testid="subcategory-field">
-    <BaseSelect v-if="!creating" :model-value="entityId(modelValue)" :options="options" label="Подкатегория" :placeholder="parentIds.length ? 'Подкатегория' : 'Подкатегория — сначала выберите категорию'" :disabled="disabled || !parentIds.length" @update:model-value="select" />
+    <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="!creating" :model-value="entityId(modelValue)" :options="options" label="Подкатегория" :placeholder="parentIds.length ? 'Подкатегория' : 'Подкатегория — сначала выберите категорию'" :disabled="disabled || !parentIds.length" @update:model-value="select" />
     <template v-else>
-      <BaseSelect v-if="parents.length > 1" v-model="parentId" :options="parents" label="Категория подкатегории" placeholder="Категория" :disabled="saving" />
+      <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="parents.length > 1" v-model="parentId" :options="parents" label="Категория подкатегории" placeholder="Категория" :disabled="saving" />
       <div class="subcategory-create">
         <input ref="input" v-model="name" aria-label="Название подкатегории" placeholder="Название подкатегории" maxlength="120" :disabled="saving" @keydown.enter.prevent="save" @keydown.esc.prevent="creating = false" />
         <button type="button" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim()" @click="save">✓</button>

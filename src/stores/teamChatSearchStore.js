@@ -7,7 +7,8 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     query = ref(""),
     result = ref(null),
     busy = ref(false),
-    error = ref("");
+    error = ref(""),
+    scopeTaskId = ref(null);
   let generation = 0,
     controller,
     timer,
@@ -40,7 +41,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     chat.creatingTask = false;
     chat.creatingTaskParentId = null;
     chat.taskNotifications = false;
-    chat.requestedTaskId = null;
+    scopeTaskId.value = chat.requestedTaskId || null;
     chat.tab = "messages";
     open.value = true;
   }
@@ -50,7 +51,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     result.value = null;
     query.value = "";
     error.value = "";
-    if (restore && origin) {
+    if (restore && origin && (chat.requestedTaskId || null) === (origin.taskId || null)) {
       chat.tab = origin.tab;
       chat.requestedTaskId = origin.taskId;
     }
@@ -70,7 +71,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     error.value = "";
     try {
       const { data } = await teamApi.get("/search", {
-        params: { q, ...(nextIndex !== undefined ? { index: nextIndex } : {}) },
+        params: { q, ...(scopeTaskId.value ? { taskId: scopeTaskId.value } : {}), ...(nextIndex !== undefined ? { index: nextIndex } : {}) },
         signal: controller.signal,
       });
       if (
@@ -86,11 +87,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
         if (i < 0) chat.state.tasks.push(data.task);
         else chat.state.tasks[i] = data.task;
       }
-      if (data.messageId) {
-        chat.requestedTaskId = data.taskId || null;
-        chat.requestedTaskMessageId = null;
-        chat.tab = "messages";
-      }
+
     } catch (e) {
       if (g === generation && e.code !== "ERR_CANCELED")
         error.value = teamError(e);
@@ -103,6 +100,13 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     const i = index.value + direction;
     if (i >= 0 && i < total.value) void find(i);
   }
+  watch(() => chat.requestedTaskId, (id) => {
+    if (!open.value) return;
+    scopeTaskId.value = id || null;
+    cancel();
+    result.value = null;
+    if (hasQuery.value) void find();
+  });
   watch(query, () => {
     cancel();
     result.value = null;
@@ -123,6 +127,7 @@ export const useTeamChatSearchStore = defineStore("teamChatSearch", () => {
     busy,
     error,
     hasQuery,
+    scopeTaskId,
     total,
     index,
     start,

@@ -39,7 +39,7 @@ try {
   await page.getByRole("button", { name: "Меню чата", exact: true }).tap();
   await page.getByRole("button", { name: "Поиск", exact: true }).tap();
   const field = page.getByRole("searchbox", {
-    name: "Поиск в чатах",
+    name: /Поиск в (общем чате|задаче)/,
     exact: true,
   });
   assert.ok(
@@ -82,37 +82,45 @@ try {
   await page.waitForFunction(
     () => window.chatSearch.total === 3 && !window.chatSearch.busy,
   );
-  assert.equal(
-    await page
-      .locator(".codex-window-header:visible, .task-header:visible")
-      .count(),
-    1,
-  );
-  assert.equal(await page.locator(".task-header:visible").count(), 1);
-  assert.ok((await page.locator(".search-current mark:visible").count()) > 0);
-  assert.equal(await page.locator(".team-compose-area:visible").count(), 0);
-  assert.equal(await page.locator(".team-search-count").innerText(), "3/3");
-  await page
-    .getByRole("button", { name: "Предыдущее совпадение", exact: true })
-    .tap();
-  await page.waitForFunction(
-    () => window.chatSearch.index === 1 && !window.chatSearch.busy,
-  );
-  await page
-    .getByRole("button", { name: "Предыдущее совпадение", exact: true })
-    .tap();
-  await page.waitForFunction(
-    () => window.chatSearch.index === 0 && !window.chatSearch.busy,
-  );
-  assert.ok(
-    await page
-      .locator(
-        '[data-message-id="00000000-0000-4000-8000-000000000002"]:visible',
-      )
-      .count(),
-    "older history result is loaded in context",
-  );
+  assert.equal(await page.locator('.task-header:visible').count(),0,'global search stays in the general chat');
+  assert.equal(await page.locator('.team-search-count').innerText(),'1/3');
+  assert.ok(await page.locator('.search-current mark:visible').count());
+  await page.getByRole('button',{name:'Следующее совпадение',exact:true}).tap();
+  await page.waitForFunction(()=>window.chatSearch.index===1 && !window.chatSearch.busy);
+  await page.getByRole('button',{name:'Следующее совпадение',exact:true}).tap();
+  await page.waitForFunction(()=>window.chatSearch.index===2 && !window.chatSearch.busy);
+  assert.equal(await page.locator('.task-header:visible').count(),0);
+  await page.getByRole('button',{name:/Найдено внутри: 1/}).waitFor();
+  await page.getByRole('button',{name:/Найдено внутри: 1/}).tap();
+  await page.waitForFunction(()=>window.chatSearch.scopeTaskId && window.chatSearch.total===1 && !window.chatSearch.busy);
+  assert.equal(await page.locator('.task-header:visible').count(),1);
+  assert.equal(await field.getAttribute('placeholder'),'Поиск в задаче');
+  assert.equal(await page.locator('.team-search-count').innerText(),'1/1');
+  assert.ok(await page.locator('.search-current mark:visible').count());
+  assert.equal(await page.locator('.team-compose-area:visible').count(),0);
+  await field.fill('Показани');
+  await page.getByText('Ничего не найдено',{exact:true}).filter({visible:true}).waitFor();
+  assert.equal(await page.locator('.team-search-count').innerText(),'0','task search excludes unrelated task bodies');
+  await page.getByRole('button',{name:'Закрыть поиск',exact:true}).tap();
+  assert.equal(await page.locator('.task-header:visible').count(),1,'closing search stays in the opened task');
+  // Opening search from inside the task retains that context immediately.
+  await page.evaluate(()=>window.chatSearch.start());
+  assert.equal(await page.locator('.task-header:visible').count(),1);
+  await field.fill('Договор');
+  await page.waitForFunction(()=>window.chatSearch.total===1 && !window.chatSearch.busy);
+  assert.equal(await page.evaluate(()=>window.searchRequests.at(-1).taskId),'22222222-2222-4222-8222-222222222222');
+  await field.fill('Отчёт');
+  await page.waitForFunction(()=>window.chatSearch.total===1 && !window.chatSearch.busy);
+  assert.equal(await page.locator('.search-current .team-file mark:visible').count(),1,'task attachment filename is highlighted within the same task');
+  assert.equal(await page.locator('.task-cover:visible').count(),0,'attachment results do not duplicate the task card in its discussion');
+  await field.fill('Договор');
+  await page.waitForFunction(()=>window.chatSearch.total===1 && !window.chatSearch.busy);
+  await page.evaluate(()=>window.searchChat.requestedTaskId=null);
+  await page.waitForFunction(()=>window.chatSearch.total===3 && !window.chatSearch.busy);
+  assert.equal(await field.getAttribute('placeholder'),'Поиск в общем чате');
+  assert.ok(await page.locator('[data-message-id="00000000-0000-4000-8000-000000000002"]:visible').count(),'older history result is loaded in context');
   if (!process.env.NO_SCREENSHOTS) await page.screenshot({ path: "output/playwright/chat-search-phone.png" });
+  await field.tap();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (theme) => (document.documentElement.dataset.theme = theme),

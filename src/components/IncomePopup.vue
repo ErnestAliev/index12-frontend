@@ -845,7 +845,7 @@ const handleMainAction = async () => {
 
       <!-- СЧЕТ -->
       <div v-if="!isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
+          <BaseSelect hide-selected-label v-model="selectedAccountId" :options="accountOptions" placeholder="Куда (Счет)" label="Куда (Счет)" @change="handleAccountChange" :disabled="isReadOnly">
               <template #action-item v-if="canManageAccounts">
                   <div class="dual-action-row">
                       <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
@@ -863,7 +863,7 @@ const handleMainAction = async () => {
 
       <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
       <div v-if="isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing">
-          <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
+          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
@@ -881,7 +881,7 @@ const handleMainAction = async () => {
 
       <!-- КОНТРАГЕНТ -->
       <div v-if="!showCreateContractorModal" class="input-spacing">
-          <BaseSelect searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
+          <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
               <template #action-item>
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
@@ -898,11 +898,11 @@ const handleMainAction = async () => {
       </div>
 
       <div v-if="isManagedCounterparty" class="input-spacing">
-        <BaseSelect v-model="purchaseAccountId" :options="purchaseAccountOptions" label="Счёт списания второй компании" placeholder="Счёт списания второй компании" :disabled="isReadOnly" />
+        <BaseSelect hide-selected-label v-model="purchaseAccountId" :options="purchaseAccountOptions" label="Счёт списания второй компании" placeholder="Счёт списания второй компании" :disabled="isReadOnly" />
       </div>
 
       <div v-if="!isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
+          <BaseSelect hide-selected-label v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly" />
       </div>
       <div v-else class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -912,7 +912,7 @@ const handleMainAction = async () => {
 
       <!-- КАТЕГОРИЯ -->
       <div v-if="!isCreatingCategory" class="input-spacing">
-          <BaseSelect v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
+          <BaseSelect hide-selected-label v-model="selectedCategoryId" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" />
       </div>
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
@@ -920,7 +920,7 @@ const handleMainAction = async () => {
           <button type="button" @click="cancelCreateCategory" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
-      <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />
+      <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />
       <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к доходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
 
       

@@ -1065,7 +1065,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- СЧЕТ -->
       <div v-if="!isIncomeOffsetMode && !isCreatingAccount" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange" :disabled="isReadOnly">
+          <BaseSelect hide-selected-label v-model="selectedAccountId" :options="accountOptions" placeholder="Счет списания" label="Счет списания" @change="handleAccountChange" :disabled="isReadOnly">
               <template #action-item v-if="permissions.isAdmin.value">
                   <div class="dual-action-row">
                       <button @click="showAccountInput" class="btn-dual-action left">Создать счет</button>
@@ -1083,7 +1083,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
       <div v-if="!isIncomeOffsetMode && isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
+          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
@@ -1103,7 +1103,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- КОНТРАГЕНТ (Кому) -->
       <div v-if="!isIncomeOffsetMode && !showCreateContractorModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly || isOffsetEditLocked }">
-          <BaseSelect searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
+          <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
               <template #action-item v-if="canEdit">
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
@@ -1122,17 +1122,17 @@ watch(defaultProjectId, (defId) => {
       </div>
 
       <div v-if="isManagedCounterparty" class="input-spacing">
-        <BaseSelect v-model="purchaseAccountId" :options="purchaseAccountOptions" label="Счёт зачисления" placeholder="Счёт зачисления" :disabled="isReadOnly" />
+        <BaseSelect hide-selected-label v-model="purchaseAccountId" :options="purchaseAccountOptions" label="Счёт зачисления" placeholder="Счёт зачисления" :disabled="isReadOnly" />
       </div>
 
       <!-- Взаимозачет: выбор дохода -->
       <div v-if="isIncomeOffsetMode" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedIncomeOpId" :options="incomeOffsetOptions" placeholder="Вычет из операции доход" label="Вычет из операции доход" @change="handleIncomeSelect" :disabled="isReadOnly" />
+          <BaseSelect hide-selected-label v-model="selectedIncomeOpId" :options="incomeOffsetOptions" placeholder="Вычет из операции доход" label="Вычет из операции доход" @change="handleIncomeSelect" :disabled="isReadOnly" />
       </div>
 
       <!-- ПРОЕКТ -->
       <div v-if="!isIncomeOffsetMode && !isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
+          <BaseSelect hide-selected-label v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
       </div>
       <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />
@@ -1142,7 +1142,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- КАТЕГОРИЯ -->
       <div v-if="!isCreatingCategory" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect v-model="selectedCategoryIds" :multiple="true" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
+          <BaseSelect hide-selected-label v-model="selectedCategoryIds" :multiple="true" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
       </div>
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />
@@ -1150,7 +1150,7 @@ watch(defaultProjectId, (defId) => {
           <button type="button" @click="cancelCreateCategory" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
-      <SubcategorySelect v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
+      <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
       <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к расходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
 
 
