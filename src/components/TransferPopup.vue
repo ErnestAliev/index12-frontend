@@ -47,6 +47,14 @@ const fromAccountId = ref(null);
 const toAccountId = ref(null);
 const categoryId = ref(null);
 const subcategoryId = ref(null);
+const categoryOptions = computed(() => [
+  { value: null, label: 'Без категории' },
+  ...mainStore.categories.map(category => ({ value: category._id, label: category.name }))
+]);
+const changeCategory = value => {
+  if (value !== categoryId.value) subcategoryId.value = null;
+  categoryId.value = value;
+};
 const selectedProjectId = ref(null);
 const projectOptions = computed(() => [
   { value: null, label: 'Без проекта' },
@@ -393,7 +401,7 @@ onMounted(async () => {
     withdrawalRecipient.value = transfer.withdrawalRecipient || '';
 
     const savedCategoryId = props.transferToEdit?.categoryId?._id || props.transferToEdit?.categoryId;
-    categoryId.value = mainStore.categories.some(item => item._id === savedCategoryId) ? savedCategoryId : defaultCategoryId;
+    categoryId.value = savedCategoryId == null ? null : mainStore.categories.some(item => item._id === savedCategoryId) ? savedCategoryId : defaultCategoryId;
     if (transfer.date) { editableDate.value = toInputDate(new Date(transfer.date)); }
   } else {
     categoryId.value = defaultCategoryId;
@@ -667,8 +675,12 @@ const closePopup = () => { emit('close'); };
       <div class="input-spacing" data-testid="transfer-project-field">
           <BaseSelect v-model="selectedProjectId" :options="projectOptions" placeholder="Проект" label="Проект" :disabled="isReadOnly" />
       </div>
-      <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
       </template>
+
+      <div class="input-spacing" data-testid="transfer-category-field">
+        <BaseSelect :model-value="categoryId" :options="categoryOptions" placeholder="Категория" label="Категория" :disabled="isReadOnly" @update:model-value="changeCategory" />
+      </div>
+      <SubcategorySelect v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
 
       <div v-if="isWithdrawal" class="input-spacing">
         <input v-model="withdrawalRecipient" class="form-input" aria-label="Получатель средств" placeholder="Получатель средств" list="withdrawal-recipients" maxlength="300" :disabled="isReadOnly" />

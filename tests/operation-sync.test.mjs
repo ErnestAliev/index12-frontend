@@ -435,3 +435,31 @@ for (const purpose of ['internal', 'personal']) {
     assert.deepEqual(requests.map(request => request.method), ['post']);
   });
 }
+
+for (const purpose of ['internal', 'withdrawal']) for (const categoryId of ['selected-category', null]) {
+  test(`${purpose} creation preserves selected category ${categoryId} in preview and API payload`, async () => {
+    const { store, op, dateKey, requests } = fixture();
+    store.categories = [{ _id: 'default-category', name: 'Перевод' }, { _id: 'selected-category', name: 'Выбранная категория' }];
+    const saving = store.createTransfer({ date: op.date, amount: 100, fromAccountId: 'from', toAccountId: purpose === 'withdrawal' ? null : 'to', transferPurpose: purpose, withdrawalRecipient: purpose === 'withdrawal' ? 'Получатель' : null, categoryId });
+    await tick();
+    const post = requests.find(request => request.method === 'post');
+    const payload = JSON.parse(post.data);
+    assert.equal(payload.categoryId, categoryId);
+    const preview = store.getOperationsForDay(dateKey).find(row => row.isOptimistic);
+    assert.equal(preview.categoryId?._id || preview.categoryId || null, categoryId);
+    post.response.resolve({ ...payload, _id: 'transfer-copy', type: 'transfer', isTransfer: true });
+    await saving;
+  });
+}
+
+test('withdrawal editing preserves an explicitly cleared category in the API payload', async () => {
+  const { store, op, requests } = fixture();
+  store.categories = [{ _id: 'transfer-category', name: 'Перевод' }];
+  const saving = store.updateTransfer(op._id, { date: op.date, amount: 100, fromAccountId: 'from', toAccountId: null, transferPurpose: 'withdrawal', withdrawalRecipient: 'Получатель', categoryId: null });
+  await tick();
+  const put = requests.find(request => request.method === 'put');
+  const payload = JSON.parse(put.data);
+  assert.equal(payload.categoryId, null);
+  put.response.resolve({ ...payload, _id: op._id, syncVersion: 1 });
+  await saving;
+});

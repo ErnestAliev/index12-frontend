@@ -2772,7 +2772,7 @@ export const useMainStore = defineStore('mainStore', () => {
         try {
             const finalDate = new Date(transferData.date);
             const dateKey = _getDateKey(finalDate);
-            const transferCategory = await _getOrCreateTransferCategory();
+            const finalCategoryId = transferData.categoryId !== undefined ? transferData.categoryId : await _getOrCreateTransferCategory();
             reservation = await _reserveCreationSlot(dateKey, transferData.cellIndex);
 
             const tempId = `temp_tr_${Date.now()}_${++operationCreationSequence}`;
@@ -2782,7 +2782,7 @@ export const useMainStore = defineStore('mainStore', () => {
             if (isSystemWithdrawal(transferData)) {
                 optimisticOps.push({
                     _id: tempId,
-                    categoryId: transferData.categoryId || transferCategory,
+                    categoryId: finalCategoryId,
                     subcategoryId: transferData.subcategoryId || null,
                     projectScope: transferData.projectScope || 'selected',
                     projectId: transferData.projectId || null,
@@ -2813,7 +2813,7 @@ export const useMainStore = defineStore('mainStore', () => {
             else {
                 optimisticOps.push({
                     _id: tempId,
-                    categoryId: transferData.categoryId || transferCategory,
+                    categoryId: finalCategoryId,
                     subcategoryId: transferData.subcategoryId || null,
                     projectScope: transferData.projectScope || 'selected',
                     projectId: transferData.projectId || null,
@@ -2856,7 +2856,7 @@ export const useMainStore = defineStore('mainStore', () => {
                 ...transferData,
                 dateKey,
                 cellIndex: reservation.cellIndex,
-                categoryId: transferData.categoryId || transferCategory
+                categoryId: finalCategoryId
             };
 
             const response = await axios.post(`${API_BASE_URL}/transfers`, payload);
@@ -2903,7 +2903,7 @@ export const useMainStore = defineStore('mainStore', () => {
                     accountId: transferData.fromAccountId || null,
                     companyId: transferData.fromCompanyId || null,
                     individualId: transferData.fromIndividualId || null,
-                    categoryId: transferData.categoryId || oldOp?.categoryId?._id || oldOp?.categoryId || await _getOrCreateTransferCategory(),
+                    categoryId: transferData.categoryId !== undefined ? transferData.categoryId : oldOp?.categoryId?._id || oldOp?.categoryId || await _getOrCreateTransferCategory(),
                     withdrawalRecipient: transferData.withdrawalRecipient || null,
                     destination: transferData.withdrawalRecipient || 'Вне системы',
                     description: transferData.description ?? oldOp?.description ?? 'Вывод средств'

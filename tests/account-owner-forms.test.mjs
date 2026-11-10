@@ -253,3 +253,26 @@ test('legacy personal withdrawals open as withdrawals while business-growth tran
   assert.equal(state.transferMode, 'internal');
   assert.equal(state.toAccountId, 'personal');
 });
+
+test('transfer: selected system category survives saving and reopening; changing it clears the subcategory', async () => {
+  const f = fixture(), saved = [];
+  f.store.categories.push({ _id: 'category-a', name: 'Категория А' }, { _id: 'category-b', name: 'Категория Б' });
+  f.store.subcategories = [{ _id: 'subcategory-a', name: 'Подкатегория А', parentCategoryId: 'category-a' }];
+  let state = await mount('TransferPopup', { ...props('transfer', { categoryId: 'category-a', subcategoryId: 'subcategory-a' }), onSave: payload => saved.push(payload.data) });
+  assert.equal(state.categoryId, 'category-a');
+  assert.deepEqual(state.categoryOptions.map(option => option.value), [null, 'transfer', 'category-a', 'category-b']);
+  state.changeCategory('category-a');
+  assert.equal(state.subcategoryId, 'subcategory-a', 'reselecting the current category preserves its child');
+  state.changeCategory('category-b');
+  assert.equal(state.subcategoryId, null);
+  await state.handleSave();
+  assert.equal(saved[0].categoryId, 'category-b');
+  assert.equal(saved[0].subcategoryId, null);
+  state = await mount('TransferPopup', { ...props('transfer', saved[0]), onSave: payload => saved.push(payload.data) });
+  assert.equal(state.categoryId, 'category-b');
+  state.changeCategory(null);
+  await state.handleSave();
+  assert.equal(saved[1].categoryId, null);
+  state = await mount('TransferPopup', props('transfer', saved[1]));
+  assert.equal(state.categoryId, null, 'explicitly uncategorised transfers never acquire the default category on reopen');
+});
