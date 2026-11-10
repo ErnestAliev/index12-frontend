@@ -1711,9 +1711,10 @@ const handleRefundDelete = async (op) => {
             class="icon-btn workspace-dashboard-btn"
             @click="showWorkspaceModal = true"
             data-tooltip="Рабочие области"
+            aria-label="Рабочие области"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"></path>
             </svg>
           </button>
 
