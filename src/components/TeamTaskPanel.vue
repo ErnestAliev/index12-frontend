@@ -32,6 +32,7 @@ import TeamTaskProjectPicker from './TeamTaskProjectPicker.vue';
 import TeamTaskFilters from './TeamTaskFilters.vue';
 import { useTaskHold } from "@/composables/useTaskHold";
 import { useChatTransfer } from '@/composables/useChatTransfer';
+import { taskInvoiceCommands, splitTaskInvoiceCommand, setTaskInvoiceCommand } from '@/utils/taskInvoiceCommands';
 const props = defineProps({
   creating: Boolean,
   taskId: String,
@@ -65,6 +66,40 @@ const draft = ref(blank()),
   uploading = ref(false),
   field = ref(null),
   fileInput = ref(null);
+const invoiceChip = ref(null), invoiceChipWidth = ref(0), descriptionScrollTop = ref(0);
+const invoiceCommandLimitError = 'С командой описание должно быть не длиннее 10 000 символов.';
+const invoiceDraft = computed(() => splitTaskInvoiceCommand(draft.value.description));
+const invoiceCommand = computed(() => invoiceDraft.value.command);
+const descriptionBody = computed({
+  get: () => invoiceDraft.value.text,
+  set: value => { draft.value.description = (invoiceCommand.value?.prefix || '') + value; },
+});
+watch(invoiceCommand, async () => {
+  await nextTick();
+  invoiceChipWidth.value = invoiceChip.value?.getBoundingClientRect().width || 0;
+});
+function selectInvoiceCommand(id) {
+  if (busy.value || uploading.value) return;
+  const description = setTaskInvoiceCommand(draft.value.description, id);
+  if (description.length > 10000) { error.value = invoiceCommandLimitError; return; }
+  if (error.value === invoiceCommandLimitError) error.value = '';
+  voice.stop();
+  draft.value.description = description;
+  focusAfterInvoiceCommand();
+}
+function focusAfterInvoiceCommand() {
+  descriptionScrollTop.value = 0;
+  if (field.value) field.value.scrollTop = 0;
+  field.value?.focus({ preventScroll: true });
+  field.value?.setSelectionRange(0, 0);
+}
+function deleteInvoiceCommand(event) {
+  const backward = event.type === 'keydown' ? event.key === 'Backspace' : event.inputType === 'deleteContentBackward';
+  const input = event.target;
+  if (!invoiceCommand.value || !backward || event.isComposing || input.selectionStart !== 0 || input.selectionEnd !== 0) return;
+  event.preventDefault();
+  draft.value.description = descriptionBody.value;
+}
 const filters = computed(() => chat.taskFilters);
 const partyName = computed(() => { const party = active.value?.party; return chat.taskOptions.parties.find(row => row.kind === party?.kind && row.id === party?.id)?.name || active.value?.partyName || 'Без контрагента'; });
 const projectName = computed(() => chat.taskOptions.projects.find(project => project._id === active.value?.projectId)?.name || active.value?.projectName || 'Без проекта');
@@ -753,12 +788,21 @@ onBeforeUnmount(() => {
         <div v-else class="task-description-box">
           <textarea
             ref="field"
-            v-model="draft.description"
-            placeholder="Вкратце опишите задачу"
+            v-model="descriptionBody"
+            :placeholder="invoiceCommand ? '' : 'Вкратце опишите задачу'"
             aria-label="Описание задачи"
-            maxlength="10000"
+            :aria-describedby="invoiceCommand ? `task-command-${draft.id}` : undefined"
+            :maxlength="10000 - (invoiceCommand?.prefix.length || 0)"
+            :style="{ textIndent: invoiceCommand ? `${(invoiceChipWidth + 6) / .875}px` : undefined }"
+            @keydown="deleteInvoiceCommand"
+            @beforeinput="deleteInvoiceCommand"
+            @scroll="descriptionScrollTop = $event.target.scrollTop"
           />
+          <span v-if="invoiceCommand" :id="`task-command-${draft.id}`" ref="invoiceChip" class="task-invoice-command" :style="{ transform: `translateY(${-descriptionScrollTop * .875}px)` }" aria-live="polite" @mousedown.prevent @click="focusAfterInvoiceCommand">{{ invoiceCommand.label }}</span>
           <div class="description-tools">
+            <div class="task-invoice-shortcuts" role="group" aria-label="Быстрые команды">
+              <button v-for="command in taskInvoiceCommands" :key="command.id" type="button" class="task-invoice-shortcut" :aria-pressed="invoiceCommand?.id === command.id" :disabled="busy || uploading" @mousedown.prevent @click="selectInvoiceCommand(command.id)"><span>{{ command.label }}</span></button>
+            </div>
             <span v-if="uploading" class="upload-state" role="status"
               >Загрузка…</span
             >

@@ -15,9 +15,9 @@ export function taskReference(task, workspaceId, origin = window.location.origin
   url.searchParams.set('task', task._id);
   return { id: task._id, workspaceId, url: url.href, title: task.description.slice(0, 120) };
 }
-export function taskReferenceText(refs, { processInvoices = false } = {}) {
+export function taskReferenceText(refs, { readTasks = false } = {}) {
   if (!refs.length) return '';
-  const instruction = processInvoices ? 'Оформи счета по прикреплённым задачам. Сначала прочитай цель каждой задачи и определи направление: полученный счёт поставщика, выставление счёта покупателю или только проверка. Само наличие вложения не означает расход. Используй index12_invoice_rules; если направление неясно, уточни до записей. Выполни установленную цепочку без повторного вопроса «что сделать».\n' : '';
+  const instruction = readTasks ? 'Разберись с прикреплёнными задачами: прочитай актуальное описание, нужную переписку и вложения и ответь по содержанию. Если в начале задачи выбрана команда «Оплатить счёт:» или «Выставить счёт:», выполни соответствующую цепочку по index12_invoice_rules. Остальные задачи рассматривай как обычные: без финансовой команды или отдельного явного поручения владельца оформление счетов не запускай. Само наличие вложения не означает расход.\n' : '';
   return instruction + '\n\nЗадачи рабочего чата (ссылки на оригиналы):\n' + refs.map(ref => ref.url).join('\n');
 }
 export function beginChatDrag(event, { source, scope, getScope, kind, read, task }) {

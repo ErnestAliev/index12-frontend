@@ -101,7 +101,7 @@ try {
     assert.equal(sent[0].attachments[0].fileId, uploads[1].fileId);
     assert.equal(sent[0].attachments[0].name,'Договор.txt');
     assert.equal(reads.filter(p=>p.includes('/codex/')).length,1);
-    // An empty draft plus a task uses explicit invoice routing only when Send is pressed.
+    // An empty draft plus a task requests ordinary task reading and explicit command routing only when Send is pressed.
     await codex.locator('textarea').fill('');
     await drag(work.locator('.task-cover'),codex.locator('textarea'));
     await reference.waitFor();
@@ -110,8 +110,8 @@ try {
     if(touch) await send.tap(); else await send.click();
     await page.waitForFunction(()=>!document.querySelector('.desktop-chat-picker select')?.disabled);
     assert.equal(sent.length,2);
-    assert.ok(sent[1].message.startsWith('Оформи счета по прикреплённым задачам.'));
-    assert.ok(sent[1].message.includes('выставление счёта покупателю или только проверка'));
+    assert.ok(sent[1].message.startsWith('Разберись с прикреплёнными задачами:'));
+    assert.ok(sent[1].message.includes('Остальные задачи рассматривай как обычные'));
     assert.equal(sent[1].message.trim().split('\n').at(-1),url.href);
     assert.ok(!sent[1].message.includes('Прочитать договор'));
     assert.deepEqual(errors,[]);
