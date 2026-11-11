@@ -43,6 +43,14 @@ test('task references retain the original route and IDs rather than a stale desc
   assert.ok(message.includes(ref.url));
   assert.equal(new URL(message.trim().split('\n').at(-1)).searchParams.get('task'), task._id);
   assert.ok(!message.includes(task.description));
+  const processing = taskReferenceText([ref], { processInvoices: true });
+  assert.ok(processing.startsWith('Оформи счета по прикреплённым задачам.'));
+  assert.ok(processing.includes('выставление счёта покупателю'));
+  assert.ok(processing.includes('или только проверка'));
+  assert.equal(processing.trim().split('\n').at(-1), ref.url);
+  assert.ok(!processing.includes(task.description));
+  assert.ok(!message.includes('Оформи счета'));
+  assert.equal(taskReferenceText([], { processInvoices: true }), '');
   assert.equal(taskReferenceText([]), '');
   assert.throws(() => taskReference({ ...task, _id: 'invalid' }, user.currentWorkspaceId, url.origin));
   assert.throws(() => taskReference(task, 'invalid', url.origin));

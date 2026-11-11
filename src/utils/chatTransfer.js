@@ -15,9 +15,10 @@ export function taskReference(task, workspaceId, origin = window.location.origin
   url.searchParams.set('task', task._id);
   return { id: task._id, workspaceId, url: url.href, title: task.description.slice(0, 120) };
 }
-export function taskReferenceText(refs) {
+export function taskReferenceText(refs, { processInvoices = false } = {}) {
   if (!refs.length) return '';
-  return '\n\nЗадачи рабочего чата (ссылки на оригиналы):\n' + refs.map(ref => ref.url).join('\n');
+  const instruction = processInvoices ? 'Оформи счета по прикреплённым задачам. Сначала прочитай цель каждой задачи и определи направление: полученный счёт поставщика, выставление счёта покупателю или только проверка. Само наличие вложения не означает расход. Используй index12_invoice_rules; если направление неясно, уточни до записей. Выполни установленную цепочку без повторного вопроса «что сделать».\n' : '';
+  return instruction + '\n\nЗадачи рабочего чата (ссылки на оригиналы):\n' + refs.map(ref => ref.url).join('\n');
 }
 export function beginChatDrag(event, { source, scope, getScope, kind, read, task }) {
   if (!event.dataTransfer || !scope) { event.preventDefault(); return; }

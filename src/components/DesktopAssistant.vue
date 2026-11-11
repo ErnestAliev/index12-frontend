@@ -167,7 +167,7 @@ async function newChat() {
 }
 async function send(forced, existing = null) {
   const draft = (typeof forced === 'string' ? forced : input.value).trim();
-  const text = existing ? existing.text : draft + taskReferenceText(taskRefs.value);
+  const text = existing ? existing.text : draft + taskReferenceText(taskRefs.value, { processInvoices: !draft });
   if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || transfer.pending.value || voiceActive.value) return;
   if (text.length > 16000) { error.value = 'Сообщение со ссылками должно быть не длиннее 16 000 символов.'; return; }
   const session = controller;

@@ -394,7 +394,7 @@ onMounted(() => {
       const isExcluded = !!item.isExcluded;
       const isCashRegister = !!item.isCashRegister;
       
-      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal, isExcluded, isCashRegister }
+      return { ...item, initialBalance: balance, initialBalanceFormatted: formatNumber(balance), ownerValue: ownerVal, isExcluded, isCashRegister, isDefaultForExpenses: !!item.isDefaultForExpenses }
     }
     if (isContractorEditor || isIndividualEditor) {
       let pIds = normalizeIdArray(item.defaultProjectIds);
@@ -569,8 +569,8 @@ const runSave = async () => {
   if (isAccountEditor) {
       // Обновляем флаги isExcluded и isCashRegister перед слиянием
       localItems.value.forEach(i => { i.isExcluded = false; i.isCashRegister = false; });
-      cashRegisterItems.value.forEach(i => { i.isExcluded = false; i.isCashRegister = true; });
-      excludedItems.value.forEach(i => { i.isExcluded = true; i.isCashRegister = false; });
+      cashRegisterItems.value.forEach(i => { i.isExcluded = false; i.isCashRegister = true; i.isDefaultForExpenses = false; });
+      excludedItems.value.forEach(i => { i.isExcluded = true; i.isCashRegister = false; i.isDefaultForExpenses = false; });
       
       finalItems = [...localItems.value, ...cashRegisterItems.value, ...excludedItems.value];
   }
@@ -588,6 +588,7 @@ const runSave = async () => {
         // 🟢 Явно сохраняем оба флага
         data.isExcluded = !!item.isExcluded;
         data.isCashRegister = !!item.isCashRegister;
+        data.isDefaultForExpenses = !data.isExcluded && !data.isCashRegister && !!item.isDefaultForExpenses;
         
         if (item.ownerValue) { 
             const [type, id] = item.ownerValue.split('-'); 
@@ -757,7 +758,7 @@ defineExpose({
 
 <template>
   <div class="popup-overlay" :class="{ embedded: props.embedded }" @click.self="!props.embedded && $emit('close')">
-    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor, embedded: props.embedded }">
+    <div class="popup-content" :class="{ 'wide': isContractorEditor || isCompanyEditor || isIndividualEditor || isAccountEditor, 'accounts-editor': isAccountEditor, embedded: props.embedded }">
       <div v-if="props.showHeader" class="header-with-toggle">
         <h3>{{ title }}</h3>
         <button 
@@ -883,7 +884,7 @@ defineExpose({
                 <!-- СЕКЦИЯ 1: БАНКОВСКИЕ СЧЕТА -->
                 <div class="group-section">
                     <div class="editor-header account-header-simple">
-                        <span class="header-name">Название счета</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-trash"></span>
+                        <span class="header-name">Название счета</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-default">По умолчанию</span><span class="header-trash"></span>
                     </div>
                     <draggable 
                         v-model="localItems" 
@@ -896,7 +897,7 @@ defineExpose({
                         @change="handleSave"
                     >
                       <template #item="{ element: item }">
-                        <div class="edit-item">
+                        <div class="edit-item account-default-row">
                           <span class="drag-handle">⠿</span>
                           <input type="text" v-model="item.name" class="edit-input edit-name" @blur="debouncedSave" />
                           <select v-model="item.ownerValue" @change="handleOwnerSelectChange(item); debouncedSave()" class="edit-input edit-owner ui-select">
@@ -907,6 +908,9 @@ defineExpose({
                               <optgroup label="Физлица"><option v-for="i in individualsList" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
                           </select>
                           <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" @blur="debouncedSave" class="edit-input edit-balance" placeholder="0" />
+                          <label class="edit-default" title="Использовать для расходов: сначала компания, затем порядок счетов">
+                            <input type="checkbox" v-model="item.isDefaultForExpenses" :disabled="!permissions.isAdmin.value" :aria-label="`Счёт по умолчанию: ${item.name}`" @change="debouncedSave" />
+                          </label>
                           <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                         </div>
                       </template>
@@ -917,7 +921,7 @@ defineExpose({
                 <div class="group-section cash-register-section">
                     <h3 style="margin: 0 0 16px 0; font-size: 1.25rem; font-weight: 600; color: var(--color-heading);">Редактирование касс</h3>
                     <div class="editor-header account-header-simple">
-                        <span class="header-name">Название кассы</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-trash"></span>
+                        <span class="header-name">Название кассы</span><span class="header-owner">Владелец</span><span class="header-balance">Нач. баланс</span><span class="header-default" aria-hidden="true"></span><span class="header-trash"></span>
                     </div>
                     <draggable 
                         v-model="cashRegisterItems" 
@@ -941,6 +945,7 @@ defineExpose({
                               <optgroup label="Физлица"><option v-for="i in individualsList" :key="i._id" :value="`individual-${i._id}`">{{ i.name }}</option></optgroup>
                           </select>
                           <input type="text" inputmode="decimal" v-model="item.initialBalanceFormatted" @input="onAmountInput(item)" @focus="$event.target.select()" @blur="debouncedSave" class="edit-input edit-balance" placeholder="0" />
+                          <span class="edit-default" aria-hidden="true"></span>
                           <button class="delete-btn" @click="openDeleteDialog(item)" title="Удалить"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                         </div>
                       </template>
@@ -972,6 +977,7 @@ defineExpose({
                                     <option :value="item.ownerValue">{{ item.ownerValue ? 'Владелец скрыт' : 'Нет владельца' }}</option>
                                 </select>
                                 <input type="text" v-model="item.initialBalanceFormatted" class="edit-input edit-balance faded" disabled />
+                                <span class="edit-default" aria-hidden="true"></span>
                                 <button class="delete-btn" @click="openDeleteDialog(item)"><svg viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
                             </div>
                         </template>
@@ -1091,6 +1097,19 @@ defineExpose({
 .popup-overlay.embedded { position: relative; width: 100%; height: 100%; background: transparent; display: block; overflow: hidden; }
 .popup-content.embedded { display: flex; flex-direction: column; width: 100%; max-width: none; height: 100%; margin: 0; border-radius: 0; box-shadow: none; padding: 1.5rem 1.75rem 2rem; background: var(--color-background); }
 .popup-content.embedded.wide { width: 100%; max-width: none; }
+.popup-content.accounts-editor { box-sizing: border-box; width: calc(100% - 2rem); min-width: 0; }
+.popup-content.accounts-editor.embedded { width: 100%; }
+.accounts-editor .list-editor { min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.accounts-editor .list-editor::-webkit-scrollbar { display: block; height: 6px; }
+.accounts-editor .group-section, .accounts-editor .excluded-accounts-section { min-width: 730px; }
+.accounts-editor .account-header-simple { margin-right: 0; }
+.accounts-editor .header-name { min-width: 100px; }
+.accounts-editor .header-balance { box-sizing: border-box; padding-right: 10px; }
+.header-default, .edit-default { flex: 0 0 100px; box-sizing: border-box; text-align: center; }
+.header-default { white-space: nowrap; font-size: 12px; }
+.edit-default { display: flex; align-items: center; justify-content: center; min-height: 44px; }
+.edit-default input { width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--color-primary); }
+.edit-default input:disabled { cursor: default; }
 h3 { color: var(--color-heading); margin-top: 0; margin-bottom: 1.5rem; text-align: left; font-size: 22px; font-weight: 600; }
 
 /* Widget Toggle Button */

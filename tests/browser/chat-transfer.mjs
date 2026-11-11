@@ -89,6 +89,8 @@ try {
     await codex.getByRole('button',{name:'Отправить',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('.desktop-chat-picker select')?.disabled);
     assert.equal(sent.length,1);
+    assert.ok(sent[0].message.startsWith('Проверь документ'));
+    assert.ok(!sent[0].message.includes('Оформи счета по прикреплённым задачам'));
     assert.ok(sent[0].message.includes(url.href));
     assert.equal(new URL(sent[0].message.trim().split('\n').at(-1)).searchParams.get('task'),'22222222-2222-4222-8222-222222222222');
     assert.ok(!sent[0].message.includes('Прочитать договор'));
@@ -99,6 +101,19 @@ try {
     assert.equal(sent[0].attachments[0].fileId, uploads[1].fileId);
     assert.equal(sent[0].attachments[0].name,'Договор.txt');
     assert.equal(reads.filter(p=>p.includes('/codex/')).length,1);
+    // An empty draft plus a task uses explicit invoice routing only when Send is pressed.
+    await codex.locator('textarea').fill('');
+    await drag(work.locator('.task-cover'),codex.locator('textarea'));
+    await reference.waitFor();
+    assert.equal(sent.length,1);
+    const send = codex.getByRole('button',{name:'Отправить',exact:true});
+    if(touch) await send.tap(); else await send.click();
+    await page.waitForFunction(()=>!document.querySelector('.desktop-chat-picker select')?.disabled);
+    assert.equal(sent.length,2);
+    assert.ok(sent[1].message.startsWith('Оформи счета по прикреплённым задачам.'));
+    assert.ok(sent[1].message.includes('выставление счёта покупателю или только проверка'));
+    assert.equal(sent[1].message.trim().split('\n').at(-1),url.href);
+    assert.ok(!sent[1].message.includes('Прочитать договор'));
     assert.deepEqual(errors,[]);
     console.log(`PASS ${engine} ${theme} ${touch?'touch':'mouse'}: exact file bytes in both directions, preserved drafts, no auto-send, original task link and removable references`);
     await context.close();
