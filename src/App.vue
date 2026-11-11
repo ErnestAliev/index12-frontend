@@ -1,8 +1,8 @@
 <script setup>
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch, ref, nextTick } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { useTeamChatStore } from '@/stores/teamChatStore'
-import { openTeamDestination } from '@/utils/teamDestination'
+import { openTeamDestination, pendingTeamDestination, completeTeamDestination } from '@/utils/teamDestination'
 import TeamChatHost from '@/components/TeamChatHost.vue'
 import TextFieldLinks from '@/components/TextFieldLinks.vue'
 import { useMainStore } from '@/stores/mainStore'
@@ -12,6 +12,39 @@ import { useAppearanceStore } from '@/stores/appearanceStore'
 
 const mainStore = useMainStore()
 const chat = useTeamChatStore(), route = useRoute()
+const entryDestination = pendingTeamDestination()
+const priorityWorkspace = ref(entryDestination && !entryDestination.staff && ['/', '/mobile'].includes(window.location.pathname) ? entryDestination.workspaceId : null)
+const workspaceVisible = ref(!priorityWorkspace.value)
+let released = false
+async function releaseWorkspace() {
+  if (!priorityWorkspace.value || released) return
+  released = true
+  await nextTick()
+  requestAnimationFrame(() => {
+    // Let the chat paint first; home views and their data requests start behind it.
+    workspaceVisible.value = true
+    void initializeApp().finally(() => {
+      if (!chat.open || !mainStore.user || String(mainStore.user.currentWorkspaceId) === priorityWorkspace.value)
+        priorityWorkspace.value = null
+    })
+  })
+}
+function priorityReady(result) {
+  if (result?.dismissed) { void releaseWorkspace(); priorityWorkspace.value = null; return }
+  const target = pendingTeamDestination()
+  if (!chat.me?.owner || chat.error || !target) { void releaseWorkspace(); return }
+  if (!target.messageId) {
+    if (!target.taskId || chat.state.tasks.some(task => task._id === target.taskId))
+      completeTeamDestination({ workspaceId: chat.me.workspaceId, taskId: target.taskId })
+    void releaseWorkspace()
+  }
+}
+window.addEventListener('index12:team-destination-visible', releaseWorkspace)
+window.addEventListener('index12:team-priority-settled', releaseWorkspace)
+onUnmounted(() => {
+  window.removeEventListener('index12:team-destination-visible', releaseWorkspace)
+  window.removeEventListener('index12:team-priority-settled', releaseWorkspace)
+})
 const followTeamDestination = () => openTeamDestination(chat, route.path)
 watch(() => [chat.me?.workspaceId, chat.me?.status, route.fullPath], followTeamDestination, { immediate: true })
 window.addEventListener('index12:team-destination', followTeamDestination)
@@ -54,7 +87,7 @@ const initializeApp = async () => {
 
 // При монтировании компонента
 onMounted(async () => {
-  await initializeApp()
+  if (!priorityWorkspace.value) await initializeApp()
   
   // 🟢 УДАЛЕНО: mainStore.startAutoRefresh(30000) 
   // Теперь система работает на WebSocket (Socket.io) и не требует постоянного опроса сервера.
@@ -79,12 +112,12 @@ const forceRefresh = async () => {
 </script>
 
 <template>
-  <RouterView />
-  <TeamChatHost />
+  <RouterView v-if="workspaceVisible" />
+  <TeamChatHost :priority-workspace="priorityWorkspace" @priority-ready="priorityReady" />
   <TextFieldLinks />
 
   <!-- 🟢 Шторка обновления базы данных (появляется только при миграции) -->
-  <div v-if="repairStore.isRepairing" class="repair-overlay">
+  <div v-if="repairStore.isRepairing && !chat.open" class="repair-overlay">
     <div class="repair-content">
       <h3>Обновление базы данных...</h3>
       <p>Пожалуйста, не закрывайте страницу</p>

@@ -8,6 +8,9 @@ import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
 import TeamFileLibrary from './TeamFileLibrary.vue';
+import { discardTeamDestination } from '@/utils/teamDestination';
+const props = defineProps({ priorityWorkspace: String });
+const emit = defineEmits(['priority-ready']);
 const main = useMainStore(),
   chat = useTeamChatStore(),
   route = useRoute(),
@@ -41,6 +44,7 @@ const pending = computed(() =>
     ? chat.pending.find((m) => !dismissed.value.includes(m._id))
     : null,
 );
+let sessionWorkspace = '', sessionActor = '', sessionTicket = 0;
 watch(
   () => pending.value?._id,
   async (id) => {
@@ -59,26 +63,48 @@ watch(
     main.user?.id || main.user?._id,
     main.user?.currentWorkspaceId,
     route.path.startsWith("/team/"),
+    props.priorityWorkspace,
   ],
-  ([actor, workspace, publicPage], previous) => {
-    if (previous && actor === previous[0] && workspace === previous[1] && publicPage === previous[2]) return;
+  ([actor, workspace, publicPage, priorityWorkspace]) => {
     dismissed.value = [];
-    if (publicPage) return;
-    if (actor && workspace)
-      void chat.start(String(workspace)).then(() => {
+    if (publicPage) {
+      ++sessionTicket; sessionWorkspace = ''; sessionActor = '';
+      return;
+    }
+    const selectedWorkspace = priorityWorkspace || (actor && workspace);
+    if (selectedWorkspace) {
+      if (sessionWorkspace === String(selectedWorkspace) &&
+          (priorityWorkspace || sessionActor === actor || (chat.me?.owner && chat.me.actorId === 'owner:' + actor))) {
+        if (actor && chat.me?.actorId === 'owner:' + actor) sessionActor = actor;
+        return;
+      }
+      sessionWorkspace = String(selectedWorkspace);
+      sessionActor = actor || '';
+      const ticket = ++sessionTicket;
+      void chat.start(sessionWorkspace, { open: !!priorityWorkspace }).then(() => {
+        if (ticket !== sessionTicket) return;
         if (
-          route.query.teamChat === String(workspace) &&
+          !priorityWorkspace && route.query.teamChat === sessionWorkspace &&
           chat.me?.owner &&
-          chat.me.workspaceId === String(workspace)
+          chat.me.workspaceId === sessionWorkspace
         )
           chat.show();
+        if (priorityWorkspace) emit('priority-ready');
       });
-    else chat.stop();
+    } else {
+      ++sessionTicket; sessionWorkspace = ''; sessionActor = '';
+      chat.stop();
+    }
   },
   { immediate: true },
 );
 function show() {
   chat.show();
+}
+function close() {
+  discardTeamDestination();
+  chat.open = false;
+  if (props.priorityWorkspace) emit('priority-ready', { dismissed: true });
 }
 function created() {
   void main.forceRefreshAll?.();
@@ -118,11 +144,11 @@ async function decide(status) {
     window-id="team-chat-window"
     side="left"
     storage-key="index12-team-chat-window-size"
-    @close="chat.open = false"
+    @close="close"
     ><template #heading="{ close }"
-      ><TeamChatHeader @close="close" @logout="chat.open = false" /></template
-    ><TeamChatPane :mobile="route.name === 'mobile-home'"
-  /></ChatWindowFrame>
+      ><TeamChatHeader @close="close" @logout="close" /></template
+    ><p v-if="priorityWorkspace && !chat.me" class="team-priority-loading" role="status">Открываем чат…</p>
+    <TeamChatPane v-else :mobile="route.name === 'mobile-home'" /></ChatWindowFrame>
   <Teleport to="body"
     ><div v-if="pending" class="team-approval-backdrop">
       <section
@@ -176,6 +202,7 @@ async function decide(status) {
   >
 </template>
 <style scoped>
+.team-priority-loading { margin:auto; padding:24px; color:var(--codex-pane-muted); font-size:13px; }
 .placement-error {
   position: fixed;
   bottom: 24px;

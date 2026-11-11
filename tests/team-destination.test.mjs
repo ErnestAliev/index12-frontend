@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {parseTeamDestination, rememberTeamDestination, pendingTeamDestination, takeTeamDestination, openTeamDestination, connectTeamDestinations} from '../src/utils/teamDestination.js';
+import {parseTeamDestination, rememberTeamDestination, pendingTeamDestination, takeTeamDestination, openTeamDestination, completeTeamDestination, connectTeamDestinations} from '../src/utils/teamDestination.js';
 const origin='https://index12.test',workspace='a'.repeat(24),task='11111111-1111-4111-8111-111111111111',message='22222222-2222-4222-8222-222222222222';
 const owner={status:'active',owner:true,workspaceId:workspace};
 const saved=new Map();
@@ -17,7 +17,13 @@ test('destination survives missing identity, login, and workspace startup withou
   const chat={me:owner,show(){this.open=true;}};
   assert.equal(openTeamDestination(chat,'/mobile'),true);
   assert.equal(chat.requestedTaskId,task);assert.equal(chat.requestedTaskMessageId,message);assert.equal(chat.open,true);
-  assert.equal(pendingTeamDestination(),null);assert.equal(openTeamDestination(chat,'/mobile'),false,'consumed links do not reopen a task after closing it');
+  assert.equal(pendingTeamDestination().messageId,message,'opening a window does not consume the message destination');
+  assert.equal(openTeamDestination(chat,'/mobile'),false,'do not repeatedly reset the same open thread');
+  chat.requestedTaskId=null;chat.requestedTaskMessageId=null;
+  assert.equal(openTeamDestination(chat,'/mobile'),true,'workspace startup can retry the destination until it is actually displayed');
+  assert.equal(completeTeamDestination({workspaceId:'other',taskId:task,messageId:message}),false);
+  assert.equal(completeTeamDestination({workspaceId:workspace,taskId:task,messageId:message}),true);
+  assert.equal(pendingTeamDestination(),null);assert.equal(openTeamDestination(chat,'/mobile'),false,'displayed links do not reopen after closing the task');
 });
 test('general chat messages and invitation-only staff links retain their distinct destination',()=>{
   rememberTeamDestination('/?teamChat='+workspace+'&message='+message);

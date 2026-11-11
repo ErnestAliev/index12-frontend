@@ -323,6 +323,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   async function start(id = "", options = {}) {
     stop();
+    if (options.open === true) open.value = true;
     workspace = id;
     chatOnlySession = options.chatOnly === true || !id;
     const g = generation;

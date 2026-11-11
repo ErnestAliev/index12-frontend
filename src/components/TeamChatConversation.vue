@@ -50,6 +50,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["new", "composer-focus", "composer-blur", "reading-scroll"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
+import { completeTeamDestination, pendingTeamDestination } from '@/utils/teamDestination';
 const chat = useTeamChatStore(),
   tab = computed(() => (props.taskId ? "messages" : chat.tab)),
   message = ref(""),
@@ -103,7 +104,10 @@ async function refreshConversation() {
     if (props.taskId) await chat.refreshThread(props.taskId, watchedIds.value);
     else await chat.refresh();
   } catch (e) {
-    if (!disposed) localError.value = teamError(e);
+    if (!disposed) {
+      localError.value = teamError(e);
+      if (props.targetMessageId) window.dispatchEvent(new Event('index12:team-priority-settled'));
+    }
   }
 }
 const dictation = useChatDictation({
@@ -388,6 +392,7 @@ function readVisibilityChanged() {
   clearTimeout(readTimer);
   clearTimeout(originalReadTimer);
   if (document.visibilityState === "visible" && document.hasFocus()) {
+    if (props.targetMessageId && pendingTeamDestination()?.messageId === props.targetMessageId) void revealTarget();
     scheduleReads();
     scheduleOriginalRead();
   }
@@ -965,6 +970,16 @@ async function revealTarget() {
     clearTimeout(highlightTimer);
     highlightTimer = setTimeout(() => (highlightedMessage.value = null), 2000);
   }
+  requestAnimationFrame(() => {
+    if (disposed || !props.active || !chat.open || document.visibilityState === 'hidden') return;
+    const box = feed.value?.getBoundingClientRect();
+    if (!box?.width || !box?.height) return;
+    const rect = el?.getBoundingClientRect();
+    if (rect?.width && rect.height && rect.top < box.bottom && rect.bottom > box.top)
+      completeTeamDestination({ workspaceId: chat.me?.workspaceId, taskId: props.taskId || null, messageId: id });
+    // A deleted or inaccessible message must not block the rest of the application.
+    else window.dispatchEvent(new Event('index12:team-priority-settled'));
+  });
   scheduleReads();
 }
 watch(
