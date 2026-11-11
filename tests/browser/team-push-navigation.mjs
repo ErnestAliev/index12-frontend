@@ -12,12 +12,12 @@ const identity={workspaceId:workspace,actorId:actor,owner:true,status:'active',d
 let browser;
 try{
  await server.listen();browser=engine==='webkit'?await webkit.launch({headless:true}):await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
- for(const scenario of ['cold','warm','login']){
+ for(const scenario of ['cold','ios-cold','warm','login']){
   const cold=scenario!=='warm';
-  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Version/17.0 Mobile Safari/604.1'}),page=await context.newPage();context.setDefaultTimeout(15000);
+  const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7_2 like Mac OS X) AppleWebKit/605.1.15 Version/18.7 Mobile Safari/604.1'});let page=await context.newPage();context.setDefaultTimeout(15000);
   const errors=[],writes=[],requests=[];page.on('pageerror',error=>errors.push(error.message));
   let releaseAuth;const authGate=new Promise(resolve=>{releaseAuth=resolve;});
-  await page.route('**/*',async route=>{
+  await context.route('**/*',async route=>{
    const request=route.request(),url=new URL(request.url());
    if(url.pathname.includes('/api/')){
     const path=url.pathname.slice(url.pathname.indexOf('/api/')+4);let data=[];
@@ -39,9 +39,22 @@ try{
    return route.continue();
   });
   const destination='/?teamChat='+workspace+'&task='+taskId+'&message='+messageId;
-  if(cold)await page.addInitScript(({destination,workspace,taskId,messageId})=>{
+  if(cold && scenario!=='ios-cold')await page.addInitScript(({destination,workspace,taskId,messageId})=>{
     sessionStorage.setItem('index12-team-destination',JSON.stringify({path:destination,workspaceId:workspace,taskId,messageId,staff:false,savedAt:Date.now()}));
   },{destination,workspace,taskId,messageId});
+  if(scenario==='ios-cold'){
+   await page.goto('http://127.0.0.1:5207/tests/browser/fixtures/team-click-handoff.html');
+   await page.evaluate(async({destination,workspace,taskId,messageId})=>{
+    const store=globalThis.index12TeamClickStore;
+    await store.write({id:'expired',url:location.origin+destination,savedAt:Date.now()-31*60*1000});
+    if(await store.read())throw Error('Expired click must not reopen an old task');
+    await store.write({id:'ios-click',url:location.origin+destination,workspaceId:workspace,taskId,messageId,savedAt:Date.now()});
+    await store.remove('older-click');
+    if((await store.read())?.id!=='ios-click')throw Error('An old completion must not delete a newer click');
+    sessionStorage.clear();
+   },{destination,workspace,taskId,messageId});
+   await page.close();page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+  }
   await page.goto('http://127.0.0.1:5207/');
   if(scenario==='login'){
    const login=page.locator('.google-login-button');await login.waitFor();
@@ -55,6 +68,7 @@ try{
    assert.ok(await page.evaluate(()=>sessionStorage.getItem('index12-team-destination')),'keep the destination while the message is loading');
    assert.equal(requests.includes('/auth/me'),false,'cold push starts chat before requesting the financial workspace identity');
    assert.equal(await page.locator('.mobile-layout').count(),0,'home interface is deferred until the message is shown');
+   if(scenario==='ios-cold')assert.equal(await page.evaluate(async()=> (await globalThis.index12TeamClickStore.read())?.id),'ios-click','durable click survives until the message is visible');
   }
   if(!cold){
    await page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/team-chat/me'));
@@ -75,12 +89,13 @@ try{
    assert.equal(requests.includes('/accounts'),false,'financial data cannot block displaying the chat');
    releaseAuth();
    await page.waitForFunction(()=>!sessionStorage.getItem('index12-team-destination'));
+   if(scenario==='ios-cold')await page.waitForFunction(async()=>!(await globalThis.index12TeamClickStore.read()));
    await page.locator('.mobile-layout').waitFor();
    await page.waitForResponse(response=>new URL(response.url()).pathname.endsWith('/accounts'));
    assert.equal(requests.filter(path=>path==='/team-chat/me').length,1,'background owner authentication must not restart and reset the open chat');
    assert.equal(await page.locator('.task-approval').count(),1);
   }
   assert.ok(writes.every(path=>path==='/team-chat/messages/read'),'opening a push must not mutate task, decisions, or accounting: '+writes);
-  assert.deepEqual(errors,[]);console.log(`PASS ${engine}: owner/self approval, ${cold?'OAuth return + delayed startup':'warm PWA push'}, mobile redirect and exact message`);await context.close();
+  assert.deepEqual(errors,[]);console.log(`PASS ${engine}: owner/self approval, ${scenario==='ios-cold'?'fresh window, lost URL and postMessage, recovered durable click':cold?'OAuth return + delayed startup':'warm PWA push'}, mobile redirect and exact message`);await context.close();
  }
 }finally{await browser?.close();await server.close();}

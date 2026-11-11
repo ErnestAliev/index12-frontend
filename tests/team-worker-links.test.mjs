@@ -13,8 +13,10 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
     messages = [];
   const origin = "https://index12.test",
     workspace = "a".repeat(24);
+  let persisted, sequence=0;
   const self = {
     location: { origin },
+    crypto: { randomUUID: () => 'click-' + (++sequence) },
     addEventListener: (type, fn) => {
       handlers[type] = fn;
     },
@@ -24,12 +26,16 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
     },
     clients: {
       matchAll: async () => [],
-      openWindow: async (url) => opened.push(url),
+      openWindow: async (url) => { assert.equal(persisted.url,url,'commit clicked destination before iOS opens the app');opened.push(url); },
     },
   };
   runInNewContext(source, {
     self,
     URL,
+    importScripts: path => {
+      assert.equal(path,'/team-click-store.js');
+      self.index12TeamClickStore={write:async value=>{persisted=value;},read:async()=>persisted};
+    },
     MessageChannel, setTimeout, clearTimeout,
     fetch: () => {
       throw Error("No network expected");
@@ -107,4 +113,11 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
   handlers.notificationclick({notification:{data:{...shown[0].data,taskId,messageId:taskId},close(){}},waitUntil:p=>{waiting=p;}});
   await waiting;
   assert.equal(opened.at(-1),navigated[0],'cold launch carries the same complete destination');
+  // iOS opens / and drops the query; the fresh page requests the committed click.
+  const recovered=[];
+  handlers.message({data:{type:'team:client-ready'},source:{url:origin+'/',postMessage:message=>recovered.push(message)},waitUntil:p=>{waiting=p;}});
+  await waiting;
+  assert.equal(recovered[0].url,navigated[0]);assert.equal(recovered[0].clickId,persisted.id);
+  handlers.message({data:{type:'team:client-ready'},source:{url:origin+'/team/other-invitation-000000000',postMessage:message=>recovered.push(message)},waitUntil:p=>{waiting=p;}});
+  await waiting;assert.equal(recovered.length,1,'owner click is not forwarded into a staff invitation');
 });

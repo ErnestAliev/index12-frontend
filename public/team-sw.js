@@ -1,4 +1,5 @@
 /* No offline cache: a shared device must not retain another employee's history. */
+importScripts('/team-click-store.js');
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) =>
   event.waitUntil(self.clients.claim()),
@@ -20,6 +21,29 @@ function chatUrl(value) {
     return url;
   return null;
 }
+function clickedUrl(data) {
+  const target = chatUrl(data?.url);
+  if (!target) return null;
+  const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
+  if (uuid.test(data.taskId || '')) target.searchParams.set('task', data.taskId);
+  if (uuid.test(data.messageId || '')) target.searchParams.set('message', data.messageId);
+  return target;
+}
+let pendingClickWrite = Promise.resolve();
+// An iOS launch may create the page before its document can receive postMessage.
+// The page asks again after its listener is installed, including when outside /team/.
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'team:client-ready' || !event.source?.url) return;
+  event.waitUntil((async () => {
+    await pendingClickWrite;
+    const click = await self.index12TeamClickStore.read();
+    if (!click) return;
+    const source = new URL(event.source.url), target = new URL(click.url);
+    if (source.origin !== self.location.origin || target.origin !== self.location.origin) return;
+    if (target.pathname.startsWith('/team/') ? source.pathname !== target.pathname : !['/', '/mobile'].includes(source.pathname)) return;
+    event.source.postMessage({ type: 'team:refresh', ...click, clickId: click.id });
+  })());
+});
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
@@ -59,17 +83,20 @@ self.addEventListener("push", (event) => {
   );
 });
 self.addEventListener("notificationclick", (event) => {
+  const destination = clickedUrl(event.notification.data);
+  if (!destination) return;
+  const click = {
+    id: self.crypto.randomUUID(), savedAt: Date.now(), url: destination.href,
+    workspaceId: event.notification.data?.workspaceId,
+    taskId: event.notification.data?.taskId, messageId: event.notification.data?.messageId,
+  };
+  // Commit before focus/openWindow. A cold iOS launch can discard the supplied URL.
+  pendingClickWrite = Promise.resolve().then(() => self.index12TeamClickStore.write(click)).catch(() => null);
   event.notification.close();
   event.waitUntil(
     (async () => {
+      await pendingClickWrite;
       const target = chatUrl(event.notification.data?.url);
-      if (!target) return;
-      const destination = new URL(target.href);
-      const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
-      if (uuid.test(event.notification.data?.taskId || ''))
-        destination.searchParams.set('task', event.notification.data.taskId);
-      if (uuid.test(event.notification.data?.messageId || ''))
-        destination.searchParams.set('message', event.notification.data.messageId);
       const windows = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
@@ -94,6 +121,7 @@ self.addEventListener("notificationclick", (event) => {
           try {
             existing.postMessage({
               type: 'team:refresh', url: destination.href,
+              clickId: click.id,
               workspaceId: event.notification.data?.workspaceId,
               taskId: event.notification.data?.taskId,
               messageId: event.notification.data?.messageId,
@@ -108,7 +136,8 @@ self.addEventListener("notificationclick", (event) => {
           if (!navigated) await self.clients.openWindow(destination.href);
         }
       } else {
-        await self.clients.openWindow(destination.href);
+        const opened = await self.clients.openWindow(destination.href);
+        try { opened?.postMessage({ type: 'team:refresh', ...click, clickId: click.id }); } catch { /* The page recovers the committed click when ready. */ }
       }
     })(),
   );
