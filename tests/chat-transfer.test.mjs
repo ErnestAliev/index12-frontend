@@ -47,6 +47,8 @@ test('task references retain the original route and IDs rather than a stale desc
   assert.ok(processing.startsWith('Разберись с прикреплёнными задачами:'));
   assert.ok(processing.includes('«Выставить счёт:»'));
   assert.ok(processing.includes('Остальные задачи рассматривай как обычные'));
+  assert.ok(processing.includes('Изображения и видео без моей явной команды или согласия на просмотр не открывай'));
+  assert.ok(processing.includes('сначала спроси разрешение их прочитать'));
   assert.equal(processing.trim().split('\n').at(-1), ref.url);
   assert.ok(!processing.includes(task.description));
   assert.ok(!message.includes('Оформи счета'));
