@@ -6,7 +6,7 @@ const server=await createServer({root:process.cwd(),envDir:'/private/tmp',cacheD
 let browser;
 try{
  await server.listen();browser=engine==='webkit'?await webkit.launch({headless:true}):await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
- for(const theme of ['light','dark'])for(const width of [390,834,1280]){
+ for(const theme of ['light','dark'])for(const width of [320,390,834,1280]){
   const touch=width<1000,context=await browser.newContext({viewport:{width,height:900},hasTouch:touch,isMobile:touch});context.setDefaultTimeout(10000);
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://127.0.0.1:5206/tests/browser/fixtures/task-approvals.html');
@@ -44,6 +44,18 @@ try{
   await activate(dialog.getByTitle('Давид',{exact:true}));await activate(dialog.getByRole('button',{name:'Добавить',exact:true}));await dialog.waitFor({state:'detached'});
   assert.equal(await panel.locator('.task-approval').count(),2);assert.equal(await page.evaluate(()=>window.approvalRequests.length),2);
   const order=await page.evaluate(()=>window.searchChat.threads[window.approvalFixture.taskId].messages.map(m=>m.kind==='approval_request'?'approval':m.text));assert.ok(order.indexOf('Продолжаем обсуждение')>order.indexOf('approval')&&order.lastIndexOf('approval')>order.indexOf('Продолжаем обсуждение'),JSON.stringify(order));
+  // Owner assigning approval to themselves must get the same interactive card on iPhone.
+  await activate(plus);await activate(panel.getByRole('menuitem',{name:'Добавить согласование',exact:true}));
+  await activate(dialog.getByTitle('Эрнест',{exact:true}));await activate(dialog.getByRole('button',{name:'Добавить',exact:true}));await dialog.waitFor({state:'detached'});
+  const selfApproval=panel.locator('.task-approval').last();await selfApproval.waitFor();
+  assert.equal(await selfApproval.locator('li').count(),0,'self name is already shown once as the message author');
+  assert.equal((await selfApproval.innerText()).match(/Ожидает решения/g)?.length,1,'pending status appears once');
+  await activate(selfApproval.getByRole('button',{name:'Согласовать',exact:true}));
+  await page.waitForFunction(()=>document.querySelectorAll('.task-approval[data-state=approved]').length===1);
+  assert.equal(await selfApproval.getAttribute('data-state'),'approved');
+  assert.equal((await selfApproval.innerText()).trim(),'Согласовано','a self approval becomes one clean result, without duplicated name/status');
+  const resultGeometry=await selfApproval.evaluate(el=>({width:el.getBoundingClientRect().width,bubble:el.closest('.team-bubble').getBoundingClientRect().toJSON(),scroll:document.documentElement.scrollWidth}));
+  assert.ok(resultGeometry.bubble.width<=260&&resultGeometry.bubble.height<115&&resultGeometry.scroll<=width,JSON.stringify(resultGeometry));
   assert.deepEqual(errors,[]);console.log(`PASS ${engine} ${theme} ${width}: task-only ordered/left-aligned add menu, multi-reviewer dialog, keyboard/touch, safe areas, inline decisions and preserved draft/history`);await context.close();
  }
 }finally{await browser?.close();await server.close();}

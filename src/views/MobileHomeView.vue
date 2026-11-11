@@ -31,6 +31,8 @@ import ChangeHistoryPanel from '@/components/ChangeHistoryPanel.vue';
 import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
 import BusinessCalendar from '@/components/BusinessCalendar.vue';
 import { useBusinessMonitor } from '@/composables/useBusinessMonitor';
+import { teamAuthUrl } from '@/utils/teamDestination';
+import { useRoute } from 'vue-router';
 
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
@@ -44,7 +46,8 @@ const API_BASE_URL = _envApiBase
   : (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin.replace(/\/+$/, '')}/api`);
 
 const baseUrlCalculated = API_BASE_URL.replace(/\/api\/?$/, '');
-const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
+const teamRoute = useRoute();
+const googleAuthUrl = computed(() => teamAuthUrl(`${baseUrlCalculated}/auth/google`, teamRoute.fullPath));
 
 const mainStore = useMainStore();
 const showBusinessCalendar = ref(false);

@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+import { useTeamChatStore } from '@/stores/teamChatStore'
+import { openTeamDestination } from '@/utils/teamDestination'
 import TeamChatHost from '@/components/TeamChatHost.vue'
 import TextFieldLinks from '@/components/TextFieldLinks.vue'
 import { useMainStore } from '@/stores/mainStore'
@@ -9,6 +11,11 @@ import {setHistoryIdentity,connectPreferenceHistory} from '@/utils/preferenceHis
 import { useAppearanceStore } from '@/stores/appearanceStore'
 
 const mainStore = useMainStore()
+const chat = useTeamChatStore(), route = useRoute()
+const followTeamDestination = () => openTeamDestination(chat, route.path)
+watch(() => [chat.me?.workspaceId, chat.me?.status, route.fullPath], followTeamDestination, { immediate: true })
+window.addEventListener('index12:team-destination', followTeamDestination)
+onUnmounted(() => window.removeEventListener('index12:team-destination', followTeamDestination))
 const repairStore = useRepairStore() // 🟢 Инициализируем
 const appearance = useAppearanceStore()
 watch(() => mainStore.user?.id || mainStore.user?._id || null, id => { setHistoryIdentity(id); appearance.loadUser(id) }, { immediate: true })

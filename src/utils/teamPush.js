@@ -12,6 +12,7 @@ export const pushSupported = () =>
 export async function chatWorker() {
   const registration = await navigator.serviceWorker.register("/team-sw.js", {
     scope: "/team/",
+    updateViaCache: "none",
   });
   if (!registration.active) {
     await new Promise((resolve, reject) => {

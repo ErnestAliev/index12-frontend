@@ -1113,6 +1113,7 @@ watch(
             :class="{
               'task-message': m.kind === 'task',
               self: m.authorId === chat.me.actorId,
+              'approval-message': m.kind === 'approval_request',
               'reply-target': highlightedMessage === m._id,
               'search-current':
                 search.open && search.result?.messageId === m._id,

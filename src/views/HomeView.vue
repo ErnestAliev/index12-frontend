@@ -48,6 +48,8 @@ import ThemeSettingsPanel from '@/components/ThemeSettingsPanel.vue';
 import BusinessCalendar from '@/components/BusinessCalendar.vue';
 import { useBusinessMonitor } from '@/composables/useBusinessMonitor';
 import { useAppearanceStore } from '@/stores/appearanceStore';
+import { teamAuthUrl } from '@/utils/teamDestination';
+import { useRoute } from 'vue-router';
 
 ('--- HomeView.vue v52.1 (Delete Fix) Loaded ---'); 
 
@@ -70,7 +72,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
   || (isLocalhost ? 'http://localhost:3000/api' : `${window.location.origin}/api`);
 
 const baseUrlCalculated = API_BASE_URL.replace(/\/api$/, '');
-const googleAuthUrl = `${baseUrlCalculated}/auth/google`;
+const teamRoute = useRoute();
+const googleAuthUrl = computed(() => teamAuthUrl(`${baseUrlCalculated}/auth/google`, teamRoute.fullPath));
 const devAuthUrl = `${baseUrlCalculated}/auth/dev-login`;
 
 // Состояния модальных окон

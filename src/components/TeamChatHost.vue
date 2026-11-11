@@ -83,22 +83,11 @@ function show() {
 function created() {
   void main.forceRefreshAll?.();
 }
-function notificationOpened(event) {
-  if (
-    !route.path.startsWith("/team/") &&
-    event.data?.type === "team:refresh" &&
-    event.data.workspaceId === chat.me?.workspaceId &&
-    chat.me?.owner
-  )
-    chat.show();
-}
-navigator.serviceWorker?.addEventListener("message", notificationOpened);
 window.addEventListener("index12:open-team-chat", show);
 const openFiles = () => chat.openFiles();
 window.addEventListener('index12:open-team-files', openFiles);
 window.addEventListener("index12:team-operation-created", created);
 onBeforeUnmount(() => {
-  navigator.serviceWorker?.removeEventListener("message", notificationOpened);
   window.removeEventListener("index12:open-team-chat", show);
   window.removeEventListener('index12:open-team-files', openFiles);
   window.removeEventListener("index12:team-operation-created", created);

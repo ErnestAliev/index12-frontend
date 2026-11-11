@@ -30,6 +30,7 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
   runInNewContext(source, {
     self,
     URL,
+    MessageChannel, setTimeout, clearTimeout,
     fetch: () => {
       throw Error("No network expected");
     },
@@ -73,7 +74,7 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
     {
       url: origin + "/?teamChat=" + workspace,
       focus: async () => {},
-      postMessage: (m) => messages.push(m),
+      postMessage: (m, ports) => { messages.push(m); ports[0].postMessage({received:true}); },
     },
   ];
   handlers.notificationclick({
@@ -87,12 +88,23 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
   assert.equal(messages[0].workspaceId, workspace);
   const taskId = "11111111-1111-4111-8111-111111111111";
   self.clients.matchAll = async () => [{
-    url: origin + "/?teamChat=" + workspace + "&task=" + taskId + "&message=" + taskId,
-    focus: async () => {}, postMessage: m => messages.push(m),
+    url: origin + "/mobile?teamChat=" + workspace + "&task=" + taskId + "&message=" + taskId,
+    focus: async () => {}, postMessage: (m, ports) => { messages.push(m); ports[0].postMessage({received:true}); },
   }];
   handlers.notificationclick({notification:{data:{...shown[0].data,taskId,messageId:taskId},close(){}},waitUntil:p=>{waiting=p;}});
   await waiting;
   assert.equal(opened.length,1,"task notifications reuse the open chat window");
   assert.equal(messages.at(-1).taskId,taskId);
   assert.equal(messages.at(-1).messageId,taskId);
+  assert.equal(messages.at(-1).url,origin+'/?teamChat='+workspace+'&task='+taskId+'&message='+taskId);
+  // An old/suspended app accepts focus but does not acknowledge routing.
+  const navigated=[];
+  self.clients.matchAll=async()=>[{url:origin+'/mobile?teamChat='+workspace,focus:async()=>{},postMessage(){},navigate:async url=>{navigated.push(url);return {};}}];
+  handlers.notificationclick({notification:{data:{...shown[0].data,taskId,messageId:taskId},close(){}},waitUntil:p=>{waiting=p;}});
+  await waiting;
+  assert.deepEqual(navigated,[origin+'/?teamChat='+workspace+'&task='+taskId+'&message='+taskId]);
+  self.clients.matchAll=async()=>[];
+  handlers.notificationclick({notification:{data:{...shown[0].data,taskId,messageId:taskId},close(){}},waitUntil:p=>{waiting=p;}});
+  await waiting;
+  assert.equal(opened.at(-1),navigated[0],'cold launch carries the same complete destination');
 });

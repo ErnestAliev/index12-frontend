@@ -64,36 +64,50 @@ self.addEventListener("notificationclick", (event) => {
     (async () => {
       const target = chatUrl(event.notification.data?.url);
       if (!target) return;
-      const url = target.href;
+      const destination = new URL(target.href);
+      const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
+      if (uuid.test(event.notification.data?.taskId || ''))
+        destination.searchParams.set('task', event.notification.data.taskId);
+      if (uuid.test(event.notification.data?.messageId || ''))
+        destination.searchParams.set('message', event.notification.data.messageId);
       const windows = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
       });
       const existing = windows.find((client) => {
         const current = new URL(client.url);
+        if (current.pathname === '/mobile') current.pathname = '/';
         current.hash = "";
         current.searchParams.delete("task");
         current.searchParams.delete("message");
-        return current.href === url;
+        return current.href === target.href;
       });
       if (existing) {
-        await existing.focus();
-        existing.postMessage({
-          type: "team:refresh",
-          workspaceId: event.notification.data?.workspaceId,
-          taskId: event.notification.data?.taskId,
-          messageId: event.notification.data?.messageId,
+        await existing.focus().catch(() => null);
+        const received = await new Promise(resolve => {
+          const channel = new MessageChannel();
+          const timeout = setTimeout(() => { channel.port1.close(); resolve(false); }, 1500);
+          channel.port1.onmessage = event => {
+            if (event.data?.received !== true) return;
+            clearTimeout(timeout); channel.port1.close(); resolve(true);
+          };
+          try {
+            existing.postMessage({
+              type: 'team:refresh', url: destination.href,
+              workspaceId: event.notification.data?.workspaceId,
+              taskId: event.notification.data?.taskId,
+              messageId: event.notification.data?.messageId,
+            }, [channel.port2]);
+          } catch {
+            clearTimeout(timeout); channel.port1.close(); resolve(false);
+          }
         });
-      } else {
-        const destination = new URL(url);
-        if (/^[a-f\d-]{36}$/i.test(event.notification.data?.taskId || "")) {
-          destination.searchParams.set("task", event.notification.data.taskId);
-          if (/^[a-f\d-]{36}$/i.test(event.notification.data?.messageId || ""))
-            destination.searchParams.set(
-              "message",
-              event.notification.data.messageId,
-            );
+        // A suspended or older PWA may focus successfully without handling a message.
+        if (!received) {
+          const navigated = await existing.navigate(destination.href).catch(() => null);
+          if (!navigated) await self.clients.openWindow(destination.href);
         }
+      } else {
         await self.clients.openWindow(destination.href);
       }
     })(),

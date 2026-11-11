@@ -41,37 +41,11 @@ function createdTask(task) {
   chat.requestedTaskId = task.parentTaskId || null;
   chat.tab = "messages";
 }
-function notification(event) {
-  const data = event.data;
-  if (
-    data?.type === "team:refresh" &&
-    data.workspaceId === chat.me?.workspaceId &&
-    /^[a-f\d-]{36}$/i.test(data.taskId || "")
-  ) {
-    chat.requestedTaskMessageId = /^[a-f\d-]{36}$/i.test(data.messageId || "")
-      ? data.messageId
-      : null;
-    chat.requestedTaskId = data.taskId;
-    chat.show();
-  }
-}
 onMounted(() => {
   clearSearchFocus = search.registerFocus(() => searchBar.value?.focus());
-  navigator.serviceWorker?.addEventListener("message", notification);
-  const query = new URLSearchParams(location.search);
-  if (query.has("task"))
-    notification({
-      data: {
-        type: "team:refresh",
-        workspaceId: chat.me?.workspaceId,
-        taskId: query.get("task"),
-        messageId: query.get("message"),
-      },
-    });
 });
 onBeforeUnmount(() => {
   clearSearchFocus?.();
-  navigator.serviceWorker?.removeEventListener("message", notification);
 });
 </script>
 <template>

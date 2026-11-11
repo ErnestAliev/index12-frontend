@@ -122,6 +122,10 @@
   background: var(--codex-pane-user);
   border-color: var(--codex-pane-user-border);
 }
+.team-message.approval-message > .team-bubble {
+  width: min(260px, 90%);
+  box-sizing: border-box;
+}
 .team-bubble header {
   display: flex;
   justify-content: space-between;
