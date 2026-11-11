@@ -25,7 +25,7 @@ async function add(){
         <button v-for="person in selected" :key="person._id" type="button" :disabled="busy" :aria-label="`Убрать согласователя ${person.name}`" @click="remove(person._id)">{{ person.name }}<UiIcon name="close" /></button>
       </div>
       <p v-if="error" role="alert" class="approval-error">{{ error }}</p>
-      <footer><button type="button" :disabled="busy" @click="emit('close')">Отмена</button><button type="submit" class="approval-submit" :disabled="busy || !selected.length">{{ busy ? 'Добавляем…' : 'Добавить' }}</button></footer>
+      <footer><button type="submit" class="approval-submit" :disabled="busy || !selected.length"><span>{{ busy ? 'Сохраняем…' : 'Сохранить' }}</span></button></footer>
     </form>
   </TeamChatDialog>
 </template>
@@ -39,8 +39,8 @@ async function add(){
 .approval-selected .ui-icon{width:14px;height:14px;flex:none}
 .approval-error{margin:0;color:var(--codex-pane-danger);font-size:12px}
 footer{display:flex;justify-content:flex-end;gap:8px;flex:none}
-.approval-form footer button{min-height:44px!important;padding:0 12px;border:1px solid var(--codex-pane-border);border-radius:8px;background:var(--codex-pane-surface);color:inherit;font:inherit;font-size:13px;cursor:pointer}
-.approval-form footer .approval-submit{background:var(--codex-pane-accent);border-color:transparent;color:var(--codex-pane-send-text)}
+.approval-form footer .approval-submit{display:flex;align-items:center;justify-content:center;min-height:44px!important;min-width:132px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--codex-pane-send-text);font:inherit;font-size:13px;font-weight:400;cursor:pointer}
+.approval-submit span{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-height:30px;padding:0 24px;border-radius:6px;background:var(--codex-pane-accent);font-weight:400}
 button:disabled{opacity:.45;cursor:default}
 button:focus-visible{outline:2px solid var(--codex-pane-focus);outline-offset:2px}
 </style>

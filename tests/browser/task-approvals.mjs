@@ -22,12 +22,12 @@ try{
   const align=await items.evaluateAll(elements=>elements.map(el=>({justify:getComputedStyle(el).justifyContent,align:getComputedStyle(el).textAlign,height:el.getBoundingClientRect().height,x:el.querySelector('svg').getBoundingClientRect().x})));
   assert.ok(align.every(a=>a.justify==='flex-start'&&a.align==='left'&&a.height>=44),JSON.stringify(align));assert.ok(align.every(a=>Math.abs(a.x-align[0].x)<1));
   await activate(items.nth(1));const dialog=page.getByRole('dialog',{name:'Добавить согласование',exact:true});await dialog.waitFor();
-  assert.equal(await dialog.getByRole('button',{name:'Добавить',exact:true}).isDisabled(),true);assert.equal(await dialog.getByTitle('Ещё не вошёл',{exact:true}).count(),0);
+  assert.equal(await dialog.getByRole('button',{name:'Сохранить',exact:true}).isDisabled(),true);assert.equal(await dialog.getByTitle('Ещё не вошёл',{exact:true}).count(),0);
   await activate(dialog.getByTitle('Давид',{exact:true}));await activate(dialog.getByTitle('Мария',{exact:true}));
   if(touch){await page.evaluate(()=>{Object.defineProperty(window.visualViewport,'height',{configurable:true,get:()=>430});window.visualViewport.dispatchEvent(new Event('resize'));});}
   const geometry=await dialog.evaluate(el=>({box:el.getBoundingClientRect().toJSON(),button:el.querySelector('button[type=submit]').getBoundingClientRect().toJSON(),vw:visualViewport.width,vh:visualViewport.height,scroll:document.documentElement.scrollWidth}));
   assert.ok(geometry.box.x>=16&&geometry.box.right<=width-16&&geometry.box.y>=24&&geometry.box.bottom<=geometry.vh&&geometry.button.height>=44&&geometry.scroll<=width,JSON.stringify(geometry));
-  if(touch)await activate(dialog.getByRole('button',{name:'Добавить',exact:true}));else{await page.keyboard.press('Tab');await dialog.getByRole('button',{name:'Добавить',exact:true}).focus();await page.keyboard.press('Enter');}
+  if(touch)await activate(dialog.getByRole('button',{name:'Сохранить',exact:true}));else{await page.keyboard.press('Tab');await dialog.getByRole('button',{name:'Сохранить',exact:true}).focus();await page.keyboard.press('Enter');}
   await dialog.waitFor({state:'detached'});assert.equal(await textarea.inputValue(),'Несохранённый черновик');
   assert.deepEqual(await page.evaluate(()=>window.approvalRequests[0].approvalRecipientIds),['reviewer','reviewer2']);
   const approval=panel.locator('.task-approval').last();await approval.waitFor();assert.equal(await approval.getByRole('button',{name:'Согласовать',exact:true}).count(),0,'author was not selected');
@@ -41,12 +41,12 @@ try{
   await page.waitForFunction(()=>document.querySelector('.task-approval[data-state=rejected]'));assert.equal(await approval.locator('li[data-state=rejected]').count(),1);
   await page.evaluate(()=>{window.approvalFixture.switchActor('actor');window.approvalFixture.comment();Object.defineProperty(window.visualViewport,'height',{configurable:true,get:()=>innerHeight});window.visualViewport.dispatchEvent(new Event('resize'));});
   await activate(plus);await activate(panel.getByRole('menuitem',{name:'Добавить согласование',exact:true}));
-  await activate(dialog.getByTitle('Давид',{exact:true}));await activate(dialog.getByRole('button',{name:'Добавить',exact:true}));await dialog.waitFor({state:'detached'});
+  await activate(dialog.getByTitle('Давид',{exact:true}));await activate(dialog.getByRole('button',{name:'Сохранить',exact:true}));await dialog.waitFor({state:'detached'});
   assert.equal(await panel.locator('.task-approval').count(),2);assert.equal(await page.evaluate(()=>window.approvalRequests.length),2);
   const order=await page.evaluate(()=>window.searchChat.threads[window.approvalFixture.taskId].messages.map(m=>m.kind==='approval_request'?'approval':m.text));assert.ok(order.indexOf('Продолжаем обсуждение')>order.indexOf('approval')&&order.lastIndexOf('approval')>order.indexOf('Продолжаем обсуждение'),JSON.stringify(order));
   // Owner assigning approval to themselves must get the same interactive card on iPhone.
   await activate(plus);await activate(panel.getByRole('menuitem',{name:'Добавить согласование',exact:true}));
-  await activate(dialog.getByTitle('Эрнест',{exact:true}));await activate(dialog.getByRole('button',{name:'Добавить',exact:true}));await dialog.waitFor({state:'detached'});
+  await activate(dialog.getByTitle('Эрнест',{exact:true}));await activate(dialog.getByRole('button',{name:'Сохранить',exact:true}));await dialog.waitFor({state:'detached'});
   const selfApproval=panel.locator('.task-approval').last();await selfApproval.waitFor();
   assert.equal(await selfApproval.locator('li').count(),0,'self name is already shown once as the message author');
   assert.equal((await selfApproval.innerText()).match(/Ожидает решения/g)?.length,1,'pending status appears once');
