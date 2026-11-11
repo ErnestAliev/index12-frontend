@@ -19,6 +19,8 @@ const props = defineProps({
   canCreate: Boolean,
   excludedIds: { type: Array, default: () => [] },
   adding: Boolean,
+  searchable: Boolean,
+  heading: String,
 });
 const emit = defineEmits(["select", "cancel"]);
 const toolsOpen = ref(false);
@@ -48,7 +50,7 @@ const results = computed(() =>
     : [],
 );
 function search() {
-  if (!props.canCreate) return;
+  if (!props.canCreate && !props.searchable) return;
   searching.value = true;
   field.value?.focus({ preventScroll: true });
 }
@@ -122,8 +124,8 @@ onBeforeUnmount(() => {
 <template>
   <div ref="root" class="recipient-line" :data-keyboard="keyboard">
     <div class="recipient-heading">
-      <h3 class="task-step-title"><button v-if="canCreate" type="button" class="recipient-heading-toggle" :aria-expanded="toolsOpen" :disabled="disabled" @click="toggleTools">{{ adding ? 'Кому ещё добавить?' : 'Кому?' }}</button><template v-else>{{ adding ? 'Кому ещё добавить?' : 'Кому?' }}</template></h3>
-      <div v-if="canCreate" class="recipient-tools-reveal" :class="{ 'is-open': toolsOpen }" :inert="!toolsOpen" :aria-hidden="!toolsOpen"><div class="recipient-tools-clip"><div class="recipient-actions">
+      <h3 class="task-step-title"><button v-if="canCreate || searchable" type="button" class="recipient-heading-toggle" :aria-expanded="toolsOpen" :disabled="disabled" @click="toggleTools">{{ heading || (adding ? 'Кому ещё добавить?' : 'Кому?') }}</button><template v-else>{{ heading || (adding ? 'Кому ещё добавить?' : 'Кому?') }}</template></h3>
+      <div v-if="canCreate || searchable" class="recipient-tools-reveal" :class="{ 'is-open': toolsOpen }" :inert="!toolsOpen" :aria-hidden="!toolsOpen"><div class="recipient-tools-clip"><div class="recipient-actions">
         <button class="recipient-toggle" type="button" :aria-label="searching ? 'Закрыть поиск' : 'Найти сотрудника'" :disabled="disabled" @pointerdown="$event.pointerType === 'mouse' && $event.preventDefault()" @click="searching ? cancel() : search()"><UiIcon :name="searching ? 'close' : 'search'" /></button>
         <button v-if="canCreate" type="button" class="recipient-create" :disabled="disabled" aria-label="Добавить сотрудника" title="Добавить сотрудника" @click="addPerson"><UiIcon name="plus" /></button>
       </div></div></div>

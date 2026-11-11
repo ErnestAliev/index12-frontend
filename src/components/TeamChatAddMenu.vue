@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
 defineProps({ disabled: Boolean, subtask: Boolean });
-const emit = defineEmits(["task", "file"]),
+const emit = defineEmits(["task", "approval", "file"]),
   open = ref(false),
   root = ref(null),
   button = ref(null);
@@ -66,7 +66,9 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", close));
         @click="choose('task')"
       >
         <UiIcon name="plus" />{{ subtask ? "Новая подзадача" : "Новая задача" }}</button
-      ><button type="button" role="menuitem" @click="choose('file')">
+      ><button v-if="subtask" type="button" role="menuitem" @click="choose('approval')">
+        <UiIcon name="check" />Добавить согласование
+      </button><button type="button" role="menuitem" @click="choose('file')">
         <UiIcon name="attach" />Загрузить файл или фото
       </button>
     </div>
@@ -109,9 +111,10 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", close));
 .team-add-options button {
   display: flex;
   align-items: center;
+  justify-content: flex-start !important;
   gap: 10px;
   width: 100%;
-  min-height: 44px;
+  min-height: 44px !important;
   padding: 8px 10px !important;
   border: 0 !important;
   border-radius: 6px;

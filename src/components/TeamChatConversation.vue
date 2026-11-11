@@ -33,6 +33,8 @@ import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 import { useFileDrop } from '@/composables/useFileDrop';
 import { useChatTransfer } from '@/composables/useChatTransfer';
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
+import TeamApprovalDialog from './TeamApprovalDialog.vue';
+import TeamApprovalMessage from './TeamApprovalMessage.vue';
 import TeamTaskCover from "./TeamTaskCover.vue";
 import TeamMessageMenu from "./TeamMessageMenu.vue";
 import TeamReplyQuote from "./TeamReplyQuote.vue";
@@ -81,6 +83,9 @@ const emptyThread = {
 const thread = computed(() =>
   props.taskId ? chat.threads[props.taskId] || emptyThread : chat.state,
 );
+const approvalOpen=ref(false);
+watch(()=>props.taskId,()=>{approvalOpen.value=false;});
+async function approvalAdded(){approvalOpen.value=false;await nextTick();if(feed.value)feed.value.scrollTop=feed.value.scrollHeight;}
 const historyReady = computed(() =>
   props.taskId ? !!thread.value.ready : chat.historyReady,
 );
@@ -143,6 +148,7 @@ function openMessageMenu(row, touchHold = false) {
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
+  if(row.kind==='approval_request'&&event.target.closest('button'))return;
   if (["task", "task-files"].includes(row.kind)) return;
   if (
     event.button !== 0 ||
@@ -742,6 +748,7 @@ function scheduleReads() {
       selectedMessage.value ||
       quoteView.value ||
       preview.value
+      || approvalOpen.value
     )
       return;
     const rows = [...feed.value.querySelectorAll("[data-message-id]")]
@@ -770,7 +777,7 @@ function scheduleReads() {
     }
   }, 200);
 }
-watch([shownMessages, tab, selectedMessageId, quoteView, draggingFiles], async () => {
+watch([shownMessages, tab, selectedMessageId, quoteView, draggingFiles,approvalOpen], async () => {
   await nextTick();
   scheduleReads();
 });
@@ -1158,8 +1165,10 @@ watch(
                 v-if="search.open && search.result?.taskMatch?.taskId === m.taskId && m.kind === 'task'"
                 type="button" class="team-search-inside" @click="openTask(m.taskId)"
               ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
+              <CodexMessageText v-if="m.kind === 'approval_request' && m.text && m.text !== 'Согласование'" :text="m.text" class="team-message-content" />
+              <TeamApprovalMessage v-if="m.kind === 'approval_request' && m.approvalRequest" :message="m" />
               <CodexMessageText
-                v-if="m.text && m.kind !== 'task'"
+                v-else-if="m.text && m.kind !== 'task'"
                 :text="m.text"
                 :highlight="search.open ? search.query.trim() : ''"
                 class="team-message-content"
@@ -1341,9 +1350,11 @@ watch(
               :subtask="!!taskId"
               :disabled="uploading"
               @task="startTask"
+              @approval="approvalOpen = true"
               @file="input.click()" /></template
         ></CodexComposer>
       </div>
+      <TeamApprovalDialog v-if="approvalOpen && taskId" :task-id="taskId" @close="approvalOpen = false" @added="approvalAdded" />
     </template>
   </div>
 </template>

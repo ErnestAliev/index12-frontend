@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
             <UiIcon name="reply" />Ответить
           </button>
           <button
-            v-if="own && message.kind !== 'request'"
+            v-if="own && !['request','approval_request'].includes(message.kind)"
             type="button"
             class="menu-action"
             :disabled="busy"

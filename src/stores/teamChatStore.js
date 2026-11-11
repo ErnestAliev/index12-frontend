@@ -610,6 +610,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     refresh,
     schedule,
     action,
+    mergeMessage,
     send,
     show,
   };
