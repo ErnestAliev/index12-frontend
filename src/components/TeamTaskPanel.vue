@@ -30,7 +30,7 @@ import TeamTaskStatusSelect from "./TeamTaskStatusSelect.vue";
 import TeamTaskRecipientPicker from "./TeamTaskRecipientPicker.vue";
 import TeamTaskProjectPicker from './TeamTaskProjectPicker.vue';
 import TeamTaskFilters from './TeamTaskFilters.vue';
-import { useTaskHold } from "@/composables/useTaskHold";
+import { useTaskContextMenu } from "@/composables/useTaskContextMenu";
 import { useChatTransfer } from '@/composables/useChatTransfer';
 import { taskInvoiceCommands, splitTaskInvoiceCommand, setTaskInvoiceCommand } from '@/utils/taskInvoiceCommands';
 const props = defineProps({
@@ -471,7 +471,7 @@ function showTaskMenu(task, touch = false) {
   confirmDelete.value = false;
   touchMenu.value = touch;
 }
-const hold = useTaskHold(showTaskMenu);
+const taskContext = useTaskContextMenu(showTaskMenu);
 const keyboardOpen = ref(false),
   detailsOpen = ref(true);
 const detailsCollapsed = computed(() => !detailsOpen.value && !editing.value);
@@ -987,15 +987,12 @@ onBeforeUnmount(() => {
           :key="t._id"
           class="task-list-row"
           :data-deadline="deadlineFor(t).tone"
-          @pointerdown="hold.down($event, t)"
+          @pointerdown="taskContext.down($event, t)"
           :draggable="!!transfer.scope.value"
-          @dragstart="hold.cancel(); transfer.task($event, t)"
-          @pointermove="hold.move"
-          @pointerup="hold.cancel"
-          @pointercancel="hold.cancel"
-          @click.capture="hold.click"
-          @contextmenu="hold.context($event, t)"
-          @keydown="hold.keys($event, t)"
+          @dragstart="taskContext.drag(); transfer.task($event, t)"
+          @click.capture="taskContext.click"
+          @contextmenu="taskContext.context($event, t)"
+          @keydown="taskContext.keys($event, t)"
           :class="{ done: t.status === 'done' }"
         >
           <button

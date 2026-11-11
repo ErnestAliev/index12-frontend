@@ -294,6 +294,8 @@
   flex: 1;
 }
 .task-list-row {
+  -webkit-touch-callout: none;
+  user-select: none;
   display: flex;
   align-items: center;
   min-height: 48px;

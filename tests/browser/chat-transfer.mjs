@@ -44,6 +44,29 @@ try {
     await page.evaluate(t=>document.documentElement.setAttribute('data-theme',t),theme);
     await page.waitForFunction(()=>document.querySelector('.desktop-chat-picker select')?.value==='chat' && !document.querySelector('.desktop-chat-picker select').disabled);
     const codex=page.locator('.desktop-assistant'), work=page.locator('.team-chat-conversation');
+    let touchSession;
+    if(touch && engine==='chromium')touchSession=await context.newCDPSession(page);
+    const holdTask = async source => {
+      const box=await source.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
+      if(touchSession)await touchSession.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+      else await source.dispatchEvent('pointerdown',{pointerType:touch?'touch':'mouse',pointerId:1,button:0,clientX:x,clientY:y});
+      await page.waitForTimeout(650);
+      // WebKit's automation cannot start an OS drag gesture; exercise both
+      // PointerEvent and Safari's compatibility MouseEvent contextmenu paths.
+      if(touch) {
+        await source.dispatchEvent('contextmenu',{pointerType:'touch'});
+        await source.dispatchEvent('contextmenu');
+      }
+      assert.equal(await page.getByRole('dialog',{name:'Задача',exact:true}).count(),0,'holding a task never opens its action menu');
+      assert.equal(await page.getByRole('dialog',{name:'Сообщение',exact:true}).count(),0,'task holds do not open the surrounding message menu');
+      assert.equal(await page.locator('.task-panel .task-overview').count(),0,'holding does not open the task');
+    };
+    const releaseTask = async source => {
+      if(touchSession)await touchSession.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      else await source.dispatchEvent('pointerup',{pointerType:touch?'touch':'mouse',pointerId:1,button:0});
+      await source.dispatchEvent('click',{detail:1});
+      assert.equal(await page.locator('.task-panel .task-overview').count(),0,'release after dragging does not open the task');
+    };
     const drag=async (source,target) => {
       if(!touch) return source.dragTo(target);
       // Safari/iPad transfer events, followed by real touch activation below.
@@ -72,7 +95,9 @@ try {
     assert.equal(uploads[0].path,'/api/team-chat/files');
     if(uploads[0].bytes) assert.equal(uploads[0].bytes,'CODEX ORIGINAL');
     // Original task reference, no stale task text substituted into the model message.
+    if(touch)await holdTask(work.locator('.task-cover'));
     await drag(work.locator('.task-cover'),codex.locator('textarea'));
+    if(touch)await releaseTask(work.locator('.task-cover'));
     const reference=codex.locator('.desktop-task-reference');
     await reference.waitFor();
     const url=new URL(await reference.locator('a').getAttribute('href'));
@@ -114,8 +139,24 @@ try {
     assert.ok(sent[1].message.includes('Остальные задачи рассматривай как обычные'));
     assert.equal(sent[1].message.trim().split('\n').at(-1),url.href);
     assert.ok(!sent[1].message.includes('Прочитать договор'));
+    // The same gesture policy applies to rows in the Tasks tab. Mouse and
+    // keyboard menus remain available, including after touch on hybrid devices.
+    await page.evaluate(()=>{window.transferFixture.chat.tab='tasks';});
+    const row=page.locator('.task-list-row').first();await row.waitFor();
+    if(touch)await holdTask(row);
+    await drag(row,codex.locator('textarea'));
+    if(touch)await releaseTask(row);
+    await reference.waitFor();
+    assert.equal(sent.length,2,'dropping a task never sends it automatically');
+    await row.locator('.list-content').press('Shift+F10');
+    const taskMenu=page.getByRole('dialog',{name:'Задача',exact:true});await taskMenu.waitFor();
+    await taskMenu.getByRole('button',{name:/Закрыть/}).click();
+    await row.click({button:'right'});await taskMenu.waitFor();
+    await taskMenu.getByRole('button',{name:/Закрыть/}).click();
+    if(touch)await row.locator('.list-content').tap();else await row.locator('.list-content').click();
+    await page.locator('.task-panel .task-overview').waitFor();
     assert.deepEqual(errors,[]);
-    console.log(`PASS ${engine} ${theme} ${touch?'touch':'mouse'}: exact file bytes in both directions, preserved drafts, no auto-send, original task link and removable references`);
+    console.log(`PASS ${engine} ${theme} ${touch?'touch':'mouse'}: task holds do not open menus, card/list transfer, explicit mouse/keyboard menus, normal tap, exact file bytes, preserved drafts and no auto-send`);
     await context.close();
   }
 } finally {await browser?.close(); await server.close();}

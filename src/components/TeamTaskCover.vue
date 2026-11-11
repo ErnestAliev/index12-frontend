@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { useTeamChatStore } from "@/stores/teamChatStore";
-import { useTaskHold } from "@/composables/useTaskHold";
+import { useTaskContextMenu } from "@/composables/useTaskContextMenu";
 import { useChatTransfer } from '@/composables/useChatTransfer';
 import UiIcon from "./UiIcon.vue";
 import './teamTaskStatus.css';
@@ -32,7 +32,7 @@ const canEdit = computed(
       task.value.creatorId === chat.me?.actorId ||
       task.value.assigneeIds.includes(chat.me?.actorId)),
 );
-const hold = useTaskHold((_, fromTouch) => {
+const taskContext = useTaskContextMenu((_, fromTouch) => {
   touch.value = fromTouch;
   menu.value = true;
 });
@@ -57,18 +57,15 @@ async function done() {
     v-if="task"
     class="task-cover"
     :draggable="!!transfer.scope.value"
-    @dragstart="hold.cancel(); transfer.task($event, task)"
+    @dragstart="taskContext.drag(); transfer.task($event, task)"
     :class="{ completed: task.status === 'done', unread: task.unreadCount }"
     :data-status="task.status"
     :data-task-status="task.status"
     :data-deadline="deadline.tone"
-    @pointerdown="hold.down($event, task)"
-    @pointermove="hold.move"
-    @pointerup="hold.cancel"
-    @pointercancel="hold.cancel"
-    @click.capture="hold.click"
-    @contextmenu="hold.context($event, task)"
-    @keydown="hold.keys($event, task)"
+    @pointerdown="taskContext.down($event, task)"
+    @click.capture="taskContext.click"
+    @contextmenu="taskContext.context($event, task)"
+    @keydown="taskContext.keys($event, task)"
   >
     <div
       class="cover-title"

@@ -274,7 +274,7 @@ try {
   await panel.getByRole("button", { name: "Назад", exact: true }).click();
   await panel.waitFor({ state: "hidden" });
   assert.equal(await page.locator(".codex-window-header:visible").count(), 1);
-  // A move cancels the hold and does not delete/open the task.
+  // Holding or moving a task leaves the gesture available for dragging.
   await cover.dispatchEvent("pointerdown", {
     button: 0,
     pointerType: "touch",
@@ -293,6 +293,9 @@ try {
     clientX: 100,
     clientY: 100,
   });
+  await page.waitForTimeout(650);
+  assert.equal(await page.getByRole("dialog", { name: "Задача", exact: true }).count(), 0);
+  await cover.locator(".cover-title").press("Shift+F10");
   await page.getByRole("dialog", { name: "Задача", exact: true }).waitFor();
   await page.getByRole("button", { name: "Удалить", exact: true }).click();
   await page
