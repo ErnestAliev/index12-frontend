@@ -28,62 +28,45 @@ const steps = [
     text: "На компьютере войдите в свой аккаунт ChatGPT, если потребуется.",
   },
   {
-    title: "Нажмите кнопку «Добавить»",
-    text: "Чёрная кнопка в правом верхнем углу страницы ChatGPT.",
-  },
-  { title: "Выберите «Добавить пользовательский сервер MCP»" },
-  {
-    title: "Вставьте название",
-    text: "Скопируйте значение в поле «Название» в ChatGPT.",
+    title: "Добавьте пользовательский сервер MCP",
   },
   {
-    title: "Вставьте URL-адрес сервера",
-    text: "Скопируйте адрес в поле «Подключение» в ChatGPT.",
+    title: "Вставьте в поле «Подключение»",
   },
   {
-    title: "Создайте плагин",
-    text: "Отметьте «Я понимаю и хочу продолжить» и нажмите «Создать в виде плагина».",
-  },
-  {
-    title: "Войдите в INDEX12",
-    text: "Введите свой логин и пароль сотрудника. Подтвердите доступ.",
-  },
-  {
-    title: "Установите плагин",
-    text: "Нажмите «Установить» или «+», если ChatGPT предлагает установку.",
+    title: "Завершите подключение в ChatGPT",
   },
 ];
 const current = computed(() =>
-  props.step === 9
+  props.step === 0 && !props.mobile
     ? {
-        title: "Завершите подключение в ChatGPT",
-        text: "Когда закончите на компьютере, нажмите «Проверить подключение».",
+        title: "Чат открыт на компьютере",
       }
-    : props.step === 0 && !props.mobile
-      ? {
-          title: "Чат открыт на компьютере",
-          text: "Нажмите «Готово», чтобы перейти к подключению ChatGPT.",
-        }
-      : steps[props.step],
+    : steps[props.step],
 );
 const copyValue = computed(() =>
-  props.step === 4 ? "INDEX12" : props.serverUrl,
+  props.step === 2 ? "INDEX12" : props.serverUrl,
 );
-async function copy(value, input) {
+async function copy(value, input, advance = false) {
+  const copiedStep = props.step;
   notice.value = "";
   error.value = "";
   try {
     if (!navigator.clipboard?.writeText) throw Error("Clipboard unavailable");
     await navigator.clipboard.writeText(value);
     notice.value = "Скопировано";
+    if (advance && props.step === copiedStep) emit("next");
+    return true;
   } catch {
     input?.focus({ preventScroll: true });
     input?.select();
     error.value = "Выделите значение и скопируйте его.";
+    return false;
   }
 }
-async function share(value, input) {
+async function share(value, input, advance = false) {
   if (sharing.value || !value) return;
+  const sharedStep = props.step;
   sharing.value = true;
   notice.value = "";
   error.value = "";
@@ -95,11 +78,12 @@ async function share(value, input) {
     if (
       typeof navigator.share === "function" &&
       (!navigator.canShare || navigator.canShare(data))
-    )
+    ) {
       await navigator.share(data);
-    else await copy(value, input);
+      if (advance && props.step === sharedStep) emit("next");
+    } else await copy(value, input, advance);
   } catch (e) {
-    if (e?.name !== "AbortError") await copy(value, input);
+    if (e?.name !== "AbortError") await copy(value, input, advance);
   } finally {
     sharing.value = false;
   }
@@ -123,6 +107,17 @@ watch(
     <div class="setup-screen" :key="step">
       <h2 ref="heading" tabindex="-1">{{ current.title }}</h2>
       <p v-if="current.text">{{ current.text }}</p>
+      <template v-if="step === 2">
+        <p>
+          Справа вверху нажмите <strong>Добавить</strong> →
+          <strong>Добавить пользовательский сервер MCP</strong>.
+        </p>
+        <p>Скопируйте в поле «Название»:</p>
+      </template>
+      <p v-else-if="step === 4">
+        Отметьте «Я понимаю и хочу продолжить», нажмите
+        <strong>Создать в виде плагина</strong> и войдите в INDEX12.
+      </p>
       <template v-if="step === 0">
         <button
           v-if="mobile"
@@ -157,7 +152,7 @@ watch(
           class="setup-primary"
           type="button"
           :disabled="sharing"
-          @click="share('https://chatgpt.com/plugins', pluginLink)"
+          @click="share('https://chatgpt.com/plugins', pluginLink, true)"
         >
           <UiIcon name="share" />Отправить ссылку на плагины
         </button>
@@ -172,7 +167,7 @@ watch(
             class="setup-copy"
             type="button"
             aria-label="Скопировать ссылку на плагины"
-            @click="copy('https://chatgpt.com/plugins', pluginLink)"
+            @click="copy('https://chatgpt.com/plugins', pluginLink, true)"
           >
             <UiIcon name="copy" />
           </button>
@@ -184,27 +179,29 @@ watch(
         href="https://chatgpt.com/plugins"
         target="_blank"
         rel="noopener noreferrer"
+        @click="emit('next')"
         ><UiIcon name="external" />Открыть плагины ChatGPT</a
       >
-      <div v-else-if="step === 4 || step === 5" class="setup-value">
+      <div v-else-if="step === 2 || step === 3" class="setup-value">
         <input
           ref="field"
           :value="copyValue"
           readonly
           :aria-label="
-            step === 4 ? 'Название MCP коннектора' : 'URL-адрес сервера MCP'
+            step === 2 ? 'Название MCP коннектора' : 'URL-адрес сервера MCP'
           "
           @focus="$event.target.select()"
+          @copy="emit('next')"
         /><button
           class="setup-copy"
           type="button"
           :aria-label="
-            step === 4 ? 'Скопировать название' : 'Скопировать URL сервера'
+            step === 2 ? 'Скопировать название' : 'Скопировать URL сервера'
           "
           :title="
-            step === 4 ? 'Скопировать название' : 'Скопировать URL сервера'
+            step === 2 ? 'Скопировать название' : 'Скопировать URL сервера'
           "
-          @click="copy(copyValue, field)"
+          @click="copy(copyValue, field, true)"
         >
           <UiIcon name="copy" />
         </button>
@@ -221,19 +218,20 @@ watch(
       >
         <UiIcon name="back" />Назад
       </button>
-      <span v-if="step < 9" class="setup-progress">{{ step + 1 }} / 9</span>
+      <span v-if="step < 4" class="setup-progress">{{ step + 1 }} / 5</span>
       <button
+        v-if="step === 0 || step === 4"
         class="setup-primary setup-next"
         type="button"
         :disabled="busy"
-        @click="emit(step === 9 ? 'check' : 'next')"
+        @click="emit(step === 4 ? 'check' : 'next')"
       >
         {{
-          step === 9
+          step === 4
             ? busy
               ? "Проверяем…"
               : "Проверить подключение"
-            : "Готово"
+            : "Чат открыт на компьютере"
         }}
       </button>
     </footer>
@@ -263,6 +261,9 @@ h2 {
   font-weight: 600;
   line-height: 1.5;
   outline: none;
+}
+strong {
+  font-weight: 800;
 }
 .ui-icon {
   width: 16px;

@@ -23,7 +23,7 @@ const loading = ref(true),
   checking = ref(false);
 const progressKey = computed(
   () =>
-    `index12-mcp-wizard:${chat.me?.workspaceId}:${chat.me?.actorId}:${kind}`,
+    `index12-mcp-wizard:v2:${chat.me?.workspaceId}:${chat.me?.actorId}:${kind}`,
 );
 const deviceStates = computed(() =>
   ["mobile", "desktop"].map((type) => ({
@@ -46,7 +46,7 @@ function restore() {
     saved &&
     Number.isInteger(saved.step) &&
     saved.step >= 0 &&
-    saved.step <= 9
+    saved.step <= 4
   ) {
     step.value =
       saved.complete && !connections.value.length
@@ -85,7 +85,7 @@ async function load() {
     connections.value = data.connections || [];
     error.value = "";
     if (!initialized) restore();
-    if (step.value === 9 && connections.value.length) complete.value = true;
+    if (step.value === 4 && connections.value.length) complete.value = true;
   } catch (e) {
     if (active) error.value = teamError(e);
   } finally {
@@ -104,15 +104,13 @@ async function check() {
 async function next() {
   notice.value = "";
   error.value = "";
-  if (step.value === 8) {
-    step.value = 9;
-    await check();
-  } else step.value++;
+  step.value = Math.min(4, step.value + 1);
+  if (step.value === 4) await check();
 }
 function back() {
   notice.value = "";
   error.value = "";
-  step.value = step.value === 9 ? 8 : Math.max(0, step.value - 1);
+  step.value = Math.max(0, step.value - 1);
 }
 function restart() {
   complete.value = false;
