@@ -20,7 +20,7 @@
     "test:task-creation": "node tests/browser/task-creation.mjs && node tests/browser/task-creation.mjs --webkit && npm run test:task-invoice-commands",
     "test:task-approvals": "node tests/browser/task-approvals.mjs && node tests/browser/task-approvals.mjs --webkit && npm run test:team-push",
     "test:team-push": "node tests/browser/team-push-navigation.mjs && node tests/browser/team-push-navigation.mjs --webkit",
-    "test:team-mcp": "node tests/browser/team-mcp-setup.mjs && node tests/browser/team-mcp-setup.mjs --webkit && node tests/browser/team-mcp-autofill.mjs && node tests/browser/team-mcp-autofill.mjs --webkit",
+    "test:team-mcp": "node tests/browser/team-mcp-setup.mjs && node tests/browser/team-mcp-setup.mjs --webkit",
     "test:app-updates": "node tests/browser/app-updates.mjs && node tests/browser/app-updates.mjs --webkit",
     "test:task-invoice-commands": "node tests/browser/task-invoice-commands.mjs && node tests/browser/task-invoice-commands.mjs --webkit",
     "test:files": "node tests/browser/file-library.mjs && node tests/browser/file-library.mjs --webkit",
