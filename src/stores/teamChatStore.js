@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import {pendingTeamDestination,discardTeamDestination} from '@/utils/teamDestination';
+import {teamDeviceKind} from '@/utils/teamDevice';
 import axios from "axios";
 import { defaultTaskFilters } from '@/utils/teamTasks';
 const base =
@@ -331,7 +332,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   async function checkPending() {
     const g = generation;
     try {
-      const { data } = await teamApi.get("/me");
+      const { data } = await teamApi.get("/me", {params:{deviceKind:teamDeviceKind()}});
       if (g !== generation) return;
       if (data.status === "active") await start(workspace, { chatOnly: chatOnlySession });
       else me.value = data;
@@ -357,7 +358,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     if (id) teamApi.defaults.headers.common["x-index12-workspace-id"] = id;
     if (chatOnlySession) teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
     try {
-      const { data } = await teamApi.get("/me");
+      const { data } = await teamApi.get("/me", {params:{deviceKind:teamDeviceKind()}});
       if (g !== generation) return;
       me.value = data;
       if (data.status === "active") resumeDeletions();

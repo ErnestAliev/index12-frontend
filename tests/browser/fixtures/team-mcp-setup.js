@@ -3,6 +3,10 @@ import { nextTick } from "vue";
 import { teamApi } from "/src/stores/teamChatStore.js";
 let pluginUrl = "",
   fullData = false;
+let devices =
+  window.fixtureDevice === "mobile"
+    ? [{ kind: "mobile" }]
+    : [{ kind: "mobile" }, { kind: "desktop" }];
 const base = teamApi.defaults.adapter;
 window.setupCopies = [];
 window.setupShares = [];
@@ -44,6 +48,8 @@ teamApi.defaults.adapter = async (config) => {
         pluginUrl,
         fullData,
         connections: [],
+        chatUrl: "https://www.index12.com/team/fixture-invitation-0000000000",
+        devices,
       },
     };
   return base(config);
@@ -55,6 +61,12 @@ window.searchChat.me = {
 };
 window.searchChat.tab = "mcp";
 window.setupFixture = {
+  async computerConnected() {
+    devices = [{ kind: "mobile" }, { kind: "desktop" }];
+    window.searchChat.tab = "messages";
+    await nextTick();
+    window.searchChat.tab = "mcp";
+  },
   async publish() {
     pluginUrl = "https://chatgpt.com/plugins/plugin_fixture";
     fullData = true;
