@@ -357,12 +357,20 @@ async function remove(member) {
     aria-label="Доступы и роли"
   >
     <template v-if="!props.formOnly">
-      <button type="button" class="access-add" @click="openForm">
-        <UiIcon name="plus" />Добавить сотрудника
-      </button>
-      <button type="button" class="access-add" @click="openRoles">
-        Права ролей
-      </button>
+      <div class="access-toolbar">
+        <button
+          type="button"
+          class="access-add"
+          aria-label="Добавить сотрудника"
+          title="Добавить сотрудника"
+          @click="openForm"
+        >
+          <UiIcon name="plus" />
+        </button>
+        <button type="button" class="access-roles" @click="openRoles">
+          Права ролей
+        </button>
+      </div>
       <p v-if="error && !formOpen && !editingMember && !rolesOpen" role="alert">
         {{ error }}
       </p>
@@ -698,14 +706,49 @@ async function remove(member) {
   min-width: 0;
   font-size: 13px;
 }
-.team-access .access-add {
+.access-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.team-access .access-toolbar button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   min-height: 44px;
-  margin-bottom: 8px;
-  padding: 6px 10px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-pane-muted);
+  font: inherit;
   font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.team-access .access-toolbar .access-add {
+  width: 44px;
+  flex: none;
+  padding: 0;
+}
+.access-add :deep(.ui-icon) {
+  width: 20px;
+  height: 20px;
+}
+@media (hover: hover) {
+  .team-access .access-toolbar button:hover {
+    background: var(--codex-pane-hover);
+    color: var(--codex-pane-text);
+  }
+}
+.access-toolbar button:focus {
+  outline: none;
+}
+.access-toolbar button:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
+  outline-offset: 2px;
 }
 .access-row {
   display: grid;

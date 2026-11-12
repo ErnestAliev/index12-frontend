@@ -40,6 +40,27 @@ try {
         );
       }, theme);
       const activate = (el) => (width < 1000 ? el.tap() : el.click());
+      await page
+        .getByRole("button", { name: "Права ролей", exact: true })
+        .waitFor();
+      const toolbar = await page.locator(".access-toolbar").evaluate((el) => {
+        const [add, roles] = el.querySelectorAll("button");
+        return {
+          add: add.getBoundingClientRect().toJSON(),
+          roles: roles.getBoundingClientRect().toJSON(),
+          background: [...el.querySelectorAll("button")].map(
+            (button) => getComputedStyle(button).backgroundColor,
+          ),
+          addText: add.textContent.trim(),
+        };
+      });
+      assert.ok(toolbar.roles.left - toolbar.add.right >= 16);
+      assert.equal(toolbar.add.width, 44);
+      assert.ok(toolbar.add.height >= 44 && toolbar.roles.height >= 44);
+      assert.equal(toolbar.addText, "");
+      assert.ok(
+        toolbar.background.every((color) => color === "rgba(0, 0, 0, 0)"),
+      );
       await activate(
         page.getByRole("button", { name: "Права ролей", exact: true }),
       );
