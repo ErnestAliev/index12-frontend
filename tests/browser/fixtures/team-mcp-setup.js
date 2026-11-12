@@ -3,6 +3,7 @@ import { nextTick } from "vue";
 import { teamApi } from "/src/stores/teamChatStore.js";
 let pluginUrl = "",
   fullData = false;
+let connections = [];
 let devices =
   window.fixtureDevice === "mobile"
     ? [{ kind: "mobile" }]
@@ -47,7 +48,7 @@ teamApi.defaults.adapter = async (config) => {
         serverUrl: "https://api.index12.com/team-mcp",
         pluginUrl,
         fullData,
-        connections: [],
+        connections,
         chatUrl: "https://www.index12.com/team/fixture-invitation-0000000000",
         devices,
       },
@@ -61,6 +62,23 @@ window.searchChat.me = {
 };
 window.searchChat.tab = "mcp";
 window.setupFixture = {
+  async reopen() {
+    window.searchChat.tab = "messages";
+    await nextTick();
+    window.searchChat.tab = "mcp";
+  },
+  async connected() {
+    connections = [
+      {
+        _id: "fixture-chatgpt",
+        clientName: "ChatGPT",
+        scopes: ["index12:read"],
+      },
+    ];
+    window.searchChat.tab = "messages";
+    await nextTick();
+    window.searchChat.tab = "mcp";
+  },
   async computerConnected() {
     devices = [{ kind: "mobile" }, { kind: "desktop" }];
     window.searchChat.tab = "messages";

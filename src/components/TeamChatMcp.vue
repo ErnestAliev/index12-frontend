@@ -1,24 +1,30 @@
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
-import { teamApi, teamError } from "@/stores/teamChatStore";
+import { computed, ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import { teamDeviceKind } from "@/utils/teamDevice";
 import { useInputModality } from "@/composables/useInputModality";
 import TeamMcpSetup from "./TeamMcpSetup.vue";
 import UiIcon from "./UiIcon.vue";
-const kind = teamDeviceKind(),
+const chat = useTeamChatStore(),
+  kind = teamDeviceKind(),
   mobile = kind === "mobile",
   keyboard = useInputModality();
 const serverUrl = ref("https://api.index12.com/team-mcp"),
-  pluginUrl = ref(""),
   chatUrl = ref(""),
   devices = ref([]),
   connections = ref([]);
 const loading = ref(true),
   pending = ref(""),
-  transferring = ref(false),
   error = ref(""),
   notice = ref(""),
-  link = ref(null);
+  link = ref(null),
+  step = ref(mobile ? 0 : 1),
+  complete = ref(false),
+  checking = ref(false);
+const progressKey = computed(
+  () =>
+    `index12-mcp-wizard:${chat.me?.workspaceId}:${chat.me?.actorId}:${kind}`,
+);
 const deviceStates = computed(() =>
   ["mobile", "desktop"].map((type) => ({
     kind: type,
@@ -27,7 +33,43 @@ const deviceStates = computed(() =>
   })),
 );
 let active = true,
-  timer;
+  timer,
+  initialized = false;
+function restore() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(progressKey.value));
+  } catch {
+    /* Progress is optional. */
+  }
+  if (
+    saved &&
+    Number.isInteger(saved.step) &&
+    saved.step >= 0 &&
+    saved.step <= 9
+  ) {
+    step.value =
+      saved.complete && !connections.value.length
+        ? mobile
+          ? 0
+          : 1
+        : saved.step;
+    complete.value = saved.complete === true && !!connections.value.length;
+  } else complete.value = connections.value.length > 0;
+  initialized = true;
+}
+function persist() {
+  if (!initialized) return;
+  try {
+    localStorage.setItem(
+      progressKey.value,
+      JSON.stringify({ step: step.value, complete: complete.value }),
+    );
+  } catch {
+    /* Keep the current screen in memory. */
+  }
+}
+watch([step, complete], persist);
 function currentChatUrl() {
   return /^\/team\/[\w-]{20,100}\/?$/.test(location.pathname)
     ? location.origin + location.pathname.replace(/\/$/, "")
@@ -37,25 +79,46 @@ async function load() {
   try {
     const { data } = await teamApi.get("/mcp/connection");
     if (!active) return;
-    if (
-      !loading.value &&
-      (data.connections || []).some(
-        (row) =>
-          !connections.value.some((previous) => previous._id === row._id),
-      )
-    )
-      notice.value = "ChatGPT подключён";
     serverUrl.value = data.serverUrl || "https://api.index12.com/team-mcp";
-    pluginUrl.value = data.pluginUrl || "";
     chatUrl.value = data.chatUrl || currentChatUrl();
     devices.value = data.devices || [];
     connections.value = data.connections || [];
     error.value = "";
+    if (!initialized) restore();
+    if (step.value === 9 && connections.value.length) complete.value = true;
   } catch (e) {
     if (active) error.value = teamError(e);
   } finally {
     if (active) loading.value = false;
   }
+}
+async function check() {
+  if (checking.value) return;
+  checking.value = true;
+  try {
+    await load();
+  } finally {
+    checking.value = false;
+  }
+}
+async function next() {
+  notice.value = "";
+  error.value = "";
+  if (step.value === 8) {
+    step.value = 9;
+    await check();
+  } else step.value++;
+}
+function back() {
+  notice.value = "";
+  error.value = "";
+  step.value = step.value === 9 ? 8 : Math.max(0, step.value - 1);
+}
+function restart() {
+  complete.value = false;
+  step.value = mobile ? 0 : 1;
+  notice.value = "";
+  error.value = "";
 }
 async function copyLink() {
   error.value = "";
@@ -68,28 +131,6 @@ async function copyLink() {
     link.value?.focus({ preventScroll: true });
     link.value?.select();
     error.value = "Выделите ссылку и скопируйте её.";
-  }
-}
-async function transfer() {
-  if (transferring.value || !chatUrl.value) return;
-  transferring.value = true;
-  error.value = "";
-  notice.value = "";
-  try {
-    const data = {
-      title: "Чат INDEX12",
-      text: "Откройте на компьютере и войдите в чат:\n" + chatUrl.value,
-    };
-    if (
-      typeof navigator.share === "function" &&
-      (!navigator.canShare || navigator.canShare(data))
-    )
-      await navigator.share(data);
-    else await copyLink();
-  } catch (e) {
-    if (e?.name !== "AbortError") await copyLink();
-  } finally {
-    transferring.value = false;
   }
 }
 async function disconnect(id) {
@@ -125,17 +166,44 @@ onBeforeUnmount(() => {
     :class="{ 'keyboard-navigation': keyboard }"
     aria-label="MCP-коннектор"
   >
-    <h2>MCP-коннектор</h2>
     <p v-if="loading" role="status">Загружаем…</p>
+    <TeamMcpSetup
+      v-else-if="!complete"
+      :step="step"
+      :mobile="mobile"
+      :chat-url="chatUrl"
+      :server-url="serverUrl"
+      :busy="checking"
+      @next="next"
+      @back="back"
+      @check="check"
+    />
     <template v-else>
-      <button
-        v-if="mobile"
-        class="mcp-transfer"
-        type="button"
-        :disabled="transferring || !chatUrl"
-        @click="transfer"
-      >
-        <UiIcon name="share" />Подключить на компьютер чат
+      <h2>Подключения</h2>
+      <div class="mcp-devices" role="list" aria-label="Устройства чата">
+        <span
+          v-for="device in deviceStates"
+          :key="device.kind"
+          role="listitem"
+          :class="{ 'is-connected': device.connected }"
+          ><UiIcon v-if="device.connected" name="check" />{{ device.label }}
+          {{ device.connected ? "подключён" : "не подключён" }}</span
+        >
+      </div>
+      <div v-for="row in connections" :key="row._id" class="mcp-connection">
+        <span>{{ row.clientName }}</span
+        ><button
+          type="button"
+          :disabled="!!pending"
+          :aria-label="`Отключить ${row.clientName}`"
+          @click="disconnect(row._id)"
+        >
+          Отключить
+        </button>
+      </div>
+      <p v-if="!connections.length">Нет подключений ChatGPT.</p>
+      <button type="button" class="mcp-primary" @click="restart">
+        Добавить подключение
       </button>
       <label class="mcp-chat-link"
         ><span>Ссылка на ваш чат</span>
@@ -156,32 +224,6 @@ onBeforeUnmount(() => {
             <UiIcon name="copy" />
           </button></div
       ></label>
-      <div class="mcp-devices" role="list" aria-label="Устройства чата">
-        <span
-          v-for="device in deviceStates"
-          :key="device.kind"
-          role="listitem"
-          :class="{ 'is-connected': device.connected }"
-          ><UiIcon v-if="device.connected" name="check" />{{ device.label }}
-          {{ device.connected ? "подключён" : "не подключён" }}</span
-        >
-      </div>
-      <TeamMcpSetup
-        v-if="!mobile"
-        :server-url="serverUrl"
-        :plugin-url="pluginUrl"
-      />
-      <div v-for="row in connections" :key="row._id" class="mcp-connection">
-        <span>{{ row.clientName }}</span
-        ><button
-          type="button"
-          :disabled="!!pending"
-          :aria-label="`Отключить ${row.clientName}`"
-          @click="disconnect(row._id)"
-        >
-          Отключить
-        </button>
-      </div>
     </template>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
@@ -231,8 +273,7 @@ button:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.mcp-transfer {
-  width: 100%;
+.mcp-primary {
   background: var(--codex-pane-accent);
   color: var(--codex-pane-send-text);
 }

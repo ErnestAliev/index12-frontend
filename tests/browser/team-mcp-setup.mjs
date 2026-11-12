@@ -65,126 +65,83 @@ try {
             name: "MCP-коннектор",
             exact: true,
           });
-        const ownLink = root.getByRole("textbox", {
-          name: "Ссылка на ваш чат",
-          exact: true,
-        });
-        await ownLink.waitFor();
-        assert.equal(await ownLink.inputValue(), chatUrl);
-        await activate(
-          root.getByRole("button", {
-            name: "Скопировать ссылку на чат",
-            exact: true,
-          }),
+        const heading = (name) =>
+            root.getByRole("heading", { name, exact: true }),
+          next = async () => {
+            await activate(
+              root.getByRole("button", { name: "Готово", exact: true }),
+            );
+          };
+        await heading(
+          mobile ? "Откройте чат на компьютере" : "Откройте плагины ChatGPT",
+        ).waitFor();
+        assert.equal(await heading("MCP-коннектор").count(), 0);
+        assert.equal(
+          await root.getByRole("list").count(),
+          0,
+          "connections stay hidden until setup is confirmed",
         );
-        assert.equal(await page.evaluate(() => setupCopies.at(-1)), chatUrl);
+        async function bounds() {
+          const b = await root.evaluate((el) => ({
+            scroll: document.documentElement.scrollWidth,
+            width: innerWidth,
+            buttons: [...el.querySelectorAll("button,.setup-primary")]
+              .filter((e) => e.getClientRects().length)
+              .map((e) => e.getBoundingClientRect().toJSON()),
+          }));
+          assert.ok(
+            b.scroll <= width &&
+              b.buttons.every(
+                (r) => r.height >= 44 && r.x >= 16 && r.right <= width - 16,
+              ),
+            JSON.stringify(b),
+          );
+        }
         if (mobile) {
           assert.equal(
-            await root.locator(".mcp-setup").count(),
-            0,
-            "phone only transfers the personal chat link",
+            await root
+              .getByRole("textbox", { name: "Ссылка на ваш чат", exact: true })
+              .inputValue(),
+            chatUrl,
           );
-          assert.match(
-            await root.getByRole("list").innerText(),
-            /Компьютер не подключён/,
+          await activate(
+            root.getByRole("button", {
+              name: "Подключить на компьютер чат",
+              exact: true,
+            }),
           );
-          const transfer = root.getByRole("button", {
-            name: "Подключить на компьютер чат",
+          assert.ok(
+            (await page.evaluate(() => setupShares.at(-1).text)).endsWith(
+              chatUrl,
+            ),
+          );
+          await bounds();
+          await next();
+          await heading("Откройте плагины ChatGPT").waitFor();
+          await activate(
+            root.getByRole("button", {
+              name: "Отправить ссылку на плагины",
+              exact: true,
+            }),
+          );
+          assert.ok(
+            (await page.evaluate(() => setupShares.at(-1).text)).endsWith(
+              "https://chatgpt.com/plugins",
+            ),
+          );
+          await page.evaluate(() => setupFixture.reopen());
+          await heading("Откройте плагины ChatGPT").waitFor();
+          await page.evaluate(() => setupFixture.computerConnected());
+          await heading("Откройте плагины ChatGPT").waitFor();
+        } else {
+          const opener = root.getByRole("link", {
+            name: "Открыть плагины ChatGPT",
             exact: true,
           });
-          assert.equal(
-            await root.locator("button").first().innerText(),
-            "Подключить на компьютер чат",
-          );
-          await activate(transfer);
-          const data = await page.evaluate(() => setupShares.at(-1));
-          assert.match(data.text, /Откройте на компьютере/);
-          assert.ok(data.text.endsWith(chatUrl));
-          assert.doesNotMatch(data.text, /team-mcp|access=|password/);
-          const copies = await page.evaluate(() => setupCopies.length);
-          await page.evaluate(() => (window.setupShareError = "AbortError"));
-          await activate(transfer);
-          assert.equal(await page.evaluate(() => setupCopies.length), copies);
-          await page.evaluate(
-            () => (window.setupShareError = "NotAllowedError"),
-          );
-          await activate(transfer);
-          assert.equal(await page.evaluate(() => setupCopies.at(-1)), chatUrl);
-          await page.evaluate(() => setupFixture.computerConnected());
-          await root
-            .getByText("Компьютер подключён", { exact: true })
-            .waitFor();
-        } else {
-          assert.equal(
-            await root
-              .getByRole("button", {
-                name: "Подключить на компьютер чат",
-                exact: true,
-              })
-              .count(),
-            0,
-            "a narrow computer window remains a computer",
-          );
-          assert.match(
-            await root.getByRole("list").innerText(),
-            /Компьютер подключён/,
-          );
-          const setup = root.locator(".mcp-setup"),
-            opener = setup.getByRole("link", {
-              name: "Открыть плагины ChatGPT",
-              exact: true,
-            });
           assert.equal(
             await opener.getAttribute("href"),
             "https://chatgpt.com/plugins",
           );
-          assert.equal(await setup.getByRole("textbox").count(), 2);
-          assert.doesNotMatch(
-            await setup.innerText(),
-            /OAuth|Аутентификация|автозаполнение/i,
-          );
-          assert.ok((await setup.innerText()).length < 280);
-          assert.match(
-            await setup.locator("strong").innerText(),
-            /Нажмите «Добавить»/,
-          );
-          assert.match(await setup.innerText(), /справа вверху/);
-          await activate(
-            setup.getByRole("button", {
-              name: "Скопировать название",
-              exact: true,
-            }),
-          );
-          assert.equal(
-            await page.evaluate(() => setupCopies.at(-1)),
-            "INDEX12",
-          );
-          await activate(
-            setup.getByRole("button", {
-              name: "Скопировать URL сервера",
-              exact: true,
-            }),
-          );
-          assert.equal(
-            await page.evaluate(() => setupCopies.at(-1)),
-            "https://api.index12.com/team-mcp",
-          );
-          await page.evaluate(() => (window.setupCopyFails = true));
-          await activate(
-            setup.getByRole("button", {
-              name: "Скопировать URL сервера",
-              exact: true,
-            }),
-          );
-          const field = setup.getByRole("textbox", {
-            name: "URL-адрес сервера MCP",
-            exact: true,
-          });
-          assert.equal(
-            await field.evaluate((el) => el.selectionEnd - el.selectionStart),
-            (await field.inputValue()).length,
-          );
-          await page.evaluate(() => (window.setupCopyFails = false));
           if (engine === "chromium") {
             const [popup] = await Promise.all([
               context.waitForEvent("page"),
@@ -195,25 +152,111 @@ try {
             await popup.close();
             await page.bringToFront();
           }
+          assert.equal(await root.getByRole("textbox").count(), 0);
         }
-        const bounds = await root.evaluate((el) => ({
-          scroll: document.documentElement.scrollWidth,
-          width: innerWidth,
-          buttons: [...el.querySelectorAll("button,.setup-open")]
-            .filter((e) => e.getClientRects().length)
-            .map((e) => e.getBoundingClientRect().toJSON()),
-        }));
+        await next();
+        await heading("Нажмите кнопку «Добавить»").waitFor();
         assert.ok(
-          bounds.scroll <= width &&
-            bounds.buttons.every(
-              (b) => b.height >= 44 && b.x >= 16 && b.right <= width - 16,
+          Number(
+            await heading("Нажмите кнопку «Добавить»").evaluate(
+              (el) => getComputedStyle(el).fontWeight,
             ),
-          JSON.stringify(bounds),
+          ) >= 600,
         );
+        await bounds();
+        await next();
+        await heading(
+          "Выберите «Добавить пользовательский сервер MCP»",
+        ).waitFor();
+        await next();
+        await heading("Вставьте название").waitFor();
+        assert.equal(await root.getByRole("textbox").count(), 1);
+        assert.equal(await root.getByRole("textbox").inputValue(), "INDEX12");
+        await activate(
+          root.getByRole("button", {
+            name: "Скопировать название",
+            exact: true,
+          }),
+        );
+        assert.equal(await page.evaluate(() => setupCopies.at(-1)), "INDEX12");
+        await next();
+        await heading("Вставьте URL-адрес сервера").waitFor();
+        assert.equal(await root.getByRole("textbox").count(), 1);
+        assert.equal(
+          await root.getByRole("textbox").inputValue(),
+          "https://api.index12.com/team-mcp",
+        );
+        await activate(
+          root.getByRole("button", {
+            name: "Скопировать URL сервера",
+            exact: true,
+          }),
+        );
+        assert.equal(
+          await page.evaluate(() => setupCopies.at(-1)),
+          "https://api.index12.com/team-mcp",
+        );
+        await page.evaluate(() => (window.setupCopyFails = true));
+        await activate(
+          root.getByRole("button", {
+            name: "Скопировать URL сервера",
+            exact: true,
+          }),
+        );
+        assert.equal(
+          await root
+            .getByRole("textbox")
+            .evaluate((el) => el.selectionEnd - el.selectionStart),
+          "https://api.index12.com/team-mcp".length,
+        );
+        await page.evaluate(() => (window.setupCopyFails = false));
+        await activate(
+          root.getByRole("button", { name: "Назад", exact: true }),
+        );
+        await heading("Вставьте название").waitFor();
+        await next();
+        await page.evaluate(() => setupFixture.reopen());
+        await heading("Вставьте URL-адрес сервера").waitFor();
+        for (const title of [
+          "Создайте плагин",
+          "Войдите в INDEX12",
+          "Установите плагин",
+        ]) {
+          await next();
+          await heading(title).waitFor();
+          await bounds();
+        }
+        await next();
+        await heading("Завершите подключение в ChatGPT").waitFor();
+        assert.equal(
+          await heading("Подключения").count(),
+          0,
+          "manual Done must never fabricate a connected state",
+        );
+        await bounds();
+        await page.evaluate(() => setupFixture.connected());
+        await heading("Подключения").waitFor();
+        await root
+          .getByRole("button", { name: "Отключить ChatGPT", exact: true })
+          .waitFor();
+        assert.match(
+          await root.getByRole("list").innerText(),
+          /Компьютер подключён/,
+        );
+        await bounds();
+        await activate(
+          root.getByRole("button", {
+            name: "Добавить подключение",
+            exact: true,
+          }),
+        );
+        await heading(
+          mobile ? "Откройте чат на компьютере" : "Откройте плагины ChatGPT",
+        ).waitFor();
         assert.deepEqual(await page.evaluate(() => setupWrites), []);
         assert.deepEqual(errors, []);
         console.log(
-          `PASS ${engine} ${device} ${theme} ${width}: personal login link, actual device states, mobile handoff or desktop MCP copy fields, safe bounds`,
+          `PASS ${engine} ${device} ${theme} ${width}: one screen per action, separate copy steps, scoped progress, back/resume, real-connection completion and safe bounds`,
         );
         await context.close();
       }
