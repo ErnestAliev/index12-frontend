@@ -10,13 +10,18 @@ import {
 import { teamApi, teamError } from "@/stores/teamChatStore";
 import { bindChatPush, iosDevice, standalone } from "@/utils/teamPush";
 import UiIcon from "./UiIcon.vue";
+import {
+  requestChatInstallation,
+  chatInstallInstructions,
+} from "@/utils/teamInstallation";
+const installSteps = chatInstallInstructions();
 const props = defineProps({
   token: String,
   identity: Object,
   workspaceId: String,
 });
 const opened = ref(false),
-  installed = ref(standalone()),
+  installed = ref(standalone() || window.index12ChatInstalled === true),
   deferred = ref(window.index12InstallPrompt || null);
 const installing = ref(false),
   instructions = ref(false),
@@ -65,31 +70,36 @@ function close() {
 defineExpose({ open });
 function beforeInstall(event) {
   event.preventDefault();
+  installed.value = false;
+  window.index12ChatInstalled = false;
+  instructions.value = false;
   deferred.value = event;
   window.index12InstallPrompt = event;
 }
 function appInstalled() {
   installed.value = true;
+  window.index12ChatInstalled = true;
   deferred.value = null;
   window.index12InstallPrompt = null;
   remember();
 }
 async function install() {
-  if (!deferred.value) {
-    instructions.value = true;
-    return;
-  }
+  if (installing.value) return;
   installing.value = true;
+  deferred.value = null;
+  instructions.value = false;
   try {
-    const prompt = deferred.value;
-    await prompt.prompt();
-    await prompt.userChoice;
-    deferred.value = null;
-    window.index12InstallPrompt = null;
-    // Only appinstalled / standalone confirms installation, not a click on the offer.
+    const result = await requestChatInstallation();
+    if (result.confirmed) {
+      installed.value = true;
+      remember();
+    }
+    instructions.value = result.outcome === "unavailable";
+    // A legacy offer's accepted choice is not proof of completed installation.
   } catch {
     instructions.value = true;
   } finally {
+    deferred.value = window.index12InstallPrompt || null;
     installing.value = false;
   }
 }
@@ -152,6 +162,7 @@ function workerMessage(event) {
   }
 }
 function wake() {
+  if (standalone()) installed.value = true;
   if (!document.hidden && props.identity) void check();
 }
 function trap(event) {
@@ -266,31 +277,19 @@ onBeforeUnmount(() => {
           </button>
         </header>
         <template v-if="!installed">
-          <h3>Добавьте Chat на главный экран</h3>
+          <h3>Установите Chat</h3>
           <p>Иконка откроет этот чат по вашей ссылке приглашения.</p>
           <button
-            v-if="deferred || (!iosDevice() && !instructions)"
+            v-if="deferred || !iosDevice()"
             class="setup-primary"
             :disabled="installing"
             @click="install"
           >
-            {{ deferred ? "Установить Chat" : "Как добавить на главный экран" }}
+            Установить Chat
           </button>
-          <ol v-if="iosDevice()">
-            <li>
-              Нажмите «Поделиться» в меню браузера <UiIcon name="share" />.
-            </li>
-            <li>
-              Выберите «На экран Домой», затем «Добавить». Оставьте название
-              Chat.
-            </li>
-            <li>Откройте Chat с новой иконки.</li>
+          <ol v-if="iosDevice() || instructions">
+            <li v-for="step in installSteps" :key="step">{{ step }}</li>
           </ol>
-          <p v-else-if="instructions">
-            Откройте меню браузера и выберите «Установить приложение» или
-            «Добавить на главный экран». Если такого пункта нет, откройте эту
-            ссылку в Safari или Chrome.
-          </p>
         </template>
         <div v-else class="setup-installed">
           <UiIcon name="check" /> Chat добавлен на главный экран

@@ -26,10 +26,12 @@ export function renderTeamEntry(html, token) {
   <script>
     window.addEventListener('beforeinstallprompt', function (event) {
       event.preventDefault();
+      window.index12ChatInstalled = false;
       window.index12InstallPrompt = event;
     });
     window.addEventListener('appinstalled', function () {
       window.index12ChatInstalled = true;
+      window.index12InstallPrompt = null;
     });
   </script>
 </head>`,
