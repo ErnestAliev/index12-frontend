@@ -2,6 +2,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { teamApi, teamError } from '@/stores/teamChatStore';
 import UiIcon from './UiIcon.vue';
+import TeamMcpSetup from './TeamMcpSetup.vue';
+const serverUrl = ref('https://api.index12.com/team-mcp');
 const pluginUrl = ref(''), fullData = ref(false), connections = ref([]);
 const loading = ref(true), pending = ref(''), error = ref(''), notice = ref('');
 let active = true, timer;
@@ -13,6 +15,7 @@ async function load() {
       notice.value = 'ChatGPT подключён';
     }
     pluginUrl.value = data.pluginUrl || ''; fullData.value = data.fullData; connections.value = data.connections;
+    serverUrl.value = data.serverUrl || 'https://api.index12.com/team-mcp';
   } catch (e) { if (active) error.value = teamError(e); }
   finally { if (active) loading.value = false; }
 }
@@ -34,8 +37,10 @@ onBeforeUnmount(() => { active = false; clearInterval(timer); });
     <template v-else>
       <p>{{ fullData ? 'У вас полный доступ к чтению данных системы и действиям в рабочем чате.' : 'Вам доступны общий чат и ваши задачи.' }}</p>
       <p>История вопросов остаётся в вашем ChatGPT и не отображается владельцу в INDEX12. Сообщения и действия, отправленные в рабочий чат, видны участникам.</p>
-      <a v-if="pluginUrl" class="mcp-install" :href="pluginUrl" target="_blank" rel="noopener noreferrer"><UiIcon name="link" />Подключить ChatGPT</a>
-      <p v-else class="mcp-publication">Плагин отправлен на проверку OpenAI</p>
+      <a v-if="pluginUrl" class="mcp-install" :href="pluginUrl" target="_blank" rel="noopener noreferrer"><UiIcon name="external" />Подключить ChatGPT</a>
+      <p v-else class="mcp-publication">Плагин на проверке OpenAI. До публикации подключите его вручную.</p>
+      <TeamMcpSetup v-if="!pluginUrl" :server-url="serverUrl" />
+      <details v-else class="mcp-manual"><summary>Ручное подключение по адресу MCP</summary><TeamMcpSetup :server-url="serverUrl" /></details>
       <div v-for="row in connections" :key="row._id" class="mcp-connection"><span>{{ row.clientName }}<small>{{ fullData && !row.financeAllowed ? 'Переподключите для доступа к полным данным' : row.scopes.includes('index12:write') ? 'Чтение и действия в чате' : 'Только чтение' }}</small></span><button type="button" :disabled="!!pending" :aria-label="`Отключить ${row.clientName}`" @click="disconnect(row._id)">Отключить</button></div>
     </template>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
@@ -47,6 +52,7 @@ onBeforeUnmount(() => { active = false; clearInterval(timer); });
 .chat-mcp button, .mcp-install { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--codex-pane-surface); color: inherit; font: inherit; cursor: pointer; }
 .mcp-install { text-decoration: none; }
 .mcp-publication { color: var(--codex-pane-muted); }
+.mcp-manual summary { display:flex;align-items:center;min-height:44px;cursor:pointer;color:var(--codex-pane-muted); }
 .mcp-install:focus-visible, .chat-mcp button:focus-visible { outline: 2px solid var(--codex-pane-accent); outline-offset: 2px; }
 .chat-mcp button:disabled { opacity: .5; cursor: default; }
 .mcp-connection { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 48px; border-top: 1px solid var(--codex-pane-border); }
