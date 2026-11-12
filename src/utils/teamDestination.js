@@ -20,19 +20,21 @@ export function parseTeamDestination(value, origin = window.location.origin) {
   const staff = /^\/team\/[\w-]{20,100}$/.test(url.pathname);
   const workspaceId = url.searchParams.get('teamChat');
   if (!staff && (!['/', '/mobile'].includes(url.pathname) || !/^[a-f\d]{24}$/i.test(workspaceId || ''))) return null;
-  if ([...url.searchParams.keys()].some(key => !['teamChat', 'task', 'message'].includes(key))) return null;
+  if ([...url.searchParams.keys()].some(key => !['teamChat', 'task', 'message','release'].includes(key))) return null;
   const taskId = url.searchParams.get('task'), messageId = url.searchParams.get('message');
+  const releaseVersion=url.searchParams.get('release');
+  if(releaseVersion && !/^[a-f\d]{40}$/i.test(releaseVersion))return null;
   if ((taskId && !uuid.test(taskId)) || (messageId && !uuid.test(messageId))) return null;
-  return { path: url.pathname + url.search, workspaceId, taskId, messageId, staff };
+  return { path: url.pathname + url.search, workspaceId, taskId, messageId, staff, releaseVersion };
 }
 export function rememberTeamDestination(value, clickId) {
   const target = parseTeamDestination(value);
   if (!target) return null;
   const previous = pendingTeamDestination();
-  const same = previous && previous.workspaceId === target.workspaceId && previous.taskId === target.taskId && previous.messageId === target.messageId && previous.staff === target.staff && (!target.staff || previous.path.split('?')[0] === target.path.split('?')[0]);
+  const same = previous && previous.workspaceId === target.workspaceId && previous.taskId === target.taskId && previous.messageId === target.messageId && (previous.releaseVersion||null)===target.releaseVersion && previous.staff === target.staff && (!target.staff || previous.path.split('?')[0] === target.path.split('?')[0]);
   if (previous?.clickId && !same && previous.clickId !== clickId) removeDurableClick(previous.clickId);
   pending = { ...target, savedAt: Date.now(), ...(clickId || (same && previous.clickId) ? { clickId: clickId || previous.clickId } : {}) };
-  opened = null;
+  if (!same || (clickId && previous?.clickId !== clickId)) opened = null;
   try { sessionStorage.setItem(storageKey, JSON.stringify(pending)); } catch { /* Memory still covers warm navigation. */ }
   return target;
 }
@@ -87,21 +89,22 @@ export function discardTeamDestination() {
 export function openTeamDestination(chat, path) {
   const target = eligibleDestination(chat.me, path);
   if (!target) return false;
-  if (opened === target && chat.open && chat.requestedTaskId === target.taskId &&
-      (target.taskId ? chat.requestedTaskMessageId : chat.requestedMessageId) === target.messageId) return false;
-  opened = target;
+  const key = target.clickId || [target.workspaceId,target.staff ? target.path.split('?')[0] : '',target.taskId,target.messageId,target.releaseVersion].join('|');
+  if (opened?.key === key && opened.session === (chat.sessionEpoch || 0)) return false;
+  opened = { key, session: chat.sessionEpoch || 0 };
+  if(target.releaseVersion){chat.tab='updates';chat.show();return true;}
   chat.creatingTask = false;
   chat.taskNotifications = false;
-  chat.tab = 'messages';
+  chat.tab = target.releaseVersion ? 'updates' : 'messages';
   chat.requestedTaskId = target.taskId;
   chat.requestedTaskMessageId = target.taskId ? target.messageId : null;
   chat.requestedMessageId = target.taskId ? null : target.messageId;
   chat.show();
   return true;
 }
-export function completeTeamDestination({workspaceId, taskId = null, messageId = null}) {
+export function completeTeamDestination({workspaceId, taskId = null, messageId = null,releaseVersion=null}) {
   const target = pendingTeamDestination();
-  if (!target || (target.workspaceId && target.workspaceId !== workspaceId) || target.taskId !== taskId || target.messageId !== messageId) return false;
+  if (!target || (target.workspaceId && target.workspaceId !== workspaceId) || target.taskId !== taskId || target.messageId !== messageId || (target.releaseVersion||null)!==releaseVersion) return false;
   discardTeamDestination();
   window.dispatchEvent(new Event('index12:team-destination-visible'));
   return true;
@@ -165,6 +168,7 @@ export function connectTeamDestinations(router) {
       fallback.searchParams.delete(key);
       if (uuid.test(value || '')) fallback.searchParams.set(key, value);
     }
+    if(/^[a-f\d]{40}$/i.test(event.data.releaseVersion || ''))fallback.searchParams.set('release',event.data.releaseVersion);
     const target = rememberTeamDestination(event.data.url || fallback.href, event.data.clickId);
     if (!target) return;
     try { await router.replace(target.path); } catch { return; }

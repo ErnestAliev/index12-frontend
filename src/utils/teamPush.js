@@ -1,4 +1,5 @@
 import { teamApi } from "@/stores/teamChatStore";
+import {currentBuildVersion} from '@/stores/appUpdateStore';
 export const standalone = () =>
   window.matchMedia("(display-mode: standalone)").matches ||
   navigator.standalone === true;
@@ -90,6 +91,7 @@ export async function bindChatPush(token, ask = false, identity) {
     /* Storage can be unavailable. */
   }
   await teamApi.post("/push/subscriptions", {
+    clientVersion: currentBuildVersion,
     subscription: subscription.toJSON(),
     token,
   });

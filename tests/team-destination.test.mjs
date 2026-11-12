@@ -20,6 +20,8 @@ test('destination survives missing identity, login, and workspace startup withou
   assert.equal(pendingTeamDestination().messageId,message,'opening a window does not consume the message destination');
   assert.equal(openTeamDestination(chat,'/mobile'),false,'do not repeatedly reset the same open thread');
   chat.requestedTaskId=null;chat.requestedTaskMessageId=null;
+  assert.equal(openTeamDestination(chat,'/mobile'),false,'a poll must not override subsequent user navigation');
+  chat.sessionEpoch=1;
   assert.equal(openTeamDestination(chat,'/mobile'),true,'workspace startup can retry the destination until it is actually displayed');
   assert.equal(completeTeamDestination({workspaceId:'other',taskId:task,messageId:message}),false);
   assert.equal(completeTeamDestination({workspaceId:workspace,taskId:task,messageId:message}),true);
@@ -33,6 +35,14 @@ test('general chat messages and invitation-only staff links retain their distinc
   rememberTeamDestination(path+'?task='+task+'&message='+message);
   assert.equal(takeTeamDestination({...owner,owner:false},'/'),null);
   assert.equal(takeTeamDestination({...owner,owner:false},path).messageId,message);
+});
+test('an update push opens Updates without destroying an open task or draft form',()=>{
+  const version='b'.repeat(40);rememberTeamDestination('/?teamChat='+workspace+'&release='+version,'release-click');
+  const chat={me:owner,sessionEpoch:1,requestedTaskId:task,creatingTask:true,show(){this.open=true;}};
+  assert.equal(openTeamDestination(chat,'/mobile'),true);assert.equal(chat.tab,'updates');assert.equal(chat.requestedTaskId,task);assert.equal(chat.creatingTask,true);
+  rememberTeamDestination('/mobile?teamChat='+workspace+'&release='+version,'release-click');
+  assert.equal(openTeamDestination(chat,'/mobile'),false,'worker replay cannot reset a view during the same session');
+  completeTeamDestination({workspaceId:workspace,releaseVersion:version});
 });
 test('reject foreign destinations, malformed ids, extra query parameters and expired links',()=>{
   for(const value of ['https://evil.test/?teamChat='+workspace,'/?teamChat=bad','/?teamChat='+workspace+'&task=bad','/?teamChat='+workspace+'&redirect=elsewhere','/?teamChat='+workspace+'#hash'])assert.equal(parseTeamDestination(value),null,value);

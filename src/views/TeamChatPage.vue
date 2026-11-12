@@ -400,7 +400,7 @@ const closedText = (status) =>
       v-else
       :open="true"
       heading-owns-close
-      :hide-heading="!!chat.requestedTaskId || chat.creatingTask"
+      :hide-heading="chat.tab !== 'updates' && (!!chat.requestedTaskId || chat.creatingTask)"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"

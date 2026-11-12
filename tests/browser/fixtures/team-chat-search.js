@@ -129,7 +129,7 @@ const app = createApp({
         open: shown.value,
         mobile: true,
         headingOwnsClose: true,
-        hideHeading: !!chat.requestedTaskId || chat.creatingTask,
+        hideHeading: chat.tab !== 'updates' && (!!chat.requestedTaskId || chat.creatingTask),
       },
       { heading: () => h(Header), default: () => h(Pane, { mobile: true }) },
     ), h(TextFieldLinks)],

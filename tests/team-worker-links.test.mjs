@@ -120,4 +120,9 @@ test("chat push opens scoped owner entry or staff invitation and rejects externa
   assert.equal(recovered[0].url,navigated[0]);assert.equal(recovered[0].clickId,persisted.id);
   handlers.message({data:{type:'team:client-ready'},source:{url:origin+'/team/other-invitation-000000000',postMessage:message=>recovered.push(message)},waitUntil:p=>{waiting=p;}});
   await waiting;assert.equal(recovered.length,1,'owner click is not forwarded into a staff invitation');
+  const releaseVersion='b'.repeat(40);
+  handlers.notificationclick({notification:{data:{...shown[0].data,releaseVersion},close(){}},waitUntil:p=>{waiting=p;}});
+  await waiting;
+  assert.equal(opened.at(-1),origin+'/?teamChat='+workspace+'&release='+releaseVersion);
+  assert.equal(persisted.releaseVersion,releaseVersion);
 });

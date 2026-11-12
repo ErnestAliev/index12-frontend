@@ -34,6 +34,7 @@ import { useTaskContextMenu } from "@/composables/useTaskContextMenu";
 import { useChatTransfer } from '@/composables/useChatTransfer';
 import { taskInvoiceCommands, splitTaskInvoiceCommand, setTaskInvoiceCommand } from '@/utils/taskInvoiceCommands';
 const props = defineProps({
+  threadActive: {type:Boolean,default:true},
   creating: Boolean,
   taskId: String,
   parentTaskId: String,
@@ -42,6 +43,10 @@ const props = defineProps({
 });
 const emit = defineEmits(["close", "created", "new"]);
 const chat = useTeamChatStore();
+function prepareUpdate(event){
+  if(props.creating || editing.value || picker.value || busy.value || uploading.value)
+    event.detail.block('Сохраните или закройте редактирование задачи перед обновлением.');
+}
 const transfer = useChatTransfer('team');
 const keyboard = useInputModality();
 const blank = () => ({
@@ -546,15 +551,14 @@ watch(
   (files) => prefetch(files || []),
   { immediate: true },
 );
-watch(task, (value, previous) => {
-  if (previous && !value && props.taskId && chat.requestedTaskId === props.taskId) emit("close");
-});
 onMounted(() => {
+  window.addEventListener('index12:prepare-update',prepareUpdate);
   viewport();
   window.visualViewport?.addEventListener("resize", viewport);
   window.addEventListener("resize", viewport);
 });
 onBeforeUnmount(() => {
+  window.removeEventListener('index12:prepare-update',prepareUpdate);
   generation++;
   detailAnimation?.cancel();
   closePreview();
@@ -925,7 +929,7 @@ onBeforeUnmount(() => {
         </div>
         </Transition>
         <TeamChatConversation
-          :active="editing !== 'description'"
+          :active="threadActive && editing !== 'description'"
           :key="taskId"
           :task-id="taskId"
           :target-message-id="

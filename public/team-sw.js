@@ -27,6 +27,7 @@ function clickedUrl(data) {
   const uuid = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
   if (uuid.test(data.taskId || '')) target.searchParams.set('task', data.taskId);
   if (uuid.test(data.messageId || '')) target.searchParams.set('message', data.messageId);
+  if (/^[a-f\d]{40}$/i.test(data.releaseVersion || '')) target.searchParams.set('release',data.releaseVersion);
   return target;
 }
 let pendingClickWrite = Promise.resolve();
@@ -65,6 +66,7 @@ self.addEventListener("push", (event) => {
           workspaceId: data.workspaceId,
           taskId: data.taskId,
           messageId: data.messageId,
+          releaseVersion: data.releaseVersion,
         },
       });
       if (data.testId) {
@@ -89,6 +91,7 @@ self.addEventListener("notificationclick", (event) => {
     id: self.crypto.randomUUID(), savedAt: Date.now(), url: destination.href,
     workspaceId: event.notification.data?.workspaceId,
     taskId: event.notification.data?.taskId, messageId: event.notification.data?.messageId,
+    releaseVersion: event.notification.data?.releaseVersion,
   };
   // Commit before focus/openWindow. A cold iOS launch can discard the supplied URL.
   pendingClickWrite = Promise.resolve().then(() => self.index12TeamClickStore.write(click)).catch(() => null);
@@ -107,6 +110,7 @@ self.addEventListener("notificationclick", (event) => {
         current.hash = "";
         current.searchParams.delete("task");
         current.searchParams.delete("message");
+        current.searchParams.delete("release");
         return current.href === target.href;
       });
       if (existing) {
@@ -125,6 +129,7 @@ self.addEventListener("notificationclick", (event) => {
               workspaceId: event.notification.data?.workspaceId,
               taskId: event.notification.data?.taskId,
               messageId: event.notification.data?.messageId,
+              releaseVersion: event.notification.data?.releaseVersion,
             }, [channel.port2]);
           } catch {
             clearTimeout(timeout); channel.port1.close(); resolve(false);

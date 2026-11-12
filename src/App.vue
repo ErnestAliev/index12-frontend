@@ -9,6 +9,9 @@ import { useMainStore } from '@/stores/mainStore'
 import { useRepairStore } from '@/stores/repairStore' // 🟢 Импортируем repairStore
 import {setHistoryIdentity,connectPreferenceHistory} from '@/utils/preferenceHistory.js'
 import { useAppearanceStore } from '@/stores/appearanceStore'
+import {useAppUpdateStore} from '@/stores/appUpdateStore'
+import TeamAppUpdate from '@/components/TeamAppUpdate.vue'
+const updates=useAppUpdateStore()
 
 const mainStore = useMainStore()
 const chat = useTeamChatStore(), route = useRoute()
@@ -33,6 +36,7 @@ function priorityReady(result) {
   if (result?.dismissed) { void releaseWorkspace(); priorityWorkspace.value = null; return }
   const target = pendingTeamDestination()
   if (!chat.me?.owner || chat.error || !target) { void releaseWorkspace(); return }
+  if (target.releaseVersion) return
   if (!target.messageId) {
     if (!target.taskId || chat.state.tasks.some(task => task._id === target.taskId))
       completeTeamDestination({ workspaceId: chat.me.workspaceId, taskId: target.taskId })
@@ -87,6 +91,7 @@ const initializeApp = async () => {
 
 // При монтировании компонента
 onMounted(async () => {
+  updates.start()
   if (!priorityWorkspace.value) await initializeApp()
   
   // 🟢 УДАЛЕНО: mainStore.startAutoRefresh(30000) 
@@ -95,6 +100,7 @@ onMounted(async () => {
 
 // При размонтировании компонента
 onUnmounted(() => {
+  updates.stop()
   // Сохраняем кеш перед выходом, если функция существует (для безопасности)
   if (typeof mainStore.saveOperationsCache === 'function') {
     mainStore.saveOperationsCache()
@@ -114,6 +120,7 @@ const forceRefresh = async () => {
 <template>
   <RouterView v-if="workspaceVisible" />
   <TeamChatHost :priority-workspace="priorityWorkspace" @priority-ready="priorityReady" />
+  <div v-if="updates.available && chat.me?.status === 'active' && !chat.open && !route.path.startsWith('/team/')" class="app-update-notice"><TeamAppUpdate inline /></div>
   <TextFieldLinks />
 
   <!-- 🟢 Шторка обновления базы данных (появляется только при миграции) -->
@@ -129,6 +136,7 @@ const forceRefresh = async () => {
 </template>
 
 <style scoped>
+.app-update-notice{position:fixed;z-index:110000;right:calc(var(--safe-area-right,0px) + 12px);bottom:var(--safe-bottom-controls,24px);width:min(360px,calc(100vw - var(--safe-area-left,0px) - var(--safe-area-right,0px) - 24px))}
 /* Стили для корневого компонента приложения */
 
 /* 🟢 Стили для шторки обновления */

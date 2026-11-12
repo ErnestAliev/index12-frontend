@@ -10,6 +10,7 @@ import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskPanel from "./TeamTaskPanel.vue";
 import TeamChatAccess from "./TeamChatAccess.vue";
 import TeamChatMcp from './TeamChatMcp.vue';
+import TeamAppUpdate from './TeamAppUpdate.vue';
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
 const panelOpen = computed(
@@ -64,6 +65,8 @@ onBeforeUnmount(() => {
     />
     <TeamTaskPanel
       v-if="panelOpen"
+      v-show="chat.tab !== 'updates'"
+      :thread-active="chat.tab !== 'updates'"
       :mobile="mobile"
       :creating="chat.creatingTask"
       :parent-task-id="chat.creatingTaskParentId"
@@ -80,6 +83,7 @@ onBeforeUnmount(() => {
       <TeamChatAccess />
     </div>
     <TeamChatSearchBar ref="searchBar" />
+    <div v-if="chat.tab === 'updates'" class="team-scroll"><TeamAppUpdate /></div>
     <div v-if="chat.tab === 'mcp' && !chat.isOwner && !panelOpen" class="team-scroll"><TeamChatMcp /></div>
   </div>
 </template>

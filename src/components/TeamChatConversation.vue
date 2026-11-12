@@ -51,6 +51,10 @@ const props = defineProps({
 const emit = defineEmits(["new", "composer-focus", "composer-blur", "reading-scroll"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import { completeTeamDestination, pendingTeamDestination } from '@/utils/teamDestination';
+import {useAppUpdateStore} from '@/stores/appUpdateStore';
+import {draftKey,takeUpdateDraft} from '@/utils/updateDrafts';
+import TeamAppUpdate from './TeamAppUpdate.vue';
+const updates=useAppUpdateStore();
 const chat = useTeamChatStore(),
   tab = computed(() => (props.taskId ? "messages" : chat.tab)),
   message = ref(""),
@@ -417,6 +421,9 @@ watch(
   { immediate: true },
 );
 onMounted(async () => {
+  const restored=takeUpdateDraft(chat.me,props.taskId);
+  if(restored){message.value=restored.text;replyDraft.value=restored.reply || null;mentionedPeople.value=Array.isArray(restored.mentions)?restored.mentions:[];}
+  window.addEventListener('index12:prepare-update',prepareUpdate);
   syncCalendarDay();
   window.addEventListener("focus", readVisibilityChanged);
   window.addEventListener("blur", readVisibilityChanged);
@@ -442,6 +449,7 @@ onMounted(async () => {
   scheduleReads();
 });
 onBeforeUnmount(() => {
+  window.removeEventListener('index12:prepare-update',prepareUpdate);
   disposed = true;
   clearTimeout(originalReadTimer);
   window.removeEventListener("focus", readVisibilityChanged);
@@ -982,6 +990,10 @@ async function revealTarget() {
   });
   scheduleReads();
 }
+function prepareUpdate(event){
+  if(files.value.length || uploading.value || dictating.value){event.detail.block('Завершите запись или отправку вложений перед обновлением.');return;}
+  if(message.value || replyDraft.value)event.detail.save(draftKey(chat.me,props.taskId),{text:message.value,reply:replyDraft.value,mentions:mentionedPeople.value});
+}
 watch(
   [() => props.targetMessageId, historyReady],
   () => {
@@ -1260,6 +1272,7 @@ watch(
             </div>
           </article>
         </template>
+        <TeamAppUpdate v-if="updates.available && active" inline />
       </div>
       <div
         v-for="(entry, id) in chat.failedMessageDeletions"

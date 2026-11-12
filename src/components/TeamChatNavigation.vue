@@ -44,6 +44,7 @@ const sections = computed(() => [
   { value: "messages", label: "Чат" },
   { value: "tasks", label: "Задачи" },
   { value: 'files', label: 'Файлы' },
+  { value: 'updates', label: 'Обновления' },
   ...(chat.isOwner ? [{ value: "members", label: "Доступы и роли" }] : []),
   ...(!chat.isOwner ? [{ value: 'mcp', label: 'MCP-коннектор' }] : []),
 ]);

@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
+import {pendingTeamDestination,discardTeamDestination} from '@/utils/teamDestination';
 import axios from "axios";
 import { defaultTaskFilters } from '@/utils/teamTasks';
 const base =
@@ -136,6 +137,11 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     open = ref(false),
     busy = ref(false),
     unread = ref(0);
+  const sessionEpoch = ref(0);
+  watch(requestedTaskId, id => {
+    const target = pendingTeamDestination();
+    if (me.value?.status === 'active' && target && id !== target.taskId) discardTeamDestination();
+  });
   const taskFilters = ref(defaultTaskFilters()), taskOptions = ref({ projects: [], parties: [] }), taskOptionsLoading = ref(false), taskOptionsError = ref('');
   let optionsPending;
   function loadTaskOptions() {
@@ -178,6 +184,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     loaded = false;
   function stop() {
     ++generation;
+    ++sessionEpoch.value;
     ++ticket;
     clearInterval(timer);
     clearTimeout(debounce);
@@ -251,6 +258,26 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         },
       });
       if (g !== generation || t !== ticket) return;
+      // A state refresh is not proof of deletion. Resolve a missing open task before
+      // replacing the snapshot, so focus/keyboard/network refreshes cannot close it.
+      const selected = requestedTaskId.value;
+      if (selected && !(data.tasks || []).some(task => task._id === selected)) {
+        const previous = state.value.tasks?.find(task => task._id === selected);
+        try {
+          const detail = await teamApi.get('/tasks/' + selected);
+          if (g !== generation || t !== ticket) return;
+          if (detail.data.task && requestedTaskId.value === selected) data.tasks = [...(data.tasks || []),detail.data.task];
+        } catch (exception) {
+          if (g !== generation || t !== ticket) return;
+          if (exception.response?.status === 401) { stop(); error.value = teamError(exception); return; }
+          if ([403,404].includes(exception.response?.status)) {
+            if (requestedTaskId.value === selected) {
+              requestedTaskId.value = null; requestedTaskMessageId.value = null;
+              notice.value = 'Задача удалена или доступ к ней изменился';
+            }
+          } else if (previous && requestedTaskId.value === selected) data.tasks = [...(data.tasks || []),previous];
+        }
+      }
       acceptSnapshot(data);
     } catch (e) {
       if (g === generation && t === ticket) {
@@ -577,6 +604,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     schedule();
   }
   return {
+    sessionEpoch,
     requestedMessageId, fileLibraryOpen, requestedFileId, openFiles,
     me,
     taskFilters, taskOptions, taskOptionsLoading, taskOptionsError, loadTaskOptions,
