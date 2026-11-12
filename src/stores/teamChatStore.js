@@ -1,9 +1,12 @@
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
-import {pendingTeamDestination,discardTeamDestination} from '@/utils/teamDestination';
-import {teamDeviceKind} from '@/utils/teamDevice';
+import {
+  pendingTeamDestination,
+  discardTeamDestination,
+} from "@/utils/teamDestination";
+import { teamDeviceKind } from "@/utils/teamDevice";
 import axios from "axios";
-import { defaultTaskFilters } from '@/utils/teamTasks';
+import { defaultTaskFilters } from "@/utils/teamTasks";
 const base =
   import.meta.env.VITE_API_BASE_URL ||
   (typeof window === "undefined"
@@ -124,10 +127,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   const creatingTask = ref(false);
   const creatingTaskParentId = ref(null);
   const requestedTaskMessageId = ref(null);
-  const requestedMessageId = ref(null), fileLibraryOpen = ref(false), requestedFileId = ref(null);
+  const requestedMessageId = ref(null),
+    fileLibraryOpen = ref(false),
+    requestedFileId = ref(null);
   function openFiles(fileId = null) {
-    if (me.value?.status !== 'active') return;
-    requestedFileId.value = typeof fileId === 'string' ? fileId : null;
+    if (me.value?.status !== "active") return;
+    requestedFileId.value = typeof fileId === "string" ? fileId : null;
     fileLibraryOpen.value = true;
   }
   const tab = ref("messages"),
@@ -139,22 +144,37 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     busy = ref(false),
     unread = ref(0);
   const sessionEpoch = ref(0);
-  watch(requestedTaskId, id => {
+  watch(requestedTaskId, (id) => {
     const target = pendingTeamDestination();
-    if (me.value?.status === 'active' && target && id !== target.taskId) discardTeamDestination();
+    if (me.value?.status === "active" && target && id !== target.taskId)
+      discardTeamDestination();
   });
-  const taskFilters = ref(defaultTaskFilters()), taskOptions = ref({ projects: [], parties: [] }), taskOptionsLoading = ref(false), taskOptionsError = ref('');
+  const taskFilters = ref(defaultTaskFilters()),
+    taskOptions = ref({ projects: [], parties: [] }),
+    taskOptionsLoading = ref(false),
+    taskOptionsError = ref("");
   let optionsPending;
   function loadTaskOptions() {
-    if (optionsPending || me.value?.status !== 'active') return optionsPending;
+    if (optionsPending || me.value?.status !== "active") return optionsPending;
     const current = generation;
-    taskOptionsLoading.value = true; taskOptionsError.value = '';
+    taskOptionsLoading.value = true;
+    taskOptionsError.value = "";
     optionsPending = (async () => {
       try {
-        const { data } = await teamApi.get('/task-options');
-        if (current === generation) taskOptions.value = { projects: Array.isArray(data.projects) ? data.projects : [], parties: Array.isArray(data.parties) ? data.parties : [] };
-      } catch (error) { if (current === generation) taskOptionsError.value = teamError(error); }
-      finally { if (current === generation) { taskOptionsLoading.value = false; optionsPending = null; } }
+        const { data } = await teamApi.get("/task-options");
+        if (current === generation)
+          taskOptions.value = {
+            projects: Array.isArray(data.projects) ? data.projects : [],
+            parties: Array.isArray(data.parties) ? data.parties : [],
+          };
+      } catch (error) {
+        if (current === generation) taskOptionsError.value = teamError(error);
+      } finally {
+        if (current === generation) {
+          taskOptionsLoading.value = false;
+          optionsPending = null;
+        }
+      }
     })();
     return optionsPending;
   }
@@ -193,7 +213,11 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     source?.close();
     source = null;
     me.value = null;
-    taskFilters.value = defaultTaskFilters(); taskOptions.value = { projects: [], parties: [] }; taskOptionsLoading.value = false; taskOptionsError.value = ''; optionsPending = null;
+    taskFilters.value = defaultTaskFilters();
+    taskOptions.value = { projects: [], parties: [] };
+    taskOptionsLoading.value = false;
+    taskOptionsError.value = "";
+    optionsPending = null;
     state.value = { messages: [], tasks: [], members: [], people: [] };
     notice.value = "";
     olderMessageIds.value = [];
@@ -201,7 +225,9 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     tab.value = "messages";
     requestedTaskId.value = null;
     requestedTaskMessageId.value = null;
-    requestedMessageId.value = null; fileLibraryOpen.value = false; requestedFileId.value = null;
+    requestedMessageId.value = null;
+    fileLibraryOpen.value = false;
+    requestedFileId.value = null;
     taskNotifications.value = false;
     creatingTask.value = false;
     creatingTaskParentId.value = null;
@@ -227,8 +253,16 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   function acceptSnapshot(data) {
     if (loaded && data.identity?.owner) {
-      const joined = (data.members || []).filter(member => member.status === 'active' && state.value.members?.some(old => old._id === member._id && old.status === 'invited'));
-      if (joined.length) notice.value = joined.map(member => member.name).join(', ') + ' в системе';
+      const joined = (data.members || []).filter(
+        (member) =>
+          member.status === "active" &&
+          state.value.members?.some(
+            (old) => old._id === member._id && old.status === "invited",
+          ),
+      );
+      if (joined.length)
+        notice.value =
+          joined.map((member) => member.name).join(", ") + " в системе";
     }
     const newest = data.messages.at(-1)?._id || "";
     if (loaded && !open.value && newest !== lastMessage) unread.value++;
@@ -238,7 +272,18 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     state.value = data;
     const confirmed = new Set(data.messages.map((row) => row._id));
     outbox.value = outbox.value.filter((row) => !confirmed.has(row._id));
-    if (data.identity) me.value = data.identity;
+    if (data.identity) {
+      me.value = data.identity;
+      if (
+        me.value.permissions?.access?.chat === false &&
+        ["messages", "tasks", "files"].includes(tab.value)
+      ) {
+        tab.value = "mcp";
+        requestedTaskId.value = null;
+        creatingTask.value = false;
+        fileLibraryOpen.value = false;
+      }
+    }
     error.value = "";
   }
   async function refresh() {
@@ -262,21 +307,33 @@ export const useTeamChatStore = defineStore("teamChat", () => {
       // A state refresh is not proof of deletion. Resolve a missing open task before
       // replacing the snapshot, so focus/keyboard/network refreshes cannot close it.
       const selected = requestedTaskId.value;
-      if (selected && !(data.tasks || []).some(task => task._id === selected)) {
-        const previous = state.value.tasks?.find(task => task._id === selected);
+      if (
+        selected &&
+        !(data.tasks || []).some((task) => task._id === selected)
+      ) {
+        const previous = state.value.tasks?.find(
+          (task) => task._id === selected,
+        );
         try {
-          const detail = await teamApi.get('/tasks/' + selected);
+          const detail = await teamApi.get("/tasks/" + selected);
           if (g !== generation || t !== ticket) return;
-          if (detail.data.task && requestedTaskId.value === selected) data.tasks = [...(data.tasks || []),detail.data.task];
+          if (detail.data.task && requestedTaskId.value === selected)
+            data.tasks = [...(data.tasks || []), detail.data.task];
         } catch (exception) {
           if (g !== generation || t !== ticket) return;
-          if (exception.response?.status === 401) { stop(); error.value = teamError(exception); return; }
-          if ([403,404].includes(exception.response?.status)) {
+          if (exception.response?.status === 401) {
+            stop();
+            error.value = teamError(exception);
+            return;
+          }
+          if ([403, 404].includes(exception.response?.status)) {
             if (requestedTaskId.value === selected) {
-              requestedTaskId.value = null; requestedTaskMessageId.value = null;
-              notice.value = 'Задача удалена или доступ к ней изменился';
+              requestedTaskId.value = null;
+              requestedTaskMessageId.value = null;
+              notice.value = "Задача удалена или доступ к ней изменился";
             }
-          } else if (previous && requestedTaskId.value === selected) data.tasks = [...(data.tasks || []),previous];
+          } else if (previous && requestedTaskId.value === selected)
+            data.tasks = [...(data.tasks || []), previous];
         }
       }
       acceptSnapshot(data);
@@ -332,9 +389,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   async function checkPending() {
     const g = generation;
     try {
-      const { data } = await teamApi.get("/me", {params:{deviceKind:teamDeviceKind()}});
+      const { data } = await teamApi.get("/me", {
+        params: { deviceKind: teamDeviceKind() },
+      });
       if (g !== generation) return;
-      if (data.status === "active") await start(workspace, { chatOnly: chatOnlySession });
+      if (data.status === "active")
+        await start(workspace, { chatOnly: chatOnlySession });
       else me.value = data;
     } catch (e) {
       if (g === generation) {
@@ -356,9 +416,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     chatOnlySession = options.chatOnly === true || !id;
     const g = generation;
     if (id) teamApi.defaults.headers.common["x-index12-workspace-id"] = id;
-    if (chatOnlySession) teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
+    if (chatOnlySession)
+      teamApi.defaults.headers.common["x-index12-chat-only"] = "1";
     try {
-      const { data } = await teamApi.get("/me", {params:{deviceKind:teamDeviceKind()}});
+      const { data } = await teamApi.get("/me", {
+        params: { deviceKind: teamDeviceKind() },
+      });
       if (g !== generation) return;
       me.value = data;
       if (data.status === "active") resumeDeletions();
@@ -469,7 +532,9 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         }
       }
       if (data.deletedTaskId) {
-        const parentTaskId = state.value.tasks.find(t => t._id === data.deletedTaskId)?.parentTaskId;
+        const parentTaskId = state.value.tasks.find(
+          (t) => t._id === data.deletedTaskId,
+        )?.parentTaskId;
         state.value.tasks = state.value.tasks.filter(
           (t) => t._id !== data.deletedTaskId,
         );
@@ -492,8 +557,10 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         if (at >= 0) state.value.members[at] = data.member;
         else state.value.members.unshift(data.member);
         state.value.people ||= [];
-        const personIndex = state.value.people.findIndex(person => person._id === data.member._id);
-        if (['active', 'invited'].includes(data.member.status)) {
+        const personIndex = state.value.people.findIndex(
+          (person) => person._id === data.member._id,
+        );
+        if (["active", "invited"].includes(data.member.status)) {
           if (personIndex < 0) state.value.people.push(data.member);
           else state.value.people[personIndex] = data.member;
         } else if (personIndex >= 0) state.value.people.splice(personIndex, 1);
@@ -502,7 +569,9 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         state.value.members = state.value.members.filter(
           (m) => m._id !== data.deletedMemberId,
         );
-        state.value.people = (state.value.people || []).filter(person => person._id !== data.deletedMemberId);
+        state.value.people = (state.value.people || []).filter(
+          (person) => person._id !== data.deletedMemberId,
+        );
       }
       schedule();
       return data;
@@ -606,9 +675,16 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   }
   return {
     sessionEpoch,
-    requestedMessageId, fileLibraryOpen, requestedFileId, openFiles,
+    requestedMessageId,
+    fileLibraryOpen,
+    requestedFileId,
+    openFiles,
     me,
-    taskFilters, taskOptions, taskOptionsLoading, taskOptionsError, loadTaskOptions,
+    taskFilters,
+    taskOptions,
+    taskOptionsLoading,
+    taskOptionsError,
+    loadTaskOptions,
     messageDeletions,
     failedMessageDeletions,
     deleteMessage,

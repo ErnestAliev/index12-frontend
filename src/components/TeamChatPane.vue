@@ -9,8 +9,10 @@ import { useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatConversation from "./TeamChatConversation.vue";
 import TeamTaskPanel from "./TeamTaskPanel.vue";
 import TeamChatAccess from "./TeamChatAccess.vue";
-import TeamChatMcp from './TeamChatMcp.vue';
-import TeamAppUpdate from './TeamAppUpdate.vue';
+import TeamChatMcp from "./TeamChatMcp.vue";
+import TeamAppUpdate from "./TeamAppUpdate.vue";
+import { useAppUpdateStore } from "@/stores/appUpdateStore";
+const updates = useAppUpdateStore();
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
 const panelOpen = computed(
@@ -28,7 +30,8 @@ function startTask(parentTaskId = null) {
 function closePanel() {
   const parentTaskId = chat.creatingTask
     ? chat.creatingTaskParentId
-    : chat.state.tasks.find(t => t._id === chat.requestedTaskId)?.parentTaskId;
+    : chat.state.tasks.find((t) => t._id === chat.requestedTaskId)
+        ?.parentTaskId;
   chat.creatingTask = false;
   chat.creatingTaskParentId = null;
   chat.requestedTaskId = parentTaskId || null;
@@ -56,7 +59,10 @@ onBeforeUnmount(() => {
     style="position: relative"
   >
     <TeamChatConversation
-      v-if="chat.me?.status === 'active'"
+      v-if="
+        chat.me?.status === 'active' &&
+        chat.me?.permissions?.access?.chat !== false
+      "
       v-show="!panelOpen && chat.tab === 'messages'"
       :mobile="mobile"
       :active="!panelOpen && chat.tab === 'messages'"
@@ -83,8 +89,23 @@ onBeforeUnmount(() => {
       <TeamChatAccess />
     </div>
     <TeamChatSearchBar ref="searchBar" />
-    <div v-if="chat.tab === 'updates'" class="team-scroll"><TeamAppUpdate /></div>
-    <div v-if="chat.tab === 'mcp' && !chat.isOwner && !panelOpen" class="team-scroll"><TeamChatMcp /></div>
+    <div v-if="chat.tab === 'updates'" class="team-scroll">
+      <TeamAppUpdate />
+    </div>
+    <div
+      v-if="chat.tab === 'mcp' && !chat.isOwner && !panelOpen"
+      class="team-scroll"
+    >
+      <TeamChatMcp />
+    </div>
+    <TeamAppUpdate
+      v-if="
+        updates.available &&
+        ['members', 'mcp', 'files'].includes(chat.tab) &&
+        !panelOpen
+      "
+      inline
+    />
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>

@@ -234,7 +234,10 @@ onBeforeUnmount(() => {
             <UiIcon name="reply" />Ответить
           </button>
           <button
-            v-if="own && !['request','approval_request'].includes(message.kind)"
+            v-if="
+              (chat.isOwner || own) &&
+              !['request', 'approval_request'].includes(message.kind)
+            "
             type="button"
             class="menu-action"
             :disabled="busy"

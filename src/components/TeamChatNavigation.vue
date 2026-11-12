@@ -13,6 +13,8 @@ import { useAppearanceStore } from "@/stores/appearanceStore";
 import UiIcon from "./UiIcon.vue";
 import TeamTaskFilters from "./TeamTaskFilters.vue";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
+import { useAppUpdateStore } from "@/stores/appUpdateStore";
+const updates = useAppUpdateStore();
 const search = useTeamChatSearchStore();
 function openSearch() {
   open.value = false;
@@ -41,12 +43,19 @@ const chat = useTeamChatStore(),
   error = ref("");
 const menuId = useId();
 const sections = computed(() => [
-  { value: "messages", label: "Чат" },
-  { value: "tasks", label: "Задачи" },
-  { value: 'files', label: 'Файлы' },
-  { value: 'updates', label: 'Обновления' },
+  ...(chat.me?.permissions?.access?.chat === false
+    ? []
+    : [
+        { value: "messages", label: "Чат" },
+        { value: "tasks", label: "Задачи" },
+        { value: "files", label: "Файлы" },
+      ]),
+  {
+    value: "updates",
+    label: "Обновления",
+  },
   ...(chat.isOwner ? [{ value: "members", label: "Доступы и роли" }] : []),
-  ...(!chat.isOwner ? [{ value: 'mcp', label: 'MCP-коннектор' }] : []),
+  ...(!chat.isOwner ? [{ value: "mcp", label: "MCP-коннектор" }] : []),
 ]);
 const label = computed(
   () =>
@@ -57,8 +66,13 @@ const label = computed(
 let observer;
 function measure() {
   if (root.value) {
-    const box = root.value.getBoundingClientRect(), header = root.value.closest('.codex-window-header')?.getBoundingClientRect();
-    menuOffset.value = header ? header.left + header.width / 2 - (box.left + box.width / 2) + 'px' : null;
+    const box = root.value.getBoundingClientRect(),
+      header = root.value
+        .closest(".codex-window-header")
+        ?.getBoundingClientRect();
+    menuOffset.value = header
+      ? header.left + header.width / 2 - (box.left + box.width / 2) + "px"
+      : null;
   }
   if (!open.value || !trigger.value) return;
   const viewport = window.visualViewport;
@@ -91,12 +105,19 @@ function toggle() {
   else open.value = true;
 }
 function select(value) {
-  if (value === 'files') { chat.openFiles(); close(); return; }
+  if (value === "files") {
+    chat.openFiles();
+    close();
+    return;
+  }
   if (search.open) search.close(false);
   if (value === "members" && !chat.isOwner) return;
-  if (value === 'mcp') {
-    chat.requestedTaskId = null; chat.requestedTaskMessageId = null;
-    chat.creatingTask = false; chat.creatingTaskParentId = null; chat.taskNotifications = false;
+  if (value === "mcp") {
+    chat.requestedTaskId = null;
+    chat.requestedTaskMessageId = null;
+    chat.creatingTask = false;
+    chat.creatingTaskParentId = null;
+    chat.taskNotifications = false;
   }
   emit("update:modelValue", value);
   close();
@@ -227,6 +248,7 @@ onBeforeUnmount(() => {
             name="check"
             :class="{ 'team-navigation-unchecked': modelValue !== s.value }"
           />{{ s.label }}
+          <span v-if="s.value === 'updates' && updates.available" class="team-update-dot" aria-hidden="true" />
         </button>
         <button type="button" @click="openSearch">
           <UiIcon name="search" />Поиск
@@ -253,10 +275,23 @@ onBeforeUnmount(() => {
         <p v-if="notificationsError" role="alert">{{ notificationsError }}</p>
       </section>
     </div>
-    <div class="team-navigation-actions" @click.capture="close(false)"><TeamTaskFilters v-if="chat.me?.status === 'active' && modelValue === 'messages' && !chat.creatingTask && !chat.requestedTaskId && !chat.taskNotifications && !search.open" label="Фильтры чата" /></div>
+    <div class="team-navigation-actions" @click.capture="close(false)">
+      <TeamTaskFilters
+        v-if="
+          chat.me?.status === 'active' &&
+          modelValue === 'messages' &&
+          !chat.creatingTask &&
+          !chat.requestedTaskId &&
+          !chat.taskNotifications &&
+          !search.open
+        "
+        label="Фильтры чата"
+      />
+    </div>
   </nav>
 </template>
 <style scoped>
+.team-update-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--codex-pane-accent); }
 .team-chat-navigation {
   position: relative;
   display: grid;
@@ -268,7 +303,13 @@ onBeforeUnmount(() => {
   min-height: 44px;
   color: var(--codex-pane-text);
 }
-.team-navigation-actions { grid-column: 3; justify-self: center; display: flex; align-items: center; min-width: 0; }
+.team-navigation-actions {
+  grid-column: 3;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 .team-navigation-identity {
   min-width: 0;
   overflow: hidden;
@@ -276,7 +317,7 @@ onBeforeUnmount(() => {
 .team-navigation-picker {
   position: relative;
   z-index: 90;
-  transform: translateX(var(--chat-menu-offset,0px));
+  transform: translateX(var(--chat-menu-offset, 0px));
   min-width: 0;
 }
 .team-chat-navigation .team-navigation-trigger {
