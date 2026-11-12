@@ -22,6 +22,30 @@ const rightsFor = (role) => ({
   ...accessDefaults[role],
   ...chat.me?.roleAccess?.[role],
 });
+const accessPreview = ref({});
+const quickAccess = [
+  { key: "system", label: "Финансы", icon: "wallet" },
+  { key: "onec", label: "1С" },
+  { key: "chat", label: "Чат", icon: "chat" },
+];
+function memberRights(member) {
+  if (member.owner) return { chat: true, system: true, onec: true };
+  return {
+    ...rightsFor(member.role),
+    ...member.access,
+    ...accessPreview.value[member._id],
+  };
+}
+async function toggleAccess(member, key) {
+  if (member.owner || pending.value.has(member._id)) return;
+  const access = { ...member.access, [key]: !memberRights(member)[key] };
+  accessPreview.value[member._id] = access;
+  try {
+    await change(member, { access });
+  } finally {
+    delete accessPreview.value[member._id];
+  }
+}
 function openRoles() {
   roleRights.value = Object.fromEntries(
     Object.keys(accessDefaults).map((role) => [role, rightsFor(role)]),
@@ -402,6 +426,31 @@ async function remove(member) {
           :disabled="pending.has(member._id)"
           @change="change(member, { role: $event.target.value }, $event)"
         />
+        <div
+          class="access-rights"
+          role="group"
+          :aria-label="`Права ${member.name}`"
+          :aria-busy="pending.has(member._id)"
+        >
+          <button
+            v-for="item in quickAccess"
+            :key="item.key"
+            type="button"
+            class="access-right"
+            :aria-label="`${item.label}: ${member.name}`"
+            :aria-pressed="memberRights(member)[item.key] === true"
+            :title="
+              member.owner
+                ? 'Полный доступ владельца'
+                : `${memberRights(member)[item.key] ? 'Отключить' : 'Разрешить'}: ${item.label}`
+            "
+            :disabled="member.owner || pending.has(member._id)"
+            @click="toggleAccess(member, item.key)"
+          >
+            <UiIcon v-if="item.icon" :name="item.icon" />
+            <span v-else class="access-onec">1С</span>
+          </button>
+        </div>
         <button
           v-if="!member.owner"
           type="button"
@@ -703,8 +752,11 @@ async function remove(member) {
   text-align: left;
 }
 .team-access {
+  box-sizing: border-box;
   min-width: 0;
+  padding-inline: var(--safe-area-left, 0px) var(--safe-area-right, 0px);
   font-size: 13px;
+  container-type: inline-size;
 }
 .access-toolbar {
   display: flex;
@@ -757,6 +809,74 @@ async function remove(member) {
   gap: 2px;
   min-height: 48px;
   border-bottom: 1px solid var(--codex-pane-border);
+}
+.access-rights {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+.team-access .access-right {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-pane-muted);
+  cursor: pointer;
+}
+.access-right::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--codex-pane-border);
+  border-radius: 6px;
+}
+.team-access .access-right[aria-pressed="true"] {
+  color: var(--codex-pane-accent);
+}
+.access-right[aria-pressed="true"]::before {
+  background: var(--codex-pane-surface);
+  border-color: currentColor;
+}
+.access-right :deep(.ui-icon),
+.access-onec {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+.access-onec {
+  font: 600 12px/16px sans-serif;
+}
+.access-right:focus {
+  outline: none;
+}
+.access-right:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
+  outline-offset: 1px;
+}
+.access-right:disabled {
+  cursor: default;
+}
+.access-rights[aria-busy="true"] {
+  opacity: 0.65;
+}
+@container (min-width: 540px) {
+  .access-row {
+    grid-template-columns: minmax(0, 1fr) 104px 136px 44px 44px 44px;
+  }
+  .access-rights {
+    grid-column: auto;
+    grid-row: auto;
+    padding-bottom: 0;
+  }
 }
 .access-name {
   display: flex;

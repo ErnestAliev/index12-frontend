@@ -90,6 +90,93 @@ try {
           .onec,
         true,
       );
+      const rights = page.getByRole("group", {
+        name: "Права Сотрудник",
+        exact: true,
+      });
+      const finance = rights.getByRole("button", {
+        name: "Финансы: Сотрудник",
+        exact: true,
+      });
+      const onec = rights.getByRole("button", {
+        name: "1С: Сотрудник",
+        exact: true,
+      });
+      assert.equal(await finance.getAttribute("aria-pressed"), "false");
+      assert.equal(
+        await rights
+          .getByRole("button", { name: "Чат: Сотрудник", exact: true })
+          .getAttribute("aria-pressed"),
+        "true",
+      );
+      await page.evaluate(() => (window.accessHold = true));
+      await activate(finance);
+      assert.equal(
+        await finance.getAttribute("aria-pressed"),
+        "true",
+        "selection is immediate while saving",
+      );
+      assert.equal(await finance.isDisabled(), true);
+      await page.evaluate(() => {
+        window.accessHold = false;
+        window.releaseAccess();
+      });
+      await rights
+        .locator('[aria-label="Финансы: Сотрудник"]:enabled')
+        .waitFor();
+      assert.deepEqual(
+        (await page.evaluate(() => accessWrites.at(-1))).body.access,
+        { system: true },
+      );
+      assert.equal(
+        await page
+          .getByRole("button", {
+            name: "Финансы: Другой сотрудник",
+            exact: true,
+          })
+          .getAttribute("aria-pressed"),
+        "false",
+      );
+      await page.evaluate(() => (window.accessReject = true));
+      await activate(onec);
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "Не удалось сохранить доступ" })
+        .waitFor();
+      assert.equal(
+        await onec.getAttribute("aria-pressed"),
+        "false",
+        "failed saves restore confirmed access",
+      );
+      assert.equal(await finance.getAttribute("aria-pressed"), "true");
+      await page.evaluate(() => (window.accessReject = false));
+      await activate(onec);
+      await rights.locator('[aria-label="1С: Сотрудник"]:enabled').waitFor();
+      assert.deepEqual(
+        (await page.evaluate(() => accessWrites.at(-1))).body.access,
+        { system: true, onec: true },
+      );
+      const chips = await rights
+        .getByRole("button")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.getBoundingClientRect().toJSON()),
+        );
+      assert.ok(
+        chips.every(
+          (r) =>
+            r.width >= 44 &&
+            r.height >= 44 &&
+            r.x >= 16 &&
+            r.right <= width - 16,
+        ),
+        JSON.stringify(chips),
+      );
+      await activate(finance);
+      await rights
+        .locator('[aria-label="Финансы: Сотрудник"]:enabled')
+        .waitFor();
+      await activate(onec);
+      await rights.locator('[aria-label="1С: Сотрудник"]:enabled').waitFor();
       await activate(
         page.getByRole("button", {
           name: "Редактировать Сотрудник",
@@ -101,6 +188,12 @@ try {
         exact: true,
       });
       await profile.waitFor();
+      await activate(
+        profile.getByRole("checkbox", {
+          name: "Собственные права",
+          exact: true,
+        }),
+      );
       assert.equal(
         await profile.getByRole("checkbox", { name: /Финансы/ }).isDisabled(),
         true,

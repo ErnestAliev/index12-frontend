@@ -1,6 +1,7 @@
 <script setup>
 defineProps({ name: { type: String, required: true } });
 const paths = {
+  wallet: 'M20 8V5H5a2 2 0 0 1 0-4h14v7M3 3v16a2 2 0 0 0 2 2h15V8H5a2 2 0 0 1-2-2M20 12h-6v5h6M16 14.5h.01',
   play: 'm9 5 11 7-11 7V5Z',
   people: 'M15 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 21v-2a4 4 0 0 0-3-3.87M15 3.13a4 4 0 0 1 0 7.75',
   'folder-open': 'M3 8V4h6l2 3h10v4M3 20h16l3-9H6l-3 9ZM3 8v12',

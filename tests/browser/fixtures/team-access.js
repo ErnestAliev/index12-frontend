@@ -10,6 +10,11 @@ const member = {
   status: "active",
   version: 0,
 };
+const other = {
+  ...member,
+  _id: "99999999-9999-4999-8999-999999999999",
+  name: "Другой сотрудник",
+};
 chat.me = {
   ...chat.me,
   owner: true,
@@ -24,13 +29,24 @@ chat.me = {
     director: defaults(),
   },
 };
-chat.state.members = [member];
+chat.state.members = [member, other];
 chat.tab = "members";
 window.accessWrites = [];
 teamApi.defaults.adapter = async (config) => {
   if (config.method === "patch") {
     const body = JSON.parse(config.data);
     window.accessWrites.push({ path: config.url, body });
+    if (window.accessHold)
+      await new Promise((resolve) => {
+        window.releaseAccess = resolve;
+      });
+    if (window.accessReject)
+      throw Object.assign(Error("offline"), {
+        response: {
+          status: 503,
+          data: { message: "Не удалось сохранить доступ" },
+        },
+      });
     if (config.url === "/settings") {
       chat.me.roleAccess = body.roleAccess;
       return { status: 200, data: { identity: { ...chat.me } } };
@@ -40,6 +56,6 @@ teamApi.defaults.adapter = async (config) => {
     return { status: 200, data: { member: { ...member } } };
   }
   const result = await base(config);
-  if (config.url === "/state") result.data.members = [member];
+  if (config.url === "/state") result.data.members = [member, other];
   return result;
 };
