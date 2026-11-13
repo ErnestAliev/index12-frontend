@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onBeforeUnmount } from "vue";
+import { computed, ref, onBeforeUnmount, nextTick } from "vue";
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatDialog from "./TeamChatDialog.vue";
 import TeamChatRoleSelect from "./TeamChatRoleSelect.vue";
@@ -23,6 +23,24 @@ const rightsFor = (role) => ({
   ...chat.me?.roleAccess?.[role],
 });
 const accessPreview = ref({});
+const accessMemberId = ref(null);
+const accessMember = computed(() =>
+  members.value.find((member) => member._id === accessMemberId.value),
+);
+const rowRoles = computed(() => ({
+  ...chat.me?.roles,
+  director: "Руководитель",
+}));
+function openAccess(member) {
+  accessMemberId.value = member._id;
+  error.value = "";
+}
+async function accessAction(action) {
+  const member = accessMember.value;
+  accessMemberId.value = null;
+  await nextTick();
+  if (member) await action(member);
+}
 const quickAccess = [
   { key: "system", label: "Финансы", icon: "wallet" },
   { key: "onec", label: "1С" },
@@ -395,7 +413,12 @@ async function remove(member) {
           Права ролей
         </button>
       </div>
-      <p v-if="error && !formOpen && !editingMember && !rolesOpen" role="alert">
+      <p
+        v-if="
+          error && !formOpen && !editingMember && !rolesOpen && !accessMember
+        "
+        role="alert"
+      >
         {{ error }}
       </p>
       <p v-if="chat.notice" role="status">{{ chat.notice }}</p>
@@ -421,11 +444,21 @@ async function remove(member) {
         </button>
         <TeamChatRoleSelect
           :value="member.role"
-          :roles="chat.me.roles"
+          :roles="rowRoles"
           :label="`Роль ${member.name}`"
           :disabled="pending.has(member._id)"
           @change="change(member, { role: $event.target.value }, $event)"
         />
+        <button
+          type="button"
+          class="access-row-menu"
+          :aria-label="`Доступы и действия: ${member.name}`"
+          title="Доступы и действия"
+          :disabled="pending.has(member._id)"
+          @click="openAccess(member)"
+        >
+          <UiIcon name="more" />
+        </button>
         <div
           class="access-rights"
           role="group"
@@ -454,6 +487,7 @@ async function remove(member) {
         <button
           v-if="!member.owner"
           type="button"
+          class="access-row-action"
           :disabled="pending.has(member._id)"
           :aria-label="`Пароль ${member.name}`"
           title="Посмотреть или изменить пароль"
@@ -461,10 +495,11 @@ async function remove(member) {
         >
           <UiIcon name="key" />
         </button>
-        <span v-else aria-hidden="true" />
+        <span v-else class="access-row-action" aria-hidden="true" />
         <button
           v-if="member.owner"
           type="button"
+          class="access-row-action"
           :disabled="pending.has(member._id)"
           aria-label="Редактировать свой профиль"
           title="Редактировать"
@@ -475,6 +510,7 @@ async function remove(member) {
         <button
           v-else-if="member.status === 'pending'"
           type="button"
+          class="access-row-action"
           :disabled="pending.has(member._id)"
           :aria-label="`Открыть доступ ${member.name}`"
           title="Открыть доступ"
@@ -485,6 +521,7 @@ async function remove(member) {
         <button
           v-else
           type="button"
+          class="access-row-action"
           :disabled="pending.has(member._id)"
           :aria-label="`${['revoked', 'rejected'].includes(member.status) ? 'Вернуть доступ' : 'Заблокировать'} ${member.name}`"
           :title="
@@ -507,7 +544,7 @@ async function remove(member) {
         <button
           v-if="!member.owner"
           type="button"
-          class="access-danger"
+          class="access-danger access-row-action"
           :disabled="pending.has(member._id)"
           :aria-label="`Удалить сотрудника ${member.name}`"
           title="Удалить"
@@ -517,6 +554,108 @@ async function remove(member) {
         </button>
       </div>
     </template>
+    <TeamChatDialog
+      v-if="accessMember"
+      :title="`Доступы: ${accessMember.name}`"
+      :busy="pending.has(accessMember._id)"
+      @close="accessMemberId = null"
+    >
+      <div class="access-menu-body">
+        <p v-if="accessMember.owner">Полный доступ владельца</p>
+        <div
+          v-else
+          class="access-menu-rights"
+          role="group"
+          :aria-label="`Права ${accessMember.name}`"
+          :aria-busy="pending.has(accessMember._id)"
+        >
+          <button
+            v-for="item in quickAccess"
+            :key="item.key"
+            type="button"
+            class="access-menu-item"
+            :aria-label="`${item.label}: ${accessMember.name}`"
+            :aria-pressed="memberRights(accessMember)[item.key] === true"
+            :disabled="pending.has(accessMember._id)"
+            @click="toggleAccess(accessMember, item.key)"
+          >
+            <UiIcon v-if="item.icon" :name="item.icon" /><span
+              v-else
+              class="access-onec"
+              >1С</span
+            >
+            <span>{{ item.key === "onec" ? "1С · чтение" : item.label }}</span>
+            <UiIcon
+              v-if="memberRights(accessMember)[item.key]"
+              class="access-menu-check"
+              name="check"
+            />
+          </button>
+        </div>
+        <hr />
+        <button
+          type="button"
+          class="access-menu-item"
+          :disabled="pending.has(accessMember._id)"
+          @click="accessAction(openProfile)"
+        >
+          <UiIcon name="edit" />Профиль
+        </button>
+        <template v-if="!accessMember.owner">
+          <button
+            type="button"
+            class="access-menu-item"
+            :disabled="pending.has(accessMember._id)"
+            @click="accessAction(openCredentials)"
+          >
+            <UiIcon name="key" />Пароль
+          </button>
+          <button
+            v-if="accessMember.status === 'pending'"
+            type="button"
+            class="access-menu-item"
+            :disabled="pending.has(accessMember._id)"
+            @click="accessAction(allow)"
+          >
+            <UiIcon name="check" />Открыть доступ
+          </button>
+          <button
+            v-else
+            type="button"
+            class="access-menu-item"
+            :disabled="pending.has(accessMember._id)"
+            @click="
+              accessAction((member) =>
+                change(member, {
+                  blocked: !['revoked', 'rejected'].includes(member.status),
+                }),
+              )
+            "
+          >
+            <UiIcon
+              :name="
+                ['revoked', 'rejected'].includes(accessMember.status)
+                  ? 'undo'
+                  : 'ban'
+              "
+            />{{
+              ["revoked", "rejected"].includes(accessMember.status)
+                ? "Вернуть доступ"
+                : "Заблокировать"
+            }}
+          </button>
+          <button
+            type="button"
+            class="access-menu-item access-danger"
+            :disabled="pending.has(accessMember._id)"
+            @click="accessAction(remove)"
+          >
+            <UiIcon name="trash" />Удалить сотрудника
+          </button>
+        </template>
+        <p v-if="error" role="alert">{{ error }}</p>
+      </div>
+    </TeamChatDialog>
     <TeamChatDialog
       v-if="rolesOpen"
       title="Права ролей"
@@ -804,18 +943,25 @@ async function remove(member) {
 }
 .access-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(84px, 104px) 44px 44px 44px;
+  grid-template-columns: minmax(0, 1fr) 132px 44px;
   align-items: center;
   gap: 2px;
   min-height: 48px;
   border-bottom: 1px solid var(--codex-pane-border);
 }
 .access-rights {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  display: flex;
+  display: none;
   gap: 2px;
-  padding-bottom: 4px;
+}
+.team-access .access-row > .access-row-action {
+  display: none;
+}
+.team-access .access-row > .access-row-menu {
+  grid-column: 3;
+}
+.access-row > :deep(.team-role-select) {
+  width: 132px;
+  max-width: 132px;
 }
 .team-access .access-right {
   position: relative;
@@ -868,15 +1014,75 @@ async function remove(member) {
 .access-rights[aria-busy="true"] {
   opacity: 0.65;
 }
-@container (min-width: 540px) {
+@container (min-width: 620px) {
   .access-row {
-    grid-template-columns: minmax(0, 1fr) 104px 136px 44px 44px 44px;
+    grid-template-columns: minmax(0, 1fr) 132px 136px 44px 44px 44px;
+  }
+  .team-access .access-row > .access-row-action {
+    display: grid;
+  }
+  .team-access .access-row > .access-row-menu {
+    display: none;
   }
   .access-rights {
-    grid-column: auto;
-    grid-row: auto;
-    padding-bottom: 0;
+    display: flex;
   }
+}
+.access-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px max(16px, var(--safe-bottom-controls, 12px));
+  overflow-y: auto;
+  font-size: 13px;
+}
+.access-menu-body p {
+  margin: 8px 0;
+}
+.access-menu-body hr {
+  width: 100%;
+  margin: 6px 0;
+  border: 0;
+  border-top: 1px solid var(--codex-pane-border);
+}
+.access-menu-rights {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.team-access .access-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-pane-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.access-menu-item[aria-pressed="true"] {
+  color: var(--codex-pane-accent);
+}
+.access-menu-check {
+  margin-left: auto;
+}
+.access-menu-item:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.access-menu-body [role="alert"] {
+  color: var(--codex-pane-danger);
+}
+.access-menu-item:focus {
+  outline: none;
+}
+.access-menu-item:focus-visible {
+  outline: 2px solid var(--codex-pane-focus);
 }
 .access-name {
   display: flex;
@@ -917,7 +1123,7 @@ async function remove(member) {
 }
 .access-row :deep(.team-role-select) {
   width: 100%;
-  max-width: 104px;
+  max-width: 132px;
 }
 .access-row :deep(select.team-role-input) {
   font-size: 12px;

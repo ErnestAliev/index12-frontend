@@ -61,6 +61,32 @@ try {
       assert.ok(
         toolbar.background.every((color) => color === "rgba(0, 0, 0, 0)"),
       );
+      const rows = await page.locator(".access-row").evaluateAll((rows) =>
+        rows.map((row) => {
+          const bounds = row.getBoundingClientRect();
+          const controls = [...row.children]
+            .filter((el) => getComputedStyle(el).display !== "none")
+            .map((el) => el.getBoundingClientRect());
+          return {
+            row: bounds.toJSON(),
+            controls: controls.map((rect) => rect.toJSON()),
+          };
+        }),
+      );
+      assert.ok(
+        rows.every(
+          ({ row, controls }) =>
+            row.height <= 52 &&
+            controls.every(
+              (rect) =>
+                rect.top >= row.top &&
+                rect.bottom <= row.bottom &&
+                rect.left >= 16 &&
+                rect.right <= width - 16,
+            ),
+        ),
+        JSON.stringify(rows),
+      );
       await activate(
         page.getByRole("button", { name: "Права ролей", exact: true }),
       );
@@ -90,6 +116,29 @@ try {
           .onec,
         true,
       );
+      const rowMenu = page.getByRole("button", {
+        name: "Доступы и действия: Сотрудник",
+        exact: true,
+      });
+      const compact = await rowMenu.isVisible();
+      let accessDialog;
+      if (compact) {
+        await activate(rowMenu);
+        accessDialog = page.getByRole("dialog", {
+          name: "Доступы: Сотрудник",
+          exact: true,
+        });
+        await accessDialog.waitFor();
+        await accessDialog
+          .getByRole("button", { name: "Пароль", exact: true })
+          .waitFor();
+        await accessDialog
+          .getByRole("button", { name: "Заблокировать", exact: true })
+          .waitFor();
+        await accessDialog
+          .getByRole("button", { name: "Удалить сотрудника", exact: true })
+          .waitFor();
+      }
       const rights = page.getByRole("group", {
         name: "Права Сотрудник",
         exact: true,
@@ -129,13 +178,13 @@ try {
         { system: true },
       );
       assert.equal(
-        await page
-          .getByRole("button", {
-            name: "Финансы: Другой сотрудник",
-            exact: true,
-          })
-          .getAttribute("aria-pressed"),
-        "false",
+        await page.evaluate(
+          () =>
+            searchChat.state.members.find(
+              (member) => member.name === "Другой сотрудник",
+            ).access?.system || false,
+        ),
+        false,
       );
       await page.evaluate(() => (window.accessReject = true));
       await activate(onec);
@@ -177,12 +226,17 @@ try {
         .waitFor();
       await activate(onec);
       await rights.locator('[aria-label="1С: Сотрудник"]:enabled').waitFor();
-      await activate(
-        page.getByRole("button", {
-          name: "Редактировать Сотрудник",
-          exact: true,
-        }),
-      );
+      if (compact)
+        await activate(
+          accessDialog.getByRole("button", { name: "Профиль", exact: true }),
+        );
+      else
+        await activate(
+          page.getByRole("button", {
+            name: "Редактировать Сотрудник",
+            exact: true,
+          }),
+        );
       const profile = page.getByRole("dialog", {
         name: "Профиль сотрудника",
         exact: true,
