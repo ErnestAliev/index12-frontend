@@ -559,7 +559,9 @@
   user-select: none;
 }
 .team-message-content {
-  user-select: none;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 .team-bubble:focus-visible {
   outline: 2px solid var(--codex-pane-focus);
@@ -675,7 +677,7 @@
 
 .team-chat-conversation{--chat-composer-inline-start:max(12px,var(--safe-area-left,0px));--chat-composer-inline-end:max(12px,var(--safe-area-right,0px))}
 
-.team-bubble,.team-bubble :deep(*){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.team-bubble{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 
 .team-upload-state {
   display: block;

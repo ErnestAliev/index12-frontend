@@ -5,7 +5,7 @@ import UiIcon from "./UiIcon.vue";
 import { useOpeningGestureGuard } from "@/composables/useOpeningGestureGuard";
 const props = defineProps({ message: Object, suppressOpeningTouch: Boolean });
 const openingGesture = useOpeningGestureGuard(props.suppressOpeningTouch);
-const emit = defineEmits(["close", "deleted", "reply"]);
+const emit = defineEmits(["close", "deleted", "reply", "quote"]);
 const chat = useTeamChatStore(),
   panel = ref(null),
   mode = ref("actions"),
@@ -233,6 +233,7 @@ onBeforeUnmount(() => {
           >
             <UiIcon name="reply" />Ответить
           </button>
+          <button v-if="message.text" type="button" class="menu-action" :disabled="busy" @click="emit('quote', message); emit('close')"><UiIcon name="reply" />Цитировать</button>
           <button
             v-if="
               (chat.isOwner || own) &&

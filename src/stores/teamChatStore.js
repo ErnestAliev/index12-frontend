@@ -597,6 +597,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         fileIds: row.attachments.map((file) => file.fileId),
         ...(row.mentionIds?.length ? { mentionIds: row.mentionIds } : {}),
         ...(row.replyTo ? { replyToId: row.replyTo.messageId } : {}),
+        ...(row.replyTo?.fragment ? { replyExcerpt: row.replyTo.fragment } : {}),
       });
       if (g !== generation) return;
       ++ticket;

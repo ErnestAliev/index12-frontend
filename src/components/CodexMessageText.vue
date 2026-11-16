@@ -3,6 +3,7 @@ import { computed } from "vue";
 import LinkedText from './LinkedText.vue';
 import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
+import { parseFragmentComment } from '@/utils/fragmentComment';
 const props = defineProps({
   text: { type: String, default: "" },
   plain: Boolean,
@@ -30,16 +31,18 @@ const html = computed(() => {
   }
   return container.innerHTML;
 });
+const fragment = computed(() => props.plain ? parseFragmentComment(props.text) : null);
 </script>
 
 <template>
-  <div v-if="plain" class="codex-text codex-plain"><LinkedText :text="text" :highlight="highlight" /></div>
+  <div v-if="plain" class="codex-text codex-plain"><blockquote v-if="fragment" class="codex-fragment-quote">{{ fragment.excerpt }}</blockquote><LinkedText :text="fragment ? fragment.comment : text" :highlight="highlight" /></div>
   <div v-else class="codex-text codex-markdown" v-html="html" />
 </template>
 
 <style scoped>
 .codex-text { min-width: 0; color: var(--codex-pane-text); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .codex-plain { white-space: pre-wrap; }
+.codex-fragment-quote { margin: 0 0 8px; padding: 2px 10px; border-left: 2px solid var(--codex-pane-accent); color: var(--codex-pane-muted); font-size: 12px; max-height: 160px; overflow: auto; }
 .codex-markdown :deep(p) { margin: 0 0 12px; }
 .codex-markdown :deep(> :last-child) { margin-bottom: 0; }
 .codex-markdown :deep(strong) { font-weight: 650; color: var(--codex-pane-text); }

@@ -16,6 +16,8 @@ import { useFileDrop } from '@/composables/useFileDrop';
 import { useChatTransfer } from '@/composables/useChatTransfer';
 import { taskReferenceText } from '@/utils/chatTransfer';
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
+import MessageFragment from './MessageFragment.vue';
+import { formatFragmentComment } from '@/utils/fragmentComment';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -165,15 +167,22 @@ async function newChat() {
   try { await createChat(session); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
-async function send(forced, existing = null) {
+function commentFragment(payload) {
+  if (busy.value || voiceActive.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
+  const text = formatFragmentComment(payload.excerpt, payload.text);
+  if (text.length > 16000) throw Error('Сократите комментарий или выделенный фрагмент');
+  void send(text, null, true);
+  return true;
+}
+async function send(forced, existing = null, detached = false) {
   const draft = (typeof forced === 'string' ? forced : input.value).trim();
-  const text = existing ? existing.text : draft + taskReferenceText(taskRefs.value, { readTasks: !draft });
+  const text = existing ? existing.text : detached ? draft : draft + taskReferenceText(taskRefs.value, { readTasks: !draft });
   if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || transfer.pending.value || voiceActive.value) return;
   if (text.length > 16000) { error.value = 'Сообщение со ссылками должно быть не длиннее 16 000 символов.'; return; }
   const session = controller;
   delivery.setScope(scopeKey.value);
-  const attempt = existing || delivery.add({ id: 'local:'+crypto.randomUUID(), requestId:crypto.randomUUID(), role:'user', text, chatId:selectedId.value, attachments:[...attachments.value], sourceFiles:[...attachments.value], knownIds:messages.value.filter(row=>row.role==='user').map(row=>row.id), delivery:'sending', sendError:'', accepted:false });
-  if (!existing) {
+  const attempt = existing || delivery.add({ id: 'local:'+crypto.randomUUID(), requestId:crypto.randomUUID(), role:'user', text, chatId:selectedId.value, attachments:detached ? [] : [...attachments.value], sourceFiles:detached ? [] : [...attachments.value], knownIds:messages.value.filter(row=>row.role==='user').map(row=>row.id), delivery:'sending', sendError:'', accepted:false });
+  if (!existing && !detached) {
     if (typeof forced !== 'string' || input.value.trim() === draft) input.value = '';
     attachments.value = [];
     taskRefs.value = [];
@@ -317,7 +326,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
       <article v-for="message in visibleMessages" :key="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
-          <CodexMessageText v-if="message.text" :text="message.text" :plain="message.role === 'user'" />
+          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :submit="commentFragment"><CodexMessageText :text="message.text" :plain="message.role === 'user'" /></MessageFragment>
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
             <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />

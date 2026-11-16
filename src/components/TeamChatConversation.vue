@@ -8,6 +8,9 @@ import {
   onBeforeUnmount,
 } from "vue";
 import UiIcon from "./UiIcon.vue";
+import MessageFragment from './MessageFragment.vue';
+import { selectMessageText } from '@/composables/useMessageSelection';
+const quoteModeId = ref(null);
 import { canSeeChatMessage } from "@/utils/teamMessageVisibility";
 import TeamSearchText from "./TeamSearchText.vue";
 import { filterTasks, hasTaskFilters } from '@/utils/teamTasks';
@@ -147,6 +150,7 @@ function cancelHold() {
   holdTimer = null;
 }
 function openMessageMenu(row, touchHold = false) {
+  quoteModeId.value = null;
   if (["task", "task-files"].includes(row.kind)) return;
   window.getSelection()?.removeAllRanges();
   cancelHold();
@@ -156,6 +160,7 @@ function openMessageMenu(row, touchHold = false) {
   selectedMessageId.value = row._id;
 }
 function holdMessage(event, row) {
+  if (event.target.closest('[data-fragment-editor]') || (event.target.closest('[data-fragment-source]') && (event.pointerType !== 'touch' || quoteModeId.value === row._id))) { cancelHold(); resetSwipe(); return; }
   if(row.kind==='approval_request'&&event.target.closest('button'))return;
   if (["task", "task-files"].includes(row.kind)) return;
   if (
@@ -238,6 +243,20 @@ async function startReply(row) {
   await nextTick();
   composeArea.value?.querySelector("textarea")?.focus({ preventScroll: true });
 }
+function commentFragment(row, payload) {
+  if (row._delivery || displayQuote({ messageId: row._id }).deleted) throw Error('Исходное сообщение недоступно');
+  const id = chat.send(payload.text, [], { taskId: props.taskId, replyTo: { messageId: row._id, authorId: row.authorId, authorName: row.authorName, text: payload.excerpt, contentVersion: payload.contentVersion, fragment: { text: payload.excerpt, contentVersion: payload.contentVersion } } });
+  if (!id) throw Error('Не удалось отправить комментарий');
+  return true;
+}
+async function quoteMessage(row) {
+  selectedMessageId.value = null;
+  suppressedClick = null;
+  quoteModeId.value = row._id;
+  await nextTick();
+  const source = [...(feed.value?.querySelectorAll('[data-message-id]') || [])].find(element => element.dataset.messageId === row._id)?.querySelector('[data-fragment-source]');
+  selectMessageText(source);
+}
 function displayQuote(quote) {
   return chat.messageDeletions[quote.messageId] ||
     thread.value.deletedMessageIds?.includes(quote.messageId)
@@ -275,6 +294,7 @@ async function showOriginal(quote) {
   }
 }
 function messageClick(event, row) {
+  if (event.target.closest('[data-fragment-editor]')) return;
   if (event.target.closest('a')) return;
   if (suppressedClick === row._id) {
     event.preventDefault();
@@ -283,6 +303,7 @@ function messageClick(event, row) {
   }
 }
 function messageKeys(event, row) {
+  if (event.target.closest('[data-fragment-editor]') || (event.target.closest('[data-fragment-source]') && window.getSelection()?.toString().trim())) return;
   if (event.target.closest('a')) return;
   if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
     event.preventDefault();
@@ -290,6 +311,7 @@ function messageKeys(event, row) {
   }
 }
 function messageContext(event, row) {
+  if (event.target.closest('[data-fragment-editor]') || (event.target.closest('[data-fragment-source]') && window.getSelection()?.toString().trim())) return;
   if (event.target.closest('a')) return;
   event.preventDefault();
   openMessageMenu(row);
@@ -1018,6 +1040,7 @@ watch(
       @close="selectedMessageId = null"
       @deleted="deletedMessage"
       @reply="startReply"
+      @quote="quoteMessage"
     />
     <TeamChatDialog
       v-if="quoteView"
@@ -1193,14 +1216,10 @@ watch(
                 v-if="search.open && search.result?.taskMatch?.taskId === m.taskId && m.kind === 'task'"
                 type="button" class="team-search-inside" @click="openTask(m.taskId)"
               ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
-              <CodexMessageText v-if="m.kind === 'approval_request' && m.text && m.text !== 'Согласование'" :text="m.text" class="team-message-content" />
+              <MessageFragment v-if="m.text && m.kind !== 'task' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
+                <CodexMessageText :text="m.text" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
+              </MessageFragment>
               <TeamApprovalMessage v-if="m.kind === 'approval_request' && m.approvalRequest" :message="m" />
-              <CodexMessageText
-                v-else-if="m.text && m.kind !== 'task'"
-                :text="m.text"
-                :highlight="search.open ? search.query.trim() : ''"
-                class="team-message-content"
-              />
               <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
               <button
                 :data-media-file-id="file.fileId"
