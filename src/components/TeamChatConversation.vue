@@ -10,6 +10,7 @@ import {
 import UiIcon from "./UiIcon.vue";
 import MessageFragment from './MessageFragment.vue';
 import { selectMessageText } from '@/composables/useMessageSelection';
+import { focusMessageExcerpt } from '@/utils/messageExcerpt';
 const quoteModeId = ref(null);
 import { canSeeChatMessage } from "@/utils/teamMessageVisibility";
 import TeamSearchText from "./TeamSearchText.vue";
@@ -245,7 +246,7 @@ async function startReply(row) {
 }
 function commentFragment(row, payload) {
   if (row._delivery || displayQuote({ messageId: row._id }).deleted) throw Error('Исходное сообщение недоступно');
-  const id = chat.send(payload.text, [], { taskId: props.taskId, replyTo: { messageId: row._id, authorId: row.authorId, authorName: row.authorName, text: payload.excerpt, contentVersion: payload.contentVersion, fragment: { text: payload.excerpt, contentVersion: payload.contentVersion } } });
+  const id = chat.send(payload.text, [], { taskId: props.taskId, replyTo: { messageId: row._id, authorId: row.authorId, authorName: row.authorName, text: payload.excerpt, contentVersion: payload.contentVersion, fragment: { text: payload.excerpt, contentVersion: payload.contentVersion, occurrence: payload.occurrence || 0 } } });
   if (!id) throw Error('Не удалось отправить комментарий');
   return true;
 }
@@ -269,6 +270,10 @@ async function showOriginal(quote) {
     ...(feed.value?.querySelectorAll("[data-message-id]") || []),
   ].find((e) => e.dataset.messageId === quote.messageId);
   if (source) {
+    if (quote.fragment) {
+      if (!focusMessageExcerpt(source.querySelector('[data-fragment-source]'), quote.fragment.text, quote.fragment.occurrence || 0)) await showSavedFragment(quote);
+      return;
+    }
     source.scrollIntoView({ block: "center", behavior: "smooth" });
     highlightedMessage.value = quote.messageId;
     clearTimeout(highlightTimer);
@@ -285,6 +290,7 @@ async function showOriginal(quote) {
       trackVisibleHistory();
       chat.schedule();
       await nextTick();
+      if (quote.fragment && !focusMessageExcerpt(document.querySelector('.team-original-message .codex-text'), quote.fragment.text, quote.fragment.occurrence || 0)) await showSavedFragment(quote);
       scheduleOriginalRead();
     }
   } catch (e) {
@@ -292,6 +298,12 @@ async function showOriginal(quote) {
       quoteError.value =
         e.response?.status === 404 ? "Сообщение удалено" : teamError(e);
   }
+}
+async function showSavedFragment(quote) {
+  quoteError.value = '';
+  quoteView.value = { _id: quote.messageId, authorName: quote.authorName, text: quote.fragment.text, attachments: [], savedFragment: true };
+  await nextTick();
+  focusMessageExcerpt(document.querySelector('.team-original-message .codex-text'), quote.fragment.text);
 }
 function messageClick(event, row) {
   if (event.target.closest('[data-fragment-editor]')) return;
@@ -1052,6 +1064,7 @@ watch(
           ><span class="team-history-spinner" aria-hidden="true"></span><span>Загружаем сообщение…</span></span
         ><template v-else
           ><strong>{{ quoteView.authorName }}</strong
+          ><p v-if="quoteView.savedFragment" role="status">Фрагмент изменён или удалён. Показана сохранённая цитата.</p
           ><CodexMessageText :text="quoteView.text" /><button
             v-for="file in quoteView.attachments"
             :key="file.fileId"

@@ -17,7 +17,8 @@ import { useChatTransfer } from '@/composables/useChatTransfer';
 import { taskReferenceText } from '@/utils/chatTransfer';
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 import MessageFragment from './MessageFragment.vue';
-import { formatFragmentComment } from '@/utils/fragmentComment';
+import { formatFragmentComment, parseFragmentComment } from '@/utils/fragmentComment';
+import { focusMessageExcerpt, normalizeExcerpt } from '@/utils/messageExcerpt';
 
 const props = defineProps({ apiBaseUrl: { type: String, required: true }, mobile: Boolean });
 const store = useMainStore();
@@ -167,12 +168,31 @@ async function newChat() {
   try { await createChat(session); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
-function commentFragment(payload) {
+function commentFragment(payload, source) {
   if (busy.value || voiceActive.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
-  const text = formatFragmentComment(payload.excerpt, payload.text);
+  const text = formatFragmentComment(payload.excerpt, payload.text, source.id, payload.occurrence || 0);
   if (text.length > 16000) throw Error('Сократите комментарий или выделенный фрагмент');
   void send(text, null, true);
   return true;
+}
+async function showFragment(message, quote) {
+  for (let page = 0; page < 20; ++page) {
+    const rows = visibleMessages.value;
+    const before = rows.findIndex(row => row.id === message.id);
+    const sources = [...(box.value?.querySelectorAll('[data-codex-message-id]') || [])].filter(element => element.dataset.codexMessageId !== message.id);
+    const exact = quote.sourceId && sources.find(element => element.dataset.codexMessageId === quote.sourceId);
+    if (exact && focusMessageExcerpt(exact.querySelector('[data-fragment-source]'), quote.excerpt, quote.occurrence || 0)) return;
+    if (!quote.sourceId || !exact) for (const row of rows.slice(0, before < 0 ? rows.length : before).reverse()) {
+      if (parseFragmentComment(row.text || '')) continue;
+      const element = sources.find(element => element.dataset.codexMessageId === row.id)?.querySelector('[data-fragment-source]');
+      if (element && normalizeExcerpt(element.textContent).includes(normalizeExcerpt(quote.excerpt)) && focusMessageExcerpt(element, quote.excerpt, quote.occurrence || 0)) return;
+    }
+    if (!cursor.value || busy.value || !connected.value || exact) break;
+    const previous = cursor.value;
+    await loadOlder(); await nextTick();
+    if (cursor.value === previous) break;
+  }
+  error.value = 'Исходный фрагмент изменён, удалён или недоступен.';
 }
 async function send(forced, existing = null, detached = false) {
   const draft = (typeof forced === 'string' ? forced : input.value).trim();
@@ -324,9 +344,9 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
     </div>
     <div ref="box" class="codex-messages" aria-live="polite">
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
-      <article v-for="message in visibleMessages" :key="message.id" class="codex-message" :class="message.role">
+      <article v-for="message in visibleMessages" :key="message.id" :data-codex-message-id="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
-          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :submit="commentFragment"><CodexMessageText :text="message.text" :plain="message.role === 'user'" /></MessageFragment>
+          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
             <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />

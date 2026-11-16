@@ -1,4 +1,5 @@
 import { shallowRef, onMounted, onBeforeUnmount } from "vue";
+import { fragmentOccurrence, isFocusedExcerptSelection, clearFocusedExcerpt } from '@/utils/messageExcerpt';
 const selection = shallowRef(null);
 let users = 0;
 function readSelection() {
@@ -8,6 +9,7 @@ function readSelection() {
     return;
   }
   const range = value.getRangeAt(0);
+  if (isFocusedExcerptSelection(range)) { selection.value = null; return; }
   const element =
     range.startContainer.nodeType === 1
       ? range.startContainer
@@ -20,6 +22,7 @@ function readSelection() {
   }
   const bounds = range.getBoundingClientRect();
   selection.value = {
+    occurrence: fragmentOccurrence(root, range, text),
     root,
     text,
     rect: { left: bounds.left, top: bounds.top, bottom: bounds.bottom },
@@ -40,12 +43,16 @@ export function selectMessageText(root) {
 }
 export function useMessageSelection() {
   onMounted(() => {
-    if (++users === 1)
+    if (++users === 1) {
       document.addEventListener("selectionchange", readSelection);
+      document.addEventListener('pointerdown', clearFocusedExcerpt, true);
+    }
   });
   onBeforeUnmount(() => {
     if (--users === 0) {
       document.removeEventListener("selectionchange", readSelection);
+      document.removeEventListener('pointerdown', clearFocusedExcerpt, true);
+      clearFocusedExcerpt();
       selection.value = null;
     }
   });

@@ -19,6 +19,7 @@ const body = ref(null),
   input = ref(null),
   excerpt = ref(""),
   quoteVersion = ref(0),
+  occurrence = ref(0),
   comment = ref(""),
   pending = ref(false),
   error = ref("");
@@ -86,6 +87,7 @@ async function begin() {
   if (!selected.value || props.disabled || selected.value.text.length > 6000)
     return;
   excerpt.value = selected.value.text;
+  occurrence.value = selected.value.occurrence || 0;
   quoteVersion.value = props.version;
   error.value = "";
   clearMessageSelection();
@@ -113,6 +115,7 @@ async function send() {
         excerpt: excerpt.value,
         text: comment.value.trim(),
         contentVersion: quoteVersion.value,
+        occurrence: occurrence.value,
       })) !== false
     ) {
       excerpt.value = "";

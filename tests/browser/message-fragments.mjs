@@ -262,6 +262,7 @@ try {
               .locator(".team-reply-quote")
               .filter({ hasText: excerpt })
               .waitFor();
+            await activate(page.getByRole('button', { name: /Показать процитированный фрагмент/ }).filter({ hasText: excerpt }));
           } else {
             await page.waitForFunction(
               () => !document.querySelector(".codex-typing"),
@@ -272,7 +273,13 @@ try {
               .locator(".codex-fragment-quote")
               .filter({ hasText: excerpt })
               .waitFor();
+            await activate(page.getByRole('button', { name: 'Показать процитированный фрагмент', exact: true }).filter({ hasText: excerpt }));
           }
+          const focused = await page.evaluate(() => {
+            const range = typeof CSS !== 'undefined' && CSS.highlights?.get('index12-quote') ? [...CSS.highlights.get('index12-quote')][0] : getSelection().getRangeAt(0);
+            return range.toString().replace(/\s+/g, ' ').trim();
+          });
+          assert.equal(focused, excerpt, 'viewing a quote highlights its exact text, not the whole message');
         }
         assert.deepEqual(errors, []);
         console.log(

@@ -4,6 +4,7 @@ import LinkedText from './LinkedText.vue';
 import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
 import { parseFragmentComment } from '@/utils/fragmentComment';
+defineEmits(['open-fragment']);
 const props = defineProps({
   text: { type: String, default: "" },
   plain: Boolean,
@@ -35,14 +36,15 @@ const fragment = computed(() => props.plain ? parseFragmentComment(props.text) :
 </script>
 
 <template>
-  <div v-if="plain" class="codex-text codex-plain"><blockquote v-if="fragment" class="codex-fragment-quote">{{ fragment.excerpt }}</blockquote><LinkedText :text="fragment ? fragment.comment : text" :highlight="highlight" /></div>
+  <div v-if="plain" class="codex-text codex-plain"><button v-if="fragment" type="button" class="codex-fragment-quote" aria-label="Показать процитированный фрагмент" @click="$emit('open-fragment', fragment)">{{ fragment.excerpt }}</button><LinkedText :text="fragment ? fragment.comment : text" :highlight="highlight" /></div>
   <div v-else class="codex-text codex-markdown" v-html="html" />
 </template>
 
 <style scoped>
 .codex-text { min-width: 0; color: var(--codex-pane-text); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .codex-plain { white-space: pre-wrap; }
-.codex-fragment-quote { margin: 0 0 8px; padding: 2px 10px; border-left: 2px solid var(--codex-pane-accent); color: var(--codex-pane-muted); font-size: 12px; max-height: 160px; overflow: auto; }
+.codex-text .codex-fragment-quote { display: block; width: 100%; margin: 0 0 8px; padding: 2px 10px; border: 0; border-left: 2px solid var(--codex-pane-accent); background: transparent; border-radius: 0; color: var(--codex-pane-muted); font: inherit; font-size: 12px; line-height: 1.5; max-height: 160px; overflow: auto; white-space: pre-wrap; text-align: left; cursor: pointer; }
+.codex-text :deep(::highlight(index12-quote)) { background-color: color-mix(in srgb, var(--codex-pane-accent, #35a85d) 32%, transparent); color: inherit; }
 .codex-markdown :deep(p) { margin: 0 0 12px; }
 .codex-markdown :deep(> :last-child) { margin-bottom: 0; }
 .codex-markdown :deep(strong) { font-weight: 650; color: var(--codex-pane-text); }

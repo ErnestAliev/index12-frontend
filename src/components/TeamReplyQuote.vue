@@ -9,7 +9,7 @@ defineEmits(["cancel", "open"]);
       type="button"
       class="team-reply-content"
       :disabled="composing || quote.deleted"
-      :aria-label="`Показать исходное сообщение ${quote.authorName}`"
+      :aria-label="`${quote.fragment ? 'Показать процитированный фрагмент' : 'Показать исходное сообщение'} ${quote.authorName}`"
       @click="$emit('open', quote)"
     >
       <strong>{{ quote.authorName }}</strong
