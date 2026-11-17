@@ -81,7 +81,7 @@ for (const [name, type] of [['IncomePopup', 'income'], ['ExpensePopup', 'expense
     const state = await mount(name, { ...props(type), onSave: payload => saved.push(payload.data) });
     assert.equal(type === 'transfer' ? state.selectedFromOwner : state.selectedOwner, 'company-company');
     assert.equal(state.showOwnerRepair, false);
-    assert.equal(type === 'transfer' ? state.isFromOwnerSelectVisible : state.isOwnerSelectVisible, false);
+    assert.equal(type === 'transfer' ? state.isFromOwnerSelectVisible : state.isOwnerSelectVisible, true);
     assert.equal(state.ensureAccountOwnership(), true);
     await state.handleSave();
     assert.equal(saved.length, 1);
@@ -94,7 +94,7 @@ for (const [name, type] of [['IncomePopup', 'income'], ['ExpensePopup', 'expense
     f.syncDatabase();
     const state = await mount(name, props(type));
     assert.equal(state.showOwnerRepair, true);
-    assert.equal(type === 'transfer' ? state.isFromOwnerSelectVisible : state.isOwnerSelectVisible, false, 'no extra owner field in the operation form');
+    assert.equal(type === 'transfer' ? state.isFromOwnerSelectVisible : state.isOwnerSelectVisible, true, 'owner remains available in the operation form');
     const items = clone(state.ownerRepairItems);
     const saved = [];
     const modal = await mount('AccountOwnerRepairModal', { items, onSaved: links => saved.push(links) });
@@ -197,7 +197,7 @@ test('withdrawal: source and recipient are required, reason and destination acco
   state.amount = '500';
   await settle();
   assert.equal(state.ensureAccountOwnership(), true);
-  assert.equal(state.isFromOwnerSelectVisible, false);
+  assert.equal(state.isFromOwnerSelectVisible, true);
   assert.equal(state.isToOwnerSelectVisible, false);
   await state.handleSave();
   assert.equal(saved.length, 0, 'recipient is mandatory');

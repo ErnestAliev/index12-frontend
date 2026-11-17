@@ -367,8 +367,8 @@ const onToAccountSelected = (accountId) => {
 };
 
 const ownershipReady = ref(false);
-const isFromOwnerSelectVisible = computed(() => isCreatingFromAccount.value);
-const isToOwnerSelectVisible = computed(() => !isWithdrawal.value && isCreatingToAccount.value);
+const isFromOwnerSelectVisible = true;
+const isToOwnerSelectVisible = computed(() => !isWithdrawal.value);
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
   routes: [
     { key: 'from', label: 'Отправитель', accountId: fromAccountId, ownerKey: selectedFromOwner, creating: isCreatingFromAccount },

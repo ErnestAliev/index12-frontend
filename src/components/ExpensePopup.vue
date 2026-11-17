@@ -523,8 +523,7 @@ const projectedBalanceAfterExpense = computed(() => {
     };
 });
 
-// 🟢 ЛОГИКА СКРЫТИЯ ВЛАДЕЛЬЦА
-const isOwnerSelectVisible = computed(() => isCreatingAccount.value || !selectedAccountId.value);
+const isOwnerSelectVisible = true;
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
     routes: [{ key: 'account', label: 'Счёт', accountId: selectedAccountId, ownerKey: selectedOwner, creating: isCreatingAccount }],
     ready: computed(() => !isInitialLoad.value),
@@ -1081,7 +1080,7 @@ watch(defaultProjectId, (defId) => {
           <ul v-if="showAccountSuggestions && accountSuggestionsList.length" class="bank-suggestions-list"><li v-for="(acc, i) in accountSuggestionsList" :key="i" @mousedown.prevent="selectAccountSuggestion(acc)">{{ acc.name }}</li></ul>
       </div>
 
-      <!-- 🟢 ВЛАДЕЛЕЦ (СКРЫВАЕМ ЕСЛИ ЕСТЬ ПРИВЯЗКА) -->
+      <!-- ВЛАДЕЛЕЦ СЧЁТА -->
       <div v-if="!isIncomeOffsetMode && isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
           <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
               <template #action-item v-if="canEdit">
