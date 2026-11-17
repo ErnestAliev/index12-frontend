@@ -101,13 +101,21 @@ async function stopVoice() {
 async function waitJob(job, session) {
   // The cloud worker has a ten-minute job budget; keep polling through its final receipt.
   const waitBudget = 650000;
-  let deadline = Date.now() + waitBudget;
-  const showRequests = () => { activeJobId.value = job.id; progressText.value = job.progress?.text || (job.status === 'queued' ? 'Ожидаю выполнения' : 'Обрабатываю запрос'); pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + waitBudget; };
+  let deadline = Date.now() + waitBudget, documentRevision = 0;
+  const showRequests = () => {
+    if (job.extractedMessages?.length) {
+      const rows = job.extractedMessages.map(m => ({ ...m, text: m.content }));
+      delivery.reconcile(selectedId.value, rows);
+      messages.value = [...new Map([...messages.value, ...rows].map(m => [m.id, m])).values()];
+      scrollBottom();
+    }
+    documentRevision = Math.max(documentRevision, job.documentRevision || 0);
+    activeJobId.value = job.id; progressText.value = job.progress?.text || (job.status === 'queued' ? 'Ожидаю выполнения' : 'Обрабатываю запрос'); pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + waitBudget; };
   showRequests();
   while (['queued', 'running'].includes(job.status)) {
     if (Date.now() > deadline) throw new Error('Ответ ещё выполняется. Обновите историю перед повторной отправкой.');
     await pause(1000, session);
-    try { job = (await api(`/jobs/${encodeURIComponent(job.id)}`, null, session)).job; }
+    try { job = (await api(`/jobs/${encodeURIComponent(job.id)}?documentRevision=${documentRevision}`, null, session)).job; }
     catch (error) { if (session === controller) { pendingRequests.value = []; activeJobId.value = null; progressText.value = ''; } throw error; }
     showRequests();
   }

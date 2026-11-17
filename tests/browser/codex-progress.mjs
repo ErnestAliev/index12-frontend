@@ -27,10 +27,12 @@ try {
   await page.getByRole('textbox',{name:'Спросите Codex'}).fill('Обработай счёт');
   const send=page.getByRole('button',{name:'Отправить',exact:true});if(mobile)await send.tap();else await send.click();
   const status=page.locator('.codex-typing');await status.getByText('Извлекаю данные документа',{exact:true}).waitFor();
+  history=[{id:'user',role:'user',content:'Обработай счёт'},{id:'extracted',role:'assistant',content:'Реквизиты счёта: поставщик Akmola Dez; сумма 130000; без НДС.'}];
+  job={...job,documentRevision:1,extractedMessages:history};await page.getByText(history[1].content,{exact:true}).waitFor();assert.equal(await page.locator('[data-codex-message-id=extracted]').count(),1);
   for(const text of ['Ищу контрагента в 1С','Сверяю результат записи в 1С','Платёжное поручение проведено']){job={...job,progress:{text}};await status.getByText(text,{exact:true}).waitFor();}
   const geometry=await status.evaluate(el=>{const r=el.getBoundingClientRect();return {width:r.width,right:r.right,viewport:innerWidth,scroll:el.scrollWidth,client:el.clientWidth,role:el.getAttribute('role'),live:el.getAttribute('aria-live')};});
   assert.ok(geometry.right<=geometry.viewport+1,JSON.stringify(geometry));assert.ok(geometry.scroll<=geometry.client+1);assert.equal(geometry.role,'status');assert.equal(geometry.live,'polite');
-  history=[{id:'done',role:'assistant',content:'Счёт оформлен'}];job={id:job.id,status:'completed',result:{text:'Счёт оформлен'}};await status.waitFor({state:'detached'});assert.deepEqual(errors,[]);await context.close();
+  if(mobile)job={id:job.id,status:'failed',error:'Ошибка после извлечения'};else {history.push({id:'done',role:'assistant',content:'Счёт оформлен'});job={id:job.id,status:'completed',result:{text:'Счёт оформлен'}};}await status.waitFor({state:'detached'});await page.getByText(history[1].content,{exact:true}).waitFor();assert.deepEqual(errors,[]);await context.close();
  }
  console.log('PASS '+engine+': live execution statuses, completion cleanup, narrow/mobile touch and desktop, light/dark, no overflow');
 }finally{await browser?.close();await server.close();}
