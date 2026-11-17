@@ -3,7 +3,8 @@ import { normalizeExcerpt } from './messageExcerpt';
 // Change text nodes only. Markdown tables, links and emphasis keep their
 // structure, and replacement text is never interpreted as HTML.
 export function applyTextCorrections(root, corrections = []) {
-  for (const { excerpt, replacement, occurrence = 0 } of corrections) {
+  for (const { kind, tableIndex, rowIndex, columnIndex = 1, excerpt, replacement, occurrence = 0 } of corrections) {
+    if (kind === 'field') { const cell = root.querySelectorAll('table')[tableIndex]?.tBodies[0]?.rows[rowIndex]?.cells[columnIndex]; if (cell) cell.textContent = replacement; continue; }
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), map = [];
     let node, source = '', space = true;
     while ((node = walker.nextNode())) for (let i = 0; i < node.length; ++i) {

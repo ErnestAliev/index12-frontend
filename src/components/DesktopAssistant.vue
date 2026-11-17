@@ -29,6 +29,7 @@ const taskRefs = ref([]), transfer = useChatTransfer('codex');
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const provider = ref('desktop');
 const progressText = ref('');
+const documentSaving = ref(false);
 const dictation = useChatDictation({ getText: () => input.value, setText: text => { input.value = text; }, onError: message => { error.value = message; } });
 const { recording, supported: speechSupported, stop: stopRecording } = dictation;
 const voiceAvailable = ref(false);
@@ -85,7 +86,7 @@ const voice = useCodexVoice({ api, scopeKey: () => scopeKey.value,
 });
 const { active: voiceActive, phase: voicePhase, muted: voiceMuted, status: voiceStatus, playbackBlocked: voicePlaybackBlocked, userCaption, assistantCaption } = voice;
 async function startVoice() {
-  if (busy.value || voiceActive.value || !voiceAvailable.value) return;
+  if (busy.value || voiceActive.value || documentSaving.value || !voiceAvailable.value) return;
   error.value = ''; stopRecording();
   if (!selectedId.value) {
     busy.value = true;
@@ -150,7 +151,7 @@ async function history(session, older = false) {
   showHistory(await waitJob(job, session), older);
 }
 async function selectChat(id) {
-  if (busy.value || voiceActive.value || !id) return;
+  if (busy.value || voiceActive.value || documentSaving.value || !id) return;
   const session = controller;
   selectedId.value = id; localStorage.setItem(storageKey(), id);
   busy.value = true; error.value = ''; messages.value = []; cursor.value = null; threadId.value = null;
@@ -172,20 +173,20 @@ async function createChat(session) {
   localStorage.setItem(storageKey(), selectedId.value);
 }
 async function newChat() {
-  if (busy.value || voiceActive.value) return;
+  if (busy.value || voiceActive.value || documentSaving.value) return;
   const session = controller; busy.value = true; error.value = '';
   try { await createChat(session); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
 function commentFragment(payload, source) {
-  if (busy.value || voiceActive.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
+  if (busy.value || voiceActive.value || documentSaving.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
   const text = formatFragmentComment(payload.excerpt, payload.text, source.id, payload.occurrence || 0);
   if (text.length > 16000) throw Error('Сократите комментарий или выделенный фрагмент');
   void send(text, null, true);
   return true;
 }
 async function correctFragment(payload, source) {
-  if (busy.value || voiceActive.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
+  if (busy.value || voiceActive.value || documentSaving.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
   const session = controller, chatId = selectedId.value;
   busy.value = true;
   try {
@@ -195,6 +196,14 @@ async function correctFragment(payload, source) {
     if (selectedId.value === chatId) Object.assign(source, data.message, { text: data.message.content });
     return true;
   } finally { if (session === controller) busy.value = false; }
+}
+async function saveDocumentField(source,payload) {
+  if (busy.value || voiceActive.value || documentSaving.value) throw Error('Дождитесь завершения текущего запроса.');
+  const session=controller;documentSaving.value=true;
+  try {
+    const data=await api(`/chats/${selectedId.value}/messages/${encodeURIComponent(source.id)}/fields`,{...payload,contentVersion:source.contentVersion||0},session);
+    Object.assign(source,data.message,{text:data.message.content});
+  } finally {if(session===controller)documentSaving.value=false;}
 }
 async function showFragment(message, quote) {
   for (let page = 0; page < 20; ++page) {
@@ -218,7 +227,7 @@ async function showFragment(message, quote) {
 async function send(forced, existing = null, detached = false) {
   const draft = (typeof forced === 'string' ? forced : input.value).trim();
   const text = existing ? existing.text : detached ? draft : draft + taskReferenceText(taskRefs.value, { readTasks: !draft });
-  if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || transfer.pending.value || voiceActive.value) return;
+  if ((!text && !(existing?.sourceFiles || attachments.value).length) || busy.value || transfer.pending.value || voiceActive.value || documentSaving.value) return;
   if (text.length > 16000) { error.value = 'Сообщение со ссылками должно быть не длиннее 16 000 символов.'; return; }
   const session = controller;
   delivery.setScope(scopeKey.value);
@@ -264,13 +273,13 @@ async function send(forced, existing = null, detached = false) {
   } finally { if (session === controller) { busy.value = false; attempt.sourceFiles.forEach(file=>{file.uploading=false;}); } }
 }
 async function loadOlder() {
-  if (busy.value || voiceActive.value) return;
+  if (busy.value || voiceActive.value || documentSaving.value) return;
   const session = controller; busy.value = true; error.value = '';
   try { await history(session, true); } catch (e) { if (e.name !== 'AbortError') error.value = e.message; }
   finally { if (session === controller) busy.value = false; }
 }
 async function refresh(manual = false) {
-  if (refreshing || busy.value || voiceActive.value) return;
+  if (refreshing || busy.value || voiceActive.value || documentSaving.value) return;
   const session = controller; refreshing = true;
   try {
     const status = await api('/status', null, session);
@@ -289,7 +298,7 @@ function addFiles(event) {
   event.target.value = '';
 }
 function addSelectedFiles(chosen) {
-  if (busy.value || voiceActive.value || !chosen.length) return;
+  if (busy.value || voiceActive.value || documentSaving.value || !chosen.length) return;
   error.value = '';
   try {
     if (attachments.value.length + chosen.length > 5) throw new Error('Можно прикрепить до пяти файлов.');
@@ -340,7 +349,7 @@ async function copy(message) {
 watch(scopeKey, () => {
   voice.stop(); voiceAvailable.value = false;
   controller.abort(); controller = new AbortController(); stopRecording();
-  refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
+  refreshing = false; busy.value = false; documentSaving.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
   input.value = ''; taskRefs.value = []; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; delivery.setScope(scopeKey.value);
   pendingRequests.value = []; activeJobId.value = null; progressText.value = ''; answerErrors.value = {}; submittingAnswers.value.clear();
   refresh();
@@ -369,7 +378,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
       <article v-for="message in visibleMessages" :key="message.id" :data-codex-message-id="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
-          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :version="message.contentVersion || 0" :correct="provider === 'cloud' && message.role === 'assistant' && !message.delivery ? payload => correctFragment(payload, message) : null" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :corrections="message.corrections || []" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
+          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :version="message.contentVersion || 0" :correct="provider === 'cloud' && message.role === 'assistant' && !message.delivery ? payload => correctFragment(payload, message) : null" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :corrections="message.corrections || []" :field-editor="provider === 'cloud' && message.documentFileId ? payload => saveDocumentField(message,payload) : null" :fields-disabled="busy || voiceActive || documentSaving" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
             <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />
@@ -385,7 +394,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
     <input ref="files" type="file" hidden multiple @change="addFiles" />
     <CodexVoicePanel v-if="voiceActive" :status="voiceStatus" :phase="voicePhase" :muted="voiceMuted" :caption="assistantCaption || userCaption" :playback-blocked="voicePlaybackBlocked"
       @stop="stopVoice" @mute="voice.toggleMute" @play="voice.play" />
-    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy || transfer.pending.value" :recording="recording" :speech-supported="speechSupported"
+    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy || documentSaving || transfer.pending.value" :recording="recording" :speech-supported="speechSupported"
       live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length || !!taskRefs.length"
       @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()">
       <template #attachments>

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import CodexDocumentFields from './CodexDocumentFields.vue';
 import LinkedText from './LinkedText.vue';
 import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
@@ -9,6 +10,8 @@ defineEmits(['open-fragment']);
 const props = defineProps({
   text: { type: String, default: "" },
   plain: Boolean,
+  fieldEditor: { type: Function, default: null },
+  fieldsDisabled: Boolean,
   highlight: { type: String, default: "" },
   corrections: { type: Array, default: () => [] },
 });
@@ -41,6 +44,7 @@ const fragment = computed(() => props.plain ? parseFragmentComment(props.text) :
 
 <template>
   <div v-if="plain" class="codex-text codex-plain"><button v-if="fragment" type="button" class="codex-fragment-quote" aria-label="Показать процитированный фрагмент" @click="$emit('open-fragment', fragment)">{{ fragment.excerpt }}</button><LinkedText :text="fragment ? fragment.comment : text" :highlight="highlight" /></div>
+  <div v-else-if="fieldEditor" class="codex-text codex-markdown"><CodexDocumentFields :html="html" :save-field="fieldEditor" :disabled="fieldsDisabled" /></div>
   <div v-else class="codex-text codex-markdown" v-html="html" />
 </template>
 
