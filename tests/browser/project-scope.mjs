@@ -68,7 +68,10 @@ export async function verifyProjectScopeUi({ apiUrl, seed }) {
       await popup.waitFor();
       assert.equal(await field(popup, 'Проект').locator('.selected-text').innerText(), 'Все проекты');
       if (kind === 'expense') {
-        for (const project of seed.projects) await select(popup, 'Проект', project.name);
+        await field(popup, 'Проект').locator('.select-trigger').click();
+        await popup.getByRole('button', { name: 'Выбрать несколько', exact: true }).click();
+        for (const project of seed.projects) await popup.getByRole('listbox', { name: 'Проект', exact: true }).getByRole('option', { name: project.name, exact: true }).click();
+        await popup.getByRole('button', { name: 'Готово', exact: true }).click();
         const splitting = page.waitForResponse(response => response.url().endsWith(`/events/${op._id}`) && response.request().method() === 'PUT');
         await popup.locator('.btn-submit').click();
         const splitResponse = await splitting; assert.equal(splitResponse.status(), 200);

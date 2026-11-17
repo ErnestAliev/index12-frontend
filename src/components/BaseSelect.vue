@@ -19,6 +19,7 @@ const props = defineProps({
   label: { type: String, default: '' }, 
   disabled: { type: Boolean, default: false },
   multiple: { type: Boolean, default: false },
+  multipleOnDemand: { type: Boolean, default: false },
   searchable: { type: Boolean, default: false },
   hideSelectedLabel: { type: Boolean, default: false },
   allowCustom: { type: Boolean, default: false }
@@ -27,6 +28,10 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'change']);
 
 const isOpen = ref(false);
+const choosingMultiple = ref(false);
+watch(isOpen, open => {
+  choosingMultiple.value = open && props.multipleOnDemand && Array.isArray(props.modelValue) && props.modelValue.length > 1;
+}, { flush: 'sync' });
 const containerRef = ref(null);
 const searchRef = ref(null), query = ref(''), activeIndex = ref(-1), listId = useId(), keyboardFocus=ref(false);
 const markKeyboard = event => { if(event.key==='Tab')keyboardFocus.value=true; };
@@ -67,9 +72,22 @@ const toggle = () => {
   isOpen.value = !isOpen.value;
 };
 
+const focusChoiceTrigger = () => { if(keyboardFocus.value)nextTick(()=>containerRef.value?.querySelector('.select-trigger')?.focus()); };
+const enableMultiple = () => { choosingMultiple.value=true; focusChoiceTrigger(); };
+const finishMultiple = () => { closeSearch(); focusChoiceTrigger(); };
+const choiceKeydown = event => {
+  if(!props.multipleOnDemand || props.disabled || props.searchable)return;
+  const actions={ArrowDown:()=>move(1),ArrowUp:()=>move(-1),Enter:()=>isOpen.value?accept():toggle(),Escape:closeSearch,' ':()=>isOpen.value?accept():toggle()};
+  if(actions[event.key]){event.preventDefault();event.stopPropagation();actions[event.key]();}
+};
+
 const selectOption = (option) => {
   if (option.isHeader || option.isActionRow || option.disabled) return;
-  if (props.multiple) {
+  if (props.multiple && props.multipleOnDemand && !choosingMultiple.value) {
+    emit('update:modelValue', [option.value]);
+    emit('change', [option.value]);
+    closeSearch(); searchRef.value?.blur();
+  } else if (props.multiple) {
     let current = Array.isArray(props.modelValue) ? [...props.modelValue] : [];
     if (option.isExclusive && !current.includes(option.value)) current = [];
     else if (!option.isExclusive) current = current.filter(value => !props.options.some(o => o.value === value && o.isExclusive));
@@ -100,7 +118,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
   <div class="base-select" ref="containerRef" :class="{ 'is-open': isOpen, 'hide-selected-label': hideSelectedLabel, 'is-disabled': disabled, 'is-keyboard-focus':keyboardFocus }">
     
     <!-- Триггер -->
-    <div class="select-trigger" @click="toggle">
+    <div class="select-trigger" :tabindex="multipleOnDemand && !disabled ? 0 : undefined" :role="multipleOnDemand ? 'combobox' : undefined" :aria-label="multipleOnDemand ? label || placeholder : undefined" :aria-expanded="multipleOnDemand ? isOpen : undefined" :aria-disabled="multipleOnDemand ? disabled : undefined" :aria-controls="multipleOnDemand ? listId : undefined" :aria-activedescendant="multipleOnDemand && isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined" @click="toggle" @keydown="choiceKeydown">
       <div v-if="searchable" class="trigger-content searchable-content">
         <span v-if="!hideSelectedLabel && label && (isOpen || displayText)" class="small-label">{{ label }}</span>
         <div class="value-row">
@@ -132,7 +150,10 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
 
     <!-- Список -->
     <transition name="fade">
-      <ul v-if="isOpen" :id="listId" class="options-list" role="listbox" :aria-label="label || placeholder">
+      <ul v-if="isOpen" :id="listId" class="options-list" role="listbox" :aria-label="label || placeholder" :aria-multiselectable="multipleOnDemand ? choosingMultiple : undefined">
+        <li v-if="multiple && multipleOnDemand && !choosingMultiple" class="selection-action selection-action-top" role="presentation">
+          <button type="button" tabindex="0" @click.stop="enableMultiple">Выбрать несколько</button>
+        </li>
         <li v-if="searchable && !selectable.length" class="select-empty" role="status">Ничего не найдено</li>
         <li 
           v-for="(option, index) in visibleOptions"
@@ -169,7 +190,11 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
                 <span v-if="option.subLabel" class="option-sub">{{ option.subLabel }}</span>
             </div>
             <span v-if="option.rightText" class="option-right" :class="option.rightTextClass">{{ option.rightText }}</span>
+            <UiIcon v-if="multipleOnDemand && choosingMultiple && Array.isArray(modelValue) && modelValue.includes(option.value)" class="selection-check" name="check" aria-hidden="true" />
           </div>
+        </li>
+        <li v-if="multiple && multipleOnDemand && choosingMultiple" class="selection-action" role="presentation">
+          <button type="button" tabindex="0" @click.stop="finishMultiple"><UiIcon name="check" aria-hidden="true" />Готово</button>
         </li>
       </ul>
     </transition>
@@ -367,6 +392,14 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
   align-items: center;
   width: 100%;
 }
+
+.selection-action { position: sticky; bottom: 0; z-index: 1; background: var(--color-background, #fff); border-top: 1px solid var(--color-border, #e0e0e0); }
+.selection-action-top { top: 0; bottom: auto; border-top: 0; border-bottom: 1px solid var(--color-border, #e0e0e0); }
+.selection-action button { display: flex; align-items: center; justify-content: flex-end; gap: 6px; width: 100%; min-height: 44px; margin: 0; padding: 8px 14px; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: var(--color-text, #1a1a1a); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.selection-action button:hover { background: var(--color-background-mute, #f2f2f2); }
+.base-select.is-keyboard-focus .selection-action button:focus-visible, .base-select.is-keyboard-focus .select-trigger:focus-visible { outline: 1px solid var(--color-primary, #598477); outline-offset: -3px; }
+.selection-action svg, .selection-check { width: 16px; height: 16px; flex: none; }
+.selection-check { margin-left: 8px; }
 
 .option-left-group {
     display: flex;

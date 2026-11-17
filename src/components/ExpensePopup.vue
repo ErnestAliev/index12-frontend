@@ -1131,7 +1131,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- ПРОЕКТ -->
       <div v-if="!isIncomeOffsetMode && !isCreatingProject" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect hide-selected-label v-model="selectedProjectIds" :multiple="true" :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
+          <BaseSelect hide-selected-label v-model="selectedProjectIds" :multiple="true" multiple-on-demand :options="projectOptions" placeholder="Проект" label="Проект" @change="handleProjectChange" :disabled="isReadOnly || props.operationToEdit?.isSplitChild" />
       </div>
       <div v-else-if="!isIncomeOffsetMode" class="inline-create-form input-spacing">
           <input type="text" v-model="newProjectName" placeholder="Название проекта" ref="newProjectInput" @keyup.enter="saveNewProject" @keyup.esc="cancelCreateProject" />

@@ -1,0 +1,21 @@
+import '/src/assets/main.css';
+import {createApp,h,ref} from 'vue';
+import {createPinia} from 'pinia';
+import {useMainStore} from '/src/stores/mainStore.js';
+import Income from '/src/components/IncomePopup.vue';
+import Expense from '/src/components/ExpensePopup.vue';
+const pinia=createPinia(),store=useMainStore(pinia),active=ref(null),saved=[];
+store.user={_id:'owner',workspaceRole:'admin',role:'admin'};
+store.companies=[{_id:'company',name:'ТОО UU'}];
+store.accounts=[{_id:'bcc',name:'BCC UU',companyId:'company',initialBalance:1000000}];
+store.contractors=[{_id:'party',name:'Поставщик'}];
+store.categories=[{_id:'services',name:'Услуги',type:'expense'}];
+store.projects=[{_id:'one',name:'Акмекен'},{_id:'two',name:'Пушкина 33'},...Array.from({length:20},(_,i)=>({_id:'extra'+i,name:'Проект '+i}))];
+store.updateOperation=async(_id,data)=>saved.push(data);
+store.batchUpdateEntities=async()=>[];
+let key=0;
+window.projectSelection={saved,open(type,selection=null){
+ const date=new Date(),operation=selection?{_id:'old',type,date:date.toISOString(),amount:type==='expense'?-100:100,accountId:'bcc',companyId:'company',contractorId:'party',categoryId:'services',projectId:selection[0],projectIds:selection.length>1?selection:[]}:null;
+ active.value={type,key:++key,props:{date,cellIndex:0,operationToEdit:operation}};
+}};
+createApp({render:()=>active.value?h(active.value.type==='income'?Income:Expense,{key:active.value.key,...active.value.props,onSave:payload=>saved.push(payload.data)}):null}).use(pinia).mount('#app');
