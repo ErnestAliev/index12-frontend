@@ -10,8 +10,8 @@
 .codex-copy-btn:hover { border-color: var(--codex-pane-border); background: var(--codex-pane-hover); color: var(--codex-pane-text); }
 .codex-copy-btn:focus-visible, .codex-action-btn:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 2px; }
 .codex-typing { display: inline-flex; align-items: baseline; gap: 2px; flex: none; padding: 0 4px; color: var(--codex-pane-muted); font-size: 12px; line-height: 20px; }
-.codex-typing-word { animation: codex-thinking 1.4s ease-in-out infinite; }
-.codex-typing-dots { display: inline-block; min-width: 3ch; }
+.codex-typing-word { min-width: 0; overflow-wrap: anywhere; animation: codex-thinking 1.4s ease-in-out infinite; }
+.codex-typing-dots { display: inline-block; flex: none; min-width: 3ch; }
 .codex-typing-dots::after { content: '…'; }
 @keyframes codex-thinking { 50% { opacity: .5; } }
 .codex-action-btn { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; height: 30px; margin: 0; padding: 0 9px; border: 1px solid var(--codex-pane-border); border-radius: 8px; background: transparent; color: var(--codex-pane-text); font: inherit; font-size: 12px; font-weight: 500; line-height: 16px; white-space: nowrap; cursor: pointer; }

@@ -161,7 +161,9 @@ try {
   const message = page.locator(".team-message:visible").last(),
     id = await message.getAttribute("data-message-id");
   const bubble = message.locator(".team-bubble");
-  await bubble.click({ button: "right" });
+  // The center is selectable text: WebKit selects a word there and opens the
+  // native fragment menu. Request whole-message actions from bubble padding.
+  await bubble.click({ button: "right", position: { x: 4, y: 4 } });
   await page.getByRole("button", { name: "Удалить", exact: true }).click();
   await page
     .getByRole("button", { name: "Удалить для всех", exact: true })

@@ -28,6 +28,7 @@ const chats = ref([]), selectedId = ref(''), messages = ref([]), input = ref('')
 const taskRefs = ref([]), transfer = useChatTransfer('codex');
 const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref(null), cursor = ref(null), box = ref(null), files = ref(null);
 const provider = ref('desktop');
+const progressText = ref('');
 const dictation = useChatDictation({ getText: () => input.value, setText: text => { input.value = text; }, onError: message => { error.value = message; } });
 const { recording, supported: speechSupported, stop: stopRecording } = dictation;
 const voiceAvailable = ref(false);
@@ -101,16 +102,16 @@ async function waitJob(job, session) {
   // The cloud worker has a ten-minute job budget; keep polling through its final receipt.
   const waitBudget = 650000;
   let deadline = Date.now() + waitBudget;
-  const showRequests = () => { activeJobId.value = job.id; pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + waitBudget; };
+  const showRequests = () => { activeJobId.value = job.id; progressText.value = job.progress?.text || (job.status === 'queued' ? 'Ожидаю выполнения' : 'Обрабатываю запрос'); pendingRequests.value = job.pendingRequests || []; if (pendingRequests.value.length) deadline = Date.now() + waitBudget; };
   showRequests();
   while (['queued', 'running'].includes(job.status)) {
     if (Date.now() > deadline) throw new Error('Ответ ещё выполняется. Обновите историю перед повторной отправкой.');
     await pause(1000, session);
     try { job = (await api(`/jobs/${encodeURIComponent(job.id)}`, null, session)).job; }
-    catch (error) { if (session === controller) { pendingRequests.value = []; activeJobId.value = null; } throw error; }
+    catch (error) { if (session === controller) { pendingRequests.value = []; activeJobId.value = null; progressText.value = ''; } throw error; }
     showRequests();
   }
-  pendingRequests.value = []; activeJobId.value = null;
+  pendingRequests.value = []; activeJobId.value = null; progressText.value = '';
   if (job.status !== 'completed') {
     const failure = new Error(job.error || 'Запрос не завершён. Проверьте историю чата.');
     failure.execution = job.result?.execution;
@@ -333,7 +334,7 @@ watch(scopeKey, () => {
   controller.abort(); controller = new AbortController(); stopRecording();
   refreshing = false; busy.value = false; connected.value = false; chats.value = []; selectedId.value = ''; messages.value = [];
   input.value = ''; taskRefs.value = []; clearAttachments(); downloadingFiles.value.clear(); threadId.value = null; cursor.value = null; error.value = ''; delivery.setScope(scopeKey.value);
-  pendingRequests.value = []; activeJobId.value = null; answerErrors.value = {}; submittingAnswers.value.clear();
+  pendingRequests.value = []; activeJobId.value = null; progressText.value = ''; answerErrors.value = {}; submittingAnswers.value.clear();
   refresh();
 });
 onMounted(() => { delivery.setScope(scopeKey.value); refresh(); timer = setInterval(() => refresh(), 5000); });
@@ -370,7 +371,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
         </div>
       </article>
       <CodexRequestCard v-for="request in pendingRequests" :key="request.id" :request="request" :submitting="submittingAnswers.has(request.id)" :error="answerErrors[request.id]" @answer="answerCodex(request, $event)" />
-      <div v-if="busy && !pendingRequests.length && !delivery.rows.some(row => row.delivery === 'sending')" class="codex-typing" aria-label="Codex готовит ответ"><span class="codex-typing-word">Думаю</span><span class="codex-typing-dots" /></div>
+      <div v-if="busy && !pendingRequests.length && !delivery.rows.some(row => row.delivery === 'sending')" class="codex-typing" role="status" aria-live="polite" aria-atomic="true"><span class="codex-typing-word">{{ progressText || 'Обрабатываю запрос' }}</span><span class="codex-typing-dots" /></div>
     </div>
     <div v-if="error" class="desktop-error" role="alert"><CodexGlyph name="alert" /><span>{{ error }}</span></div>
     <input ref="files" type="file" hidden multiple @change="addFiles" />

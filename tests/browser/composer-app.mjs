@@ -328,7 +328,7 @@ export async function verifyAppComposers(browser, origin, engine) {
         slowJob = true;
         await field.fill('Долгий запрос модели');
         await send.tap();
-        await frame.getByLabel('Codex готовит ответ').waitFor();
+        await frame.locator('.codex-typing[role="status"]').waitFor();
         await page.evaluate(() => { const now = Date.now; Date.now = () => now() + 360000; });
         await frame.getByText('Долгий ответ получен', { exact: true }).waitFor();
         assert.ok(slowPolls >= 3);
