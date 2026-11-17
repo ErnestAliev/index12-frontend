@@ -95,7 +95,7 @@ try {
           const path = new URL(route.request().url()).pathname;
           let data = [];
           if (path.endsWith("/codex/status"))
-            data = { connected: true, configured: true };
+            data = { connected: true, configured: true, provider: 'cloud' };
           else if (path.endsWith("/codex/chats"))
             data = {
               chats: [{ id: "chat", title: "Комментарии", threadId: "thread" }],
@@ -105,6 +105,13 @@ try {
               chat: { id: "chat", threadId: "thread" },
               cachedHistory: { messages: history },
             };
+          else if (path.endsWith('/codex/chats/chat/messages/source-assistant/corrections')) {
+            const body = route.request().postDataJSON();
+            const source = history.find(row => row.id === 'source-assistant');
+            source.corrections = [...(source.corrections || []), body];
+            source.contentVersion = (source.contentVersion || 0) + 1;
+            data = { message: source };
+          }
           else if (path.endsWith("/codex/chats/chat/jobs")) {
             const body = route.request().postDataJSON();
             if (body.kind === "history")
@@ -280,6 +287,25 @@ try {
             return range.toString().replace(/\s+/g, ' ').trim();
           });
           assert.equal(focused, excerpt, 'viewing a quote highlights its exact text, not the whole message');
+        }
+        if (chat === 'codex') {
+          const source = page.locator('[data-fragment-source]').first();
+          await selectText(source, 'нужный фрагмент');
+          const toolbar = page.getByRole('toolbar', { name: 'Выделенный текст', exact: true });
+          await activate(toolbar.getByRole('button', { name: 'Исправить фрагмент', exact: true }));
+          const editor = page.getByRole('form', { name: 'Исправление фрагмента', exact: true });
+          assert.equal(await editor.getByRole('textbox').inputValue(), 'нужный фрагмент');
+          await editor.getByRole('textbox').fill('исправленный фрагмент');
+          await activate(editor.getByRole('button', { name: 'Сохранить', exact: true }));
+          await editor.waitFor({ state: 'hidden' });
+          assert.ok((await source.innerText()).includes('исправленный фрагмент'));
+          assert.ok(!(await source.innerText()).includes('нужный фрагмент'));
+          assert.equal(sends.length, 2, 'saving a correction does not send another agent job');
+          assert.equal(await mainInput.inputValue(), 'Несохранённый основной текст');
+          await activate(page.getByRole('button', { name: 'Обновить связь и историю', exact: true }));
+          await page.waitForFunction(() => !document.querySelector('.codex-typing'));
+          await page.locator('[data-fragment-source]').first().getByText('исправленный', { exact: false }).first().waitFor();
+          assert.ok((await page.locator('[data-fragment-source]').first().innerText()).includes('исправленный фрагмент'));
         }
         assert.deepEqual(errors, []);
         console.log(

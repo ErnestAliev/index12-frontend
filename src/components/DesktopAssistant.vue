@@ -175,6 +175,18 @@ function commentFragment(payload, source) {
   void send(text, null, true);
   return true;
 }
+async function correctFragment(payload, source) {
+  if (busy.value || voiceActive.value || transfer.pending.value) throw Error('Дождитесь завершения текущего запроса');
+  const session = controller, chatId = selectedId.value;
+  busy.value = true;
+  try {
+    const data = await api(`/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(source.id)}/corrections`, {
+      excerpt: payload.excerpt, replacement: payload.replacement, occurrence: payload.occurrence || 0, contentVersion: payload.contentVersion,
+    }, session);
+    if (selectedId.value === chatId) Object.assign(source, data.message, { text: data.message.content });
+    return true;
+  } finally { if (session === controller) busy.value = false; }
+}
 async function showFragment(message, quote) {
   for (let page = 0; page < 20; ++page) {
     const rows = visibleMessages.value;
@@ -312,7 +324,9 @@ async function downloadFile(file) {
 function toggleRecording() { if (!busy.value) { error.value = ''; dictation.toggle(); } }
 
 async function copy(message) {
-  try { await navigator.clipboard.writeText(message.text); message.copied = true; } catch { error.value = 'Не удалось скопировать сообщение.'; }
+  const element = [...(box.value?.querySelectorAll('[data-codex-message-id]') || [])].find(row => row.dataset.codexMessageId === message.id)?.querySelector('[data-fragment-source]');
+  const text = message.corrections?.length && element ? element.innerText : message.text;
+  try { await navigator.clipboard.writeText(text); message.copied = true; } catch { error.value = 'Не удалось скопировать сообщение.'; }
 }
 watch(scopeKey, () => {
   voice.stop(); voiceAvailable.value = false;
@@ -346,7 +360,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
       <article v-for="message in visibleMessages" :key="message.id" :data-codex-message-id="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
-          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
+          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :version="message.contentVersion || 0" :correct="provider === 'cloud' && message.role === 'assistant' && !message.delivery ? payload => correctFragment(payload, message) : null" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :corrections="message.corrections || []" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
             <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />

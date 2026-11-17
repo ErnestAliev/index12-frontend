@@ -4,18 +4,22 @@ import LinkedText from './LinkedText.vue';
 import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
 import { parseFragmentComment } from '@/utils/fragmentComment';
+import { applyTextCorrections } from '@/utils/textCorrections';
 defineEmits(['open-fragment']);
 const props = defineProps({
   text: { type: String, default: "" },
   plain: Boolean,
   highlight: { type: String, default: "" },
+  corrections: { type: Array, default: () => [] },
 });
 const html = computed(() => {
   if (props.plain) return "";
   const rendered = renderCodexMarkdown(props.text);
-  if (!props.highlight || typeof document === "undefined") return rendered;
+  if ((!props.highlight && !props.corrections.length) || typeof document === "undefined") return rendered;
   const container = document.createElement("div");
   container.innerHTML = rendered;
+  applyTextCorrections(container, props.corrections);
+  if (!props.highlight) return container.innerHTML;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT),
     nodes = [];
   while (walker.nextNode()) nodes.push(walker.currentNode);

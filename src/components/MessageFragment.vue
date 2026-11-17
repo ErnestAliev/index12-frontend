@@ -9,6 +9,7 @@ import { useInputModality } from "@/composables/useInputModality";
 const keyboard = useInputModality();
 const props = defineProps({
   submit: { type: Function, required: true },
+  correct: { type: Function, default: null },
   disabled: Boolean,
   busy: Boolean,
   version: { type: Number, default: 0 },
@@ -21,9 +22,24 @@ const body = ref(null),
   quoteVersion = ref(0),
   occurrence = ref(0),
   comment = ref(""),
+  editing = ref(false),
   pending = ref(false),
   error = ref("");
 const { selection, readSelection } = useMessageSelection();
+let ignoreMenuClickUntil = 0;
+function touchMenuAction(event, action) {
+  if (event.pointerType !== 'touch') return;
+  // WebKit omits click after preventDefault(pointerdown), which we need to
+  // preserve the selected range. Handle an intentional tap on release once.
+  event.preventDefault();
+  event.stopPropagation();
+  ignoreMenuClickUntil = performance.now() + 500;
+  void action();
+}
+function clickMenuAction(event, action) {
+  if (performance.now() < ignoreMenuClickUntil) { event.preventDefault(); return; }
+  void action();
+}
 const selected = computed(() =>
   selection.value?.root === body.value ? selection.value : null,
 );
@@ -46,7 +62,7 @@ const popupStyle = computed(() => {
       (view?.height || innerHeight) -
       inset("bottom") -
       8;
-  const width = Math.min(252, right - left),
+  const width = Math.min(props.correct ? 296 : 252, right - left),
     rect = selected.value.rect;
   const style = {
     width: width + "px",
@@ -83,10 +99,13 @@ function context(event) {
     event.stopPropagation();
   }
 }
-async function begin() {
+async function begin(edit = false) {
   if (!selected.value || props.disabled || selected.value.text.length > 6000)
     return;
+  if (edit && (props.busy || !props.correct)) return;
+  editing.value = edit;
   excerpt.value = selected.value.text;
+  comment.value = edit ? excerpt.value : '';
   occurrence.value = selected.value.occurrence || 0;
   quoteVersion.value = props.version;
   error.value = "";
@@ -106,14 +125,15 @@ async function copy() {
   }
 }
 async function send() {
-  if (props.busy || pending.value || !comment.value.trim()) return;
+  if (props.busy || pending.value || (!editing.value && !comment.value.trim()) || (editing.value && comment.value === excerpt.value)) return;
   pending.value = true;
   error.value = "";
   try {
     if (
-      (await props.submit({
+      (await (editing.value ? props.correct : props.submit)({
         excerpt: excerpt.value,
         text: comment.value.trim(),
+        replacement: comment.value,
         contentVersion: quoteVersion.value,
         occurrence: occurrence.value,
       })) !== false
@@ -123,7 +143,7 @@ async function send() {
       emit("finished");
     }
   } catch (e) {
-    error.value = e.message || "Не удалось отправить комментарий";
+    error.value = e.message || (editing.value ? 'Не удалось сохранить исправление' : "Не удалось отправить комментарий");
   } finally {
     pending.value = false;
   }
@@ -144,7 +164,7 @@ function keys(event) {
   }
 }
 function prepareUpdate(event) {
-  if (excerpt.value && comment.value.trim()) event.detail?.block?.('Отправьте или отмените комментарий перед обновлением.');
+  if (excerpt.value && (editing.value || comment.value.trim())) event.detail?.block?.('Сохраните или закройте правку перед обновлением.');
 }
 onMounted(() => window.addEventListener('index12:prepare-update', prepareUpdate));
 onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepareUpdate));
@@ -179,12 +199,16 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
               ? 'Выделите фрагмент до 6000 символов'
               : undefined
           "
-          @click="begin"
+          @pointerup="touchMenuAction($event, () => begin(false))"
+          @click="clickMenuAction($event, () => begin(false))"
         >
           <UiIcon name="reply" />{{ touch ? "Цитировать" : "Комментировать" }}
         </button>
-        <button type="button" @click="copy">
+        <button type="button" @pointerup="touchMenuAction($event, copy)" @click="clickMenuAction($event, copy)">
           <UiIcon name="copy" />Копировать
+        </button>
+        <button v-if="correct" type="button" class="fragment-correct" aria-label="Исправить фрагмент" title="Исправить" :disabled="disabled || busy || selected.text.length > 6000" @pointerup="touchMenuAction($event, () => begin(true))" @click="clickMenuAction($event, () => begin(true))">
+          <UiIcon name="edit" />
         </button>
         <p v-if="error" role="alert">{{ error }}</p>
       </div>
@@ -193,7 +217,7 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
       v-if="excerpt"
       class="fragment-editor"
       data-fragment-editor
-      aria-label="Комментарий к фрагменту"
+      :aria-label="editing ? 'Исправление фрагмента' : 'Комментарий к фрагменту'"
       @submit.prevent="send"
       @pointerdown.stop
       @contextmenu.stop
@@ -204,7 +228,7 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
         <blockquote>{{ excerpt }}</blockquote>
         <button
           type="button"
-          aria-label="Отменить комментарий"
+          :aria-label="editing ? 'Отменить исправление' : 'Отменить комментарий'"
           :disabled="pending"
           @click="cancel"
         >
@@ -214,8 +238,8 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
       <textarea
         ref="input"
         v-model="comment"
-        aria-label="Текст комментария"
-        placeholder="Комментарий"
+        :aria-label="editing ? 'Исправленный текст' : 'Текст комментария'"
+        :placeholder="editing ? 'Исправленный текст' : 'Комментарий'"
         rows="2"
         maxlength="6000"
         :readonly="pending"
@@ -223,8 +247,8 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
       />
       <div class="fragment-send">
         <p v-if="error" role="alert">{{ error }}</p>
-        <button type="submit" :disabled="busy || pending || !comment.trim()">
-          <UiIcon name="send" />Отправить
+        <button type="submit" :disabled="busy || pending || (editing ? comment === excerpt : !comment.trim())">
+          <UiIcon :name="editing ? 'check' : 'send'" />{{ editing ? 'Сохранить' : 'Отправить' }}
         </button>
       </div>
     </form>
@@ -353,6 +377,11 @@ onBeforeUnmount(() => window.removeEventListener('index12:prepare-update', prepa
 }
 .fragment-selection-menu button:hover {
   background: var(--codex-pane-hover);
+}
+.fragment-selection-menu .fragment-correct {
+  flex: none;
+  width: 44px;
+  padding: 0;
 }
 .fragment-selection-menu.keyboard-navigation button:focus-visible {
   outline: 2px solid var(--codex-pane-focus);
