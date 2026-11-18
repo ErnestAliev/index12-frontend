@@ -886,9 +886,9 @@ const saveNewOwner = async () => {
     } catch(e){ console.error(e); showError('Ошибка создания владельца: ' + e.message); } finally { isInlineSaving.value = false; }
 };
 
-const openCreateContractorModal = (type) => {
+const openCreateContractorModal = (type, initialName = '') => {
     contractorTypeToCreate.value = type;
-    newContractorNameInput.value = '';
+    newContractorNameInput.value = initialName.trim();
     showCreateOwnerModal.value = false;
     showCreateContractorModal.value = true;
     nextTick(() => newContractorInputRef.value?.focus());
@@ -1103,10 +1103,10 @@ watch(defaultProjectId, (defId) => {
       <!-- КОНТРАГЕНТ (Кому) -->
       <div v-if="!isIncomeOffsetMode && !showCreateContractorModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly || isOffsetEditLocked }">
           <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
-              <template #action-item v-if="canEdit">
+              <template #action-item="{ query }" v-if="canEdit">
                   <div class="dual-action-row">
-                      <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
-                      <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">+ Созд. физлицо</button>
+                      <button @click="openCreateContractorModal('contractor', query)" class="btn-dual-action left">+ Созд. контрагента</button>
+                      <button @click="openCreateContractorModal('individual', query)" class="btn-dual-action right">+ Созд. физлицо</button>
                   </div>
               </template>
           </BaseSelect>
@@ -1141,7 +1141,7 @@ watch(defaultProjectId, (defId) => {
 
       <!-- КАТЕГОРИЯ -->
       <div v-if="!isCreatingCategory" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect hide-selected-label v-model="selectedCategoryIds" :multiple="true" :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
+          <BaseSelect hide-selected-label v-model="selectedCategoryIds" :multiple="true" close-on-select :options="categoryOptions" placeholder="Категория" label="Категория" @change="handleCategoryChange" :disabled="isReadOnly" />
       </div>
       <div v-else class="inline-create-form input-spacing relative">
           <input type="text" v-model="newCategoryName" placeholder="Название категории" ref="newCategoryInput" @keyup.enter="saveNewCategory" @keyup.esc="cancelCreateCategory" @blur="handleCategoryInputBlur" @focus="handleCategoryInputFocus" />

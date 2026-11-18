@@ -20,6 +20,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   multiple: { type: Boolean, default: false },
   multipleOnDemand: { type: Boolean, default: false },
+  closeOnSelect: { type: Boolean, default: false },
   searchable: { type: Boolean, default: false },
   hideSelectedLabel: { type: Boolean, default: false },
   allowCustom: { type: Boolean, default: false }
@@ -95,6 +96,7 @@ const selectOption = (option) => {
     if (idx !== -1) current.splice(idx, 1); else current.push(option.value);
     emit('update:modelValue', current);
     emit('change', current);
+    if(props.closeOnSelect){closeSearch();searchRef.value?.blur();}
   } else {
     emit('update:modelValue', option.value);
     emit('change', option.value);
@@ -179,7 +181,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', close);document.re
 
           <!-- 2. Слот для действий (Кнопки) -->
           <div v-else-if="option.isActionRow" class="action-row-container" @click.stop>
-             <slot name="action-item" :option="option"></slot>
+             <slot name="action-item" :option="option" :query="query"></slot>
           </div>
 
           <!-- 3. Обычная опция -->

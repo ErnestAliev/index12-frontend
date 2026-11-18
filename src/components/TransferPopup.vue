@@ -436,7 +436,7 @@ const handleCopyClick = () => {
   nextTick(() => { amountInput.value?.focus(); });
 };
 
-const openCreateOwnerModal = (target, type = 'company') => { creatingOwnerFor.value = target; ownerTypeToCreate.value = type; newOwnerName.value = ''; showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
+const openCreateOwnerModal = (target, type = 'company', initialName = '') => { creatingOwnerFor.value = target; ownerTypeToCreate.value = type; newOwnerName.value = initialName.trim(); showCreateOwnerModal.value = true; nextTick(() => newOwnerInputRef.value?.focus()); };
 const cancelCreateOwner = () => { if (isInlineSaving.value) return; showCreateOwnerModal.value = false; newOwnerName.value = ''; if (creatingOwnerFor.value === 'from' && selectedFromOwner.value === '--CREATE_NEW--') selectedFromOwner.value = null; if (creatingOwnerFor.value === 'to' && selectedToOwner.value === '--CREATE_NEW--') selectedToOwner.value = null; };
 const saveNewOwner = async () => {
   if (isInlineSaving.value) return; const name = newOwnerName.value.trim(); const type = ownerTypeToCreate.value; const target = creatingOwnerFor.value; if (!name) return; isInlineSaving.value = true; 
@@ -620,10 +620,10 @@ const closePopup = () => { emit('close'); };
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
       <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
           <BaseSelect hide-selected-label searchable v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
-              <template #action-item v-if="canEdit">
+              <template #action-item="{ query }" v-if="canEdit">
                   <div class="dual-action-row">
-                      <button @click="openCreateOwnerModal('from', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                      <button @click="openCreateOwnerModal('from', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                      <button @click="openCreateOwnerModal('from', 'company', query)" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('from', 'individual', query)" class="btn-dual-action right">+ Создать Физлицо</button>
                   </div>
               </template>
           </BaseSelect>
@@ -657,10 +657,10 @@ const closePopup = () => { emit('close'); };
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
       <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
           <BaseSelect hide-selected-label searchable v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
-              <template #action-item v-if="canEdit">
+              <template #action-item="{ query }" v-if="canEdit">
                   <div class="dual-action-row">
-                      <button @click="openCreateOwnerModal('to', 'company')" class="btn-dual-action left">+ Создать Компанию</button>
-                      <button @click="openCreateOwnerModal('to', 'individual')" class="btn-dual-action right">+ Создать Физлицо</button>
+                      <button @click="openCreateOwnerModal('to', 'company', query)" class="btn-dual-action left">+ Создать Компанию</button>
+                      <button @click="openCreateOwnerModal('to', 'individual', query)" class="btn-dual-action right">+ Создать Физлицо</button>
                   </div>
               </template>
           </BaseSelect>

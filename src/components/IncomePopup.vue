@@ -788,9 +788,9 @@ const saveNewOwner = async () => {
     });
 };
 
-const openCreateContractorModal = (type) => {
+const openCreateContractorModal = (type, initialName = '') => {
     contractorTypeToCreate.value = type;
-    newContractorNameInput.value = '';
+    newContractorNameInput.value = initialName.trim();
     showCreateOwnerModal.value = false;
     showCreateContractorModal.value = true;
     nextTick(() => newContractorInputRef.value?.focus());
@@ -882,10 +882,10 @@ const handleMainAction = async () => {
       <!-- КОНТРАГЕНТ -->
       <div v-if="!showCreateContractorModal" class="input-spacing">
           <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
-              <template #action-item>
+              <template #action-item="{ query }">
                   <div class="dual-action-row">
-                      <button @click="openCreateContractorModal('contractor')" class="btn-dual-action left">+ Созд. контрагента</button>
-                      <button @click="openCreateContractorModal('individual')" class="btn-dual-action right">+ Созд. физлицо</button>
+                      <button @click="openCreateContractorModal('contractor', query)" class="btn-dual-action left">+ Созд. контрагента</button>
+                      <button @click="openCreateContractorModal('individual', query)" class="btn-dual-action right">+ Созд. физлицо</button>
                   </div>
               </template>
           </BaseSelect>
