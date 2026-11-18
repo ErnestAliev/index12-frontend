@@ -3,6 +3,7 @@ import { transferLabels, isSystemWithdrawal } from '@/utils/transferLabels.js';
 import { computed, ref } from 'vue';
 import { formatNumber, formatShortNumber } from '@/utils/formatters.js';
 import { useMainStore } from '@/stores/mainStore';
+import { useChatTransfer } from '@/composables/useChatTransfer';
 import { usePermissions } from '@/composables/usePermissions';
 
 /**
@@ -28,6 +29,7 @@ const emit = defineEmits(['edit-operation', 'add-operation', 'drop-operation']);
 const isDragOver = ref(false);
 const mainStore = useMainStore();
 const permissions = usePermissions();
+const chatTransfer = useChatTransfer('timeline');
 const visibilityMode = computed(() => mainStore.accountVisibilityMode);
 let activeDragPreviewEl = null;
 
@@ -478,7 +480,8 @@ const onDragStart = (event) => {
     markDraggedGroupMembers(draggedOperationIds);
   }
   event.dataTransfer.setData('application/json', JSON.stringify(payload));
-  event.dataTransfer.effectAllowed = 'move';
+  chatTransfer.operation(event, props.operation);
+  event.dataTransfer.effectAllowed = 'copyMove';
   const dragPreviewEl = buildGroupDragPreview(draggedOperationIds);
   if (dragPreviewEl) {
     event.dataTransfer.setDragImage(dragPreviewEl, 36, 18);

@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
           <button
             v-if="
               (chat.isOwner || own) &&
-              !['request', 'approval_request', 'finance_operation'].includes(message.kind)
+              !['request', 'approval_request', 'finance_operation', 'operation_share'].includes(message.kind)
             "
             type="button"
             class="menu-action"

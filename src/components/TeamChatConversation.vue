@@ -36,6 +36,9 @@ import CodexComposer from "./CodexComposer.vue";
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 import { useFileDrop } from '@/composables/useFileDrop';
 import { useChatTransfer } from '@/composables/useChatTransfer';
+import TeamOperationShare from './TeamOperationShare.vue';
+import TeamOperationDrop from './TeamOperationDrop.vue';
+const droppedOperation = ref(null), openedOperationMessage = ref(null);
 import TeamFinanceDialog from './TeamFinanceDialog.vue';
 import TeamFinanceMessage from './TeamFinanceMessage.vue';
 const financeType = ref(null);
@@ -96,7 +99,7 @@ const thread = computed(() =>
   props.taskId ? chat.threads[props.taskId] || emptyThread : chat.state,
 );
 const approvalOpen=ref(false);
-watch(()=>props.taskId,()=>{approvalOpen.value=false;financeType.value=null;});
+watch(()=>props.taskId,()=>{approvalOpen.value=false;financeType.value=null;droppedOperation.value=null;openedOperationMessage.value=null;});
 async function approvalAdded(){approvalOpen.value=false;await nextTick();if(feed.value)feed.value.scrollTop=feed.value.scrollHeight;}
 const historyReady = computed(() =>
   props.taskId ? !!thread.value.ready : chat.historyReady,
@@ -768,10 +771,11 @@ async function attachFiles(selectedFiles) {
   uploading.value = false;
 }
 const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
-  enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !transfer.pending.value && !preview.value && !quoteView.value && !selectedMessage.value,
+  enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !transfer.pending.value && !preview.value && !quoteView.value && !selectedMessage.value && !droppedOperation.value && !openedOperationMessage.value && !financeType.value,
   onFiles: attachFiles,
   onItem: async token => {
     const item = await transfer.accept(token);
+    if (item?.operation) droppedOperation.value = item.operation;
     if (item?.file) await attachFiles([item.file]);
   },
   onError: message => { localError.value = message; },
@@ -1233,9 +1237,10 @@ watch(
                 v-if="search.open && search.result?.taskMatch?.taskId === m.taskId && m.kind === 'task'"
                 type="button" class="team-search-inside" @click="openTask(m.taskId)"
               ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
-              <MessageFragment v-if="m.text && m.kind !== 'task' && m.kind !== 'finance_operation' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
+              <MessageFragment v-if="m.text && m.kind !== 'task' && m.kind !== 'finance_operation' && m.kind !== 'operation_share' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
                 <CodexMessageText :text="m.text" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
               </MessageFragment>
+              <TeamOperationShare v-if="m.kind === 'operation_share' && m.operationShare" :message="m" @open="openedOperationMessage = $event" />
               <TeamFinanceMessage v-if="m.kind === 'finance_operation' && m.financeOperation" :message="m" />
               <TeamApprovalMessage v-if="m.kind === 'approval_request' && m.approvalRequest" :message="m" />
               <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
@@ -1422,6 +1427,8 @@ watch(
               @file="input.click()" /></template
         ></CodexComposer>
       </div>
+      <TeamOperationDrop v-if="droppedOperation" :operation="droppedOperation" :task-id="taskId" @close="droppedOperation = null" />
+      <TeamFinanceDialog v-if="openedOperationMessage" :message-id="openedOperationMessage" @close="openedOperationMessage = null" />
       <TeamFinanceDialog v-if="financeType" :type="financeType" :task-id="taskId" @close="financeType = null" />
     <TeamApprovalDialog v-if="approvalOpen && taskId" :task-id="taskId" @close="approvalOpen = false" @added="approvalAdded" />
     </template>

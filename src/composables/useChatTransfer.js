@@ -20,9 +20,10 @@ export function useChatTransfer(source) {
     const identity = scope.value;
     const item = takeChatDrag(token, { source, scope: identity });
     if (!item) return null;
+    if (item.kind === 'operation' && source !== 'team') throw Error('Перетащите операцию в рабочий чат');
     pending.value = true;
     try {
-      const result = item.kind === 'file' ? { file: await item.read() } : { task: item.task };
+      const result = item.kind === 'file' ? { file: await item.read() } : item.kind === 'operation' ? { operation: item.operation } : { task: item.task };
       if (disposed || identity !== scope.value || item.getScope() !== identity)
         throw Error('Сеанс чата изменился');
       return result;
@@ -32,6 +33,11 @@ export function useChatTransfer(source) {
   return {
     pending, scope, accept,
     file: (event, read) => start(event, 'file', { read }),
+    operation: (event, operation) => {
+      if (!/^[a-f\d]{24}$/i.test(operation?._id || '')) return;
+      start(event, 'operation', { operation: { id: String(operation._id), workspaceId: String(main.user?.currentWorkspaceId || '') } });
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copyMove';
+    },
     task: (event, task) => {
       // Nested controls (including attached files) keep their own drag behavior.
       if (event.target?.closest('button, a, input, textarea, select, [contenteditable="true"]')) {

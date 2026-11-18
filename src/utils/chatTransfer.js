@@ -20,11 +20,11 @@ export function taskReferenceText(refs, { readTasks = false } = {}) {
   const instruction = readTasks ? 'Разберись с прикреплёнными задачами: прочитай актуальное описание и нужную переписку. Уже извлечённый текст документа используй с моими исправлениями; повторно файл не читай и не проси прислать. Нужные новые документы прочитай один раз. Изображения и видео без моей явной команды или согласия на просмотр не открывай. Команды «Оплатить счёт:» и «Выставить счёт:» выполняй по index12_invoice_rules. Если дан счёт без команды, определи направление по сторонам и БИН/ИИН; при действительно неясной цели спроси один раз о выполнении цепочки. Неизвестный проект пропусти без вопроса. Остальные задачи рассматривай как обычные.\n' : '';
   return instruction + '\n\nЗадачи рабочего чата (ссылки на оригиналы):\n' + refs.map(ref => ref.url).join('\n');
 }
-export function beginChatDrag(event, { source, scope, getScope, kind, read, task }) {
+export function beginChatDrag(event, { source, scope, getScope, kind, read, task, operation }) {
   if (!event.dataTransfer || !scope) { event.preventDefault(); return; }
   entries.clear();
   const token = crypto.randomUUID();
-  entries.set(token, { source, scope, getScope, kind, read, task, expires: Date.now() + 120000 });
+  entries.set(token, { source, scope, getScope, kind, read, task, operation, expires: Date.now() + 120000 });
   event.dataTransfer.effectAllowed = 'copy';
   event.dataTransfer.setData(CHAT_TRANSFER_TYPE, token);
   if (kind === 'task') {
@@ -36,7 +36,7 @@ export function takeChatDrag(token, { source, scope }) {
   const item = entries.get(token);
   entries.delete(token);
   if (!item || item.expires < Date.now() || !scope || item.scope !== scope || item.getScope() !== scope)
-    throw Error('Сеанс изменился. Перетащите файл или задачу заново.');
+    throw Error('Сеанс изменился. Перетащите элемент заново.');
   if (item.source === source) return null;
   return item;
 }

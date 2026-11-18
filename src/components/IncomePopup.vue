@@ -186,6 +186,7 @@ const canDelete = computed(() => mainStore.canDelete);
 const isReadOnly = computed(() => !canEdit.value);
 
 const title = computed(() => {
+    if (mainStore.chatFinance && !canEdit.value) return 'Доход';
     if (isCloneMode.value) return 'Копия: Доход';
     if (isProtectedMode.value) return 'Редактировать сделку';
     if (isFutureDate.value) return 'Запланировать доход';
@@ -955,10 +956,10 @@ const handleMainAction = async () => {
           <button v-if="!isProtectedMode && canEdit" class="btn-submit save-wide" :class="mainButtonClass" @click="handleMainAction" :disabled="isSaving || isInlineSaving">
               {{ mainButtonText }}
           </button>
-          <div v-else-if="!canEdit" class="read-only-info">Режим просмотра ({{ mainStore.workspaceRole }})</div>
+          <div v-else-if="!canEdit" class="read-only-info">{{ mainStore.chatFinance ? 'Режим просмотра' : `Режим просмотра (${mainStore.workspaceRole})` }}</div>
           <div v-else class="read-only-info">Только чтение</div>
           
-          <div v-if="props.operationToEdit && !isCloneMode" class="icon-actions">
+          <div v-if="props.operationToEdit && !isCloneMode && !props.submitOperation" class="icon-actions">
               <button v-if="canEdit" class="icon-btn copy-btn" title="Копировать" @click="handleCopyClick" :disabled="isSaving"><svg class="icon" viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm3 4H8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 17H8V7h11v15Z"/></svg></button>
               <button v-if="canDelete" class="icon-btn delete-btn" title="Удалить" @click="handleDeleteClick" :disabled="isSaving"><svg class="icon-stroke" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
           </div>
