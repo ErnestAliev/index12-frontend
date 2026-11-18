@@ -17,7 +17,8 @@ const title = computed(() => props.kind === 'contractors' ? 'Карточка к
 const endpoint = () => `/${props.kind}/${props.companyId}`;
 const options = () => ({ headers: props.workspaceId ? { 'X-Index12-Workspace-ID': props.workspaceId } : {} });
 const dirty = computed(() => company.value && JSON.stringify(draft.value) !== JSON.stringify(profileDraft(company.value)));
-const missingLabels = computed(() => (company.value?.onecSync?.missing || []).filter(key => !draft.value[key]).map(key => profileFields.find(([field]) => field === key)?.[1] || key));
+const missingLabels = computed(() => (company.value?.onecSync?.missing || []).filter(key => key==='bankAccounts'?!draft.value.bankAccounts.length:!draft.value[key]).map(key => key==='bankAccounts'?'Банковские счета':profileFields.find(([field]) => field === key)?.[1] || key));
+const syncWarnings = computed(() => company.value?.onecSync?.warnings || []);
 const displayCandidates = computed(() => {
   const normalize = value => value.toLocaleLowerCase('ru').replace(/[^\p{L}\p{N}]/gu, '').replace(/^(тоо|ип)/, '');
   const name = normalize(company.value?.name || '');
@@ -89,7 +90,7 @@ const sync = () => action(async current => {
   await saveCurrent(current); if (current !== generation) return;
   const { data } = await businessApi.post(`${endpoint()}/sync-onec`, { expectedVersion: company.value.profileVersion || 0, ref }, { ...options(), timeout: 90000 });
   if (current !== generation) return;
-  applyCompany(data.company); showSync.value = false; message.value = 'Реквизиты загружены из 1С';
+  applyCompany(data.company); showSync.value = false; message.value = `Реквизиты обновлены${data.sync?.bankAccounts?.checked ? ` · Счетов из 1С: ${data.sync.bankAccounts.loaded}` : ''}`;
 });
 const unlink = () => action(async current => {
   await saveCurrent(current); if (current !== generation) return;
@@ -119,7 +120,7 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); c
       <div v-if="error" class="company-error" role="alert">{{ error }}</div><div v-if="message" class="company-message" role="status">{{ message }}</div>
       <div v-if="loading && !company" role="status">Загрузка…</div>
       <template v-if="company">
-        <div class="company-toolbar"><button type="button" :disabled="busy || searching" @click="company.onecSync?.ref ? sync() : beginSync()">{{ busy ? 'Обработка…' : searching ? 'Загрузка списка…' : 'Синхронизировать с 1С' }}</button><button v-if="company.onecSync?.ref" type="button" :disabled="busy || searching" @click="beginSync">Изменить связь</button><button type="button" @click="copy">Копировать реквизиты</button><button type="button" @click="downloadProfile(draft)">Скачать .txt</button><button type="button" @click="downloadProfile(draft, 'json')">Скачать .json</button></div>
+        <div class="company-toolbar"><button type="button" :disabled="busy || searching" @click="company.onecSync?.ref ? sync() : beginSync()">{{ busy ? 'Обновление…' : searching ? 'Загрузка списка…' : company.onecSync?.ref ? 'Обновить данные' : 'Синхронизировать с 1С' }}</button><button v-if="company.onecSync?.ref" type="button" :disabled="busy || searching" @click="beginSync">Изменить связь</button><button type="button" @click="copy">Копировать реквизиты</button><button type="button" @click="downloadProfile(draft)">Скачать .txt</button><button type="button" @click="downloadProfile(draft, 'json')">Скачать .json</button></div>
         <div class="company-source"><template v-if="company.onecSync?.ref">1С: {{ company.onecSync.name || company.onecSync.ref }}<template v-if="company.onecSync.identificationNumber"> · {{ company.onecSync.identificationNumber }}</template> · {{ new Date(company.onecSync.checkedAt).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) }}</template><template v-else>С 1С не связано</template><button v-if="company.onecSync?.ref" type="button" :disabled="busy" @click="unlink">Отвязать</button></div>
         <section v-if="showSync" class="company-section sync-selector" aria-label="Выбор записи 1С">
           <div class="section-heading"><h2>{{ kind === 'contractors' ? 'Контрагенты 1С' : 'Организации 1С' }}</h2><span class="candidate-count" role="status">{{ searching ? `Загружено: ${candidates.length}` : candidatesComplete ? `Найдено: ${displayCandidates.length} из ${candidates.length}` : 'Список не загружен' }}</span></div>
@@ -128,7 +129,7 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); c
           <select v-model="selectedRef" aria-label="Запись из справочника 1С" :disabled="searching || !candidatesComplete || busy" class="ui-select"><option value="">Выберите {{ kind === 'contractors' ? 'контрагента' : 'организацию' }}</option><option v-for="item in displayCandidates" :key="item.ref" :value="item.ref">{{ item.name }}{{ item.identificationNumber ? ` · ${item.identificationNumber}` : '' }}</option></select>
           <div class="sync-actions"><button v-if="!searching && !candidatesComplete" type="button" @click="loadCandidates">Повторить загрузку</button><button type="button" :disabled="!selectedRef || busy || searching || !candidatesComplete" @click="sync">{{ busy ? 'Синхронизация…' : 'Связать и загрузить' }}</button><button type="button" :disabled="busy" @click="showSync = false">Закрыть список</button></div><div v-if="!searching && candidatesComplete && !displayCandidates.length" role="status">Совпадений в 1С нет</div>
         </section>
-        <div v-if="missingLabels.length" class="company-source">В публикации 1С нет данных: {{ missingLabels.join(', ') }}</div>
+        <details v-if="missingLabels.length || syncWarnings.length" class="company-source"><summary>{{ syncWarnings.length ? 'Проверить реквизиты из 1С' : 'Не все реквизиты доступны из 1С' }}</summary><div v-if="missingLabels.length">Не заполнены: {{ missingLabels.join(', ') }}</div><div v-for="warning in syncWarnings" :key="warning">{{ warning }}</div></details>
         <div class="company-page-grid">
           <section class="company-section" aria-label="Реквизиты компании"><h2>Реквизиты</h2><div class="profile-fields"><label v-for="[key, label, type] in profileFields" :key="key" :class="{ wide: ['legalName', 'legalAddress', 'postalAddress', 'activity'].includes(key) }">{{ label }}<input v-model="draft[key]" :aria-label="label" :type="type || 'text'" :disabled="busy" :maxlength="key === 'identificationNumber' ? 12 : 2000" /></label></div></section>
           <div class="company-aside">

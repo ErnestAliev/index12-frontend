@@ -165,7 +165,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     await assertCenteredIcons(page.locator('.contractor-popup'));
     assert.equal(await page.locator('.contractor-sync-button.is-synced').count(), 1);
     assert.equal(await page.locator('.contractor-sync-button:not(.is-synced)').count(), 21);
-    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Синхронизирован');
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Обновить данные');
     assert.equal(await page.locator('.contractor-sync-button:not(.is-synced)').first().innerText(), 'Не синхронизирован');
     assert.ok((await page.locator('.contractor-sync-button.is-synced').getAttribute('title')).includes('Последняя синхронизация'));
     for (const viewport of [{ width: 1488, height: 825 }, { width: 1024, height: 768 }]) {
@@ -226,12 +226,12 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     assert.equal(await sourceSelect.locator('option').count(), 2, 'name words may be entered in any order');
     await legal.getByRole('combobox', { name: 'Запись из справочника 1С', exact: true }).selectOption('22222222-2222-4222-8222-222222222222');
     await legal.getByRole('button', { name: 'Связать и загрузить', exact: true }).click();
-    await legal.getByText('Реквизиты загружены из 1С', { exact: true }).waitFor();
+    await legal.getByText('Реквизиты обновлены', { exact: true }).waitFor();
     assert.equal(await legal.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).inputValue(), profile.identificationNumber);
     assert.equal(await legal.getByRole('textbox', { name: 'Название в INDEX12', exact: true }).inputValue(), 'Поставщик без номера');
     await legal.getByRole('button', { name: 'Закрыть карточку контрагента', exact: true }).click();
     await page.locator('.contractor-sync-button.is-synced').waitFor();
-    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Синхронизирован', 'successful synchronization must update its row status without reloading');
+    assert.equal(await page.locator('.contractor-sync-button.is-synced').innerText(), 'Обновить данные', 'successful synchronization must update its row status without reloading');
     await page.locator('.contractor-popup .modal-close-btn').click();
     await page.locator('.edit-btn').click();
     assert.equal(await page.locator('.editor-modal').getByRole('button', { name: 'Синхронизировать с 1С', exact: true }).count(), 0, 'account rows must not duplicate company synchronization');
@@ -264,7 +264,7 @@ export async function verifyBusinessUi({ apiUrl, entitiesApiUrl, actor, workspac
     assert.equal(syncRequests, beforeSync, 'opening candidates must not populate this company');
     await selection.selectOption('11111111-1111-4111-8111-111111111111');
     await companyCard.getByRole('button', { name: 'Связать и загрузить', exact: true }).click();
-    await companyCard.getByText('Реквизиты загружены из 1С', { exact: true }).waitFor();
+    await companyCard.getByText('Реквизиты обновлены', { exact: true }).waitFor();
     assert.equal(await companyCard.getByRole('textbox', { name: 'БИН/ИИН', exact: true }).inputValue(), profile.identificationNumber);
     await companyCard.getByRole('textbox', { name: 'Руководитель', exact: true }).fill('Руководитель после правки');
     await companyCard.getByRole('button', { name: '+ Ссылка', exact: true }).click();
