@@ -18,7 +18,7 @@ try{
   await page.evaluate(()=>window.searchChat.requestedTaskId=window.approvalFixture.taskId);
   const panel=page.locator('.task-panel');await panel.waitFor();const textarea=panel.locator('.team-compose-area textarea');await textarea.fill('Несохранённый черновик');
   const plus=panel.locator('.team-add-trigger');await activate(plus);
-  const items=panel.locator('.team-add-options [role=menuitem]');assert.deepEqual((await items.allTextContents()).map(s=>s.trim()),['Новая подзадача','Добавить согласование','Загрузить файл или фото']);
+  const items=panel.locator('.team-add-options [role=menuitem]');assert.deepEqual((await items.allTextContents()).map(s=>s.trim()),['Новая подзадача','Добавить согласование','Создать доход','Создать расход','Создать перевод','Загрузить файл или фото']);
   const align=await items.evaluateAll(elements=>elements.map(el=>({justify:getComputedStyle(el).justifyContent,align:getComputedStyle(el).textAlign,height:el.getBoundingClientRect().height,x:el.querySelector('svg').getBoundingClientRect().x})));
   assert.ok(align.every(a=>a.justify==='flex-start'&&a.align==='left'&&a.height>=44),JSON.stringify(align));assert.ok(align.every(a=>Math.abs(a.x-align[0].x)<1));
   await activate(items.nth(1));const dialog=page.getByRole('dialog',{name:'Добавить согласование',exact:true});await dialog.waitFor();

@@ -33,6 +33,7 @@ chat.state.members = [member, other];
 chat.tab = "members";
 window.accessWrites = [];
 teamApi.defaults.adapter = async (config) => {
+  if (config.url === '/finance/account-options') return { status: 200, data: { accounts: [{ _id: '000000000000000000000001', name: 'Касса сотрудника' }, { _id: '000000000000000000000002', name: 'BCC UU' }] } };
   if (config.method === "patch") {
     const body = JSON.parse(config.data);
     window.accessWrites.push({ path: config.url, body });

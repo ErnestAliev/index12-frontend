@@ -3,7 +3,7 @@ import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
 import { formatAmountInput, formatAmountInputEvent } from '@/utils/amountInput.js';
@@ -32,6 +32,7 @@ import { knownBanks } from '@/data/knownBanks.js';
  */
 
 const props = defineProps({
+  submitOperation: { type: Function, default: null },
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
   operationToEdit: { type: Object, default: null },
@@ -41,7 +42,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save', 'operation-deleted', 'move-expense']);
 
-const mainStore = useMainStore();
+const mainStore = useOperationStore();
 const permissions = usePermissions();
 // --- ДАННЫЕ ---
 const amount = ref('');
@@ -359,14 +360,14 @@ const ownerOptions = computed(() => {
           opts.push(option); 
       });
   }
-  opts.push({ isActionRow: true });
+  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   return opts;
 });
 
 const managedParty = useManagedCounterparty({
   store: mainStore, selected: selectedContractorValue, accountId: selectedAccountId,
   operation: () => props.operationToEdit,
-  canChoose: () => !props.operationToEdit || isCloneMode.value || !!props.operationToEdit.purchaseGroupId,
+  canChoose: () => !mainStore.chatFinance && (!props.operationToEdit || isCloneMode.value || !!props.operationToEdit.purchaseGroupId),
   canAccess: id => permissions.canAccessAccount(id), direction: 'expense'
 });
 const { isManaged: isManagedCounterparty, peerAccountId: purchaseAccountId, peerOptions: purchaseAccountOptions } = managedParty;
@@ -394,7 +395,7 @@ const contractorOptions = computed(() => {
     opts.push({ label: 'Мои компании', isHeader: true });
     opts.push(...managedParty.ownOptions.value);
   }
-  opts.push({ isActionRow: true });
+  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   return opts;
 });
 
@@ -433,7 +434,7 @@ const incomeOffsetOptions = computed(() => {
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
   opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true }, { value: null, label: 'Без проекта' });
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
+  if (!mainStore.chatFinance) opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
 
@@ -448,7 +449,7 @@ const categoryOptions = computed(() => {
   
   const opts = validCats.map(c => ({ value: c._id, label: c.name }));
   opts.unshift({ value: null, label: 'Без категории' });
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
+  if (!mainStore.chatFinance) opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
   return opts;
 });
 
@@ -504,6 +505,7 @@ const myCreditsProjectId = computed(() => {
 });
 
 const projectedBalanceAfterExpense = computed(() => {
+    if (mainStore.chatFinance) return null;
     if (!selectedAccountId.value) return null;
 
     const rawAmount = parseFloat((amount.value || '').replace(/\s/g, ''));
@@ -525,6 +527,7 @@ const projectedBalanceAfterExpense = computed(() => {
 
 const isOwnerSelectVisible = true;
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
+    onError: showError,
     routes: [{ key: 'account', label: 'Счёт', accountId: selectedAccountId, ownerKey: selectedOwner, creating: isCreatingAccount }],
     ready: computed(() => !isInitialLoad.value),
     enabled: computed(() => canEdit.value && !isIncomeOffsetMode.value),
@@ -636,7 +639,7 @@ const buildCounterpartyDefaultsPayload = () => {
     return { entityPath, updateData };
 };
 
-const processSave = (preparedCategoryIds = []) => {
+const processSave = async (preparedCategoryIds = []) => {
     let cId = null, iId = null;
     if (selectedOwner.value) { const [type, id] = selectedOwner.value.split('-'); if (type === 'company') cId = id; else iId = id; }
     let contrId = null, contrIndId = null;
@@ -691,6 +694,12 @@ const processSave = (preparedCategoryIds = []) => {
         payload.excludeFromTotals = true; // не учитываем в общих итогах
     }
 
+    if (props.submitOperation) {
+        try { await props.submitOperation(payload); emit('close'); }
+        catch (error) { showError(error.response?.data?.message || error.message); }
+        finally { isSaving.value = false; }
+        return;
+    }
     emit('save', {
         mode: isEditMode.value ? 'edit' : 'create',
         id: props.operationToEdit?._id,
@@ -962,6 +971,7 @@ const handleIncomeSelect = (val) => {
 onMounted(async () => {
     isInitialLoad.value = true;
     if (props.date) editableDate.value = toInputDate(props.date);
+    if (mainStore.chatFinance && mainStore.accounts.length === 1) selectedAccountId.value = mainStore.accounts[0]._id;
     
     if (props.operationToEdit) {
         const op = props.operationToEdit;
@@ -1040,7 +1050,7 @@ watch(defaultProjectId, (defId) => {
     <div class="popup-content financial-operation-popup theme-expense">
       <div class="header-row">
         <h3>{{ title }}</h3>
-        <button class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
+        <button v-if="!mainStore.chatFinance" class="offset-toggle-btn" :class="{ active: isIncomeOffsetMode }" @click="toggleIncomeOffsetMode" :disabled="isReadOnly || (isEditMode && props.operationToEdit?.offsetIncomeId)" title="Взаимовычет: привязать расход к доходу">
             <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="offset-label">Взаимовычет</span>
         </button>
@@ -1082,8 +1092,8 @@ watch(defaultProjectId, (defId) => {
 
       <!-- ВЛАДЕЛЕЦ СЧЁТА -->
       <div v-if="!isIncomeOffsetMode && isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly }">
-          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
-              <template #action-item v-if="canEdit">
+          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly || mainStore.chatFinance">
+              <template #action-item v-if="canEdit && !mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
                       <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -1103,7 +1113,7 @@ watch(defaultProjectId, (defId) => {
       <!-- КОНТРАГЕНТ (Кому) -->
       <div v-if="!isIncomeOffsetMode && !showCreateContractorModal" class="input-spacing" :class="{ 'is-disabled': isReadOnly || isOffsetEditLocked }">
           <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="Кому (Контрагент)" label="Кому (Контрагент)" :disabled="isReadOnly || isOffsetEditLocked">
-              <template #action-item="{ query }" v-if="canEdit">
+              <template #action-item="{ query }" v-if="canEdit && !mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor', query)" class="btn-dual-action left">+ Созд. контрагента</button>
                       <button @click="openCreateContractorModal('individual', query)" class="btn-dual-action right">+ Созд. физлицо</button>

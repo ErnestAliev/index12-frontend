@@ -3,7 +3,7 @@ import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber } from '@/utils/formatters.js';
 import { formatAmountInput, formatAmountInputEvent } from '@/utils/amountInput.js';
@@ -29,6 +29,7 @@ import { knownBanks } from '@/data/knownBanks.js';
  */
 
 const props = defineProps({
+  submitOperation: { type: Function, default: null },
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
   operationToEdit: { type: Object, default: null },
@@ -38,7 +39,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save', 'operation-deleted']);
 
-const mainStore = useMainStore();
+const mainStore = useOperationStore();
 const permissions = usePermissions();
 const canManageAccounts = computed(() => permissions.isAdmin.value);
 
@@ -312,7 +313,7 @@ const accountOptions = computed(() => {
     return option;
   });
   if (canManageAccounts.value) {
-    opts.push({ isActionRow: true });
+    if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   }
   return opts;
 });
@@ -344,7 +345,7 @@ const ownerOptions = computed(() => {
           opts.push(option); 
       });
   }
-  opts.push({ isActionRow: true }); 
+  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   return opts;
 });
 
@@ -352,7 +353,7 @@ const ownerOptions = computed(() => {
 const managedParty = useManagedCounterparty({
   store: mainStore, selected: selectedContractorValue, accountId: selectedAccountId,
   operation: () => props.operationToEdit,
-  canChoose: () => !props.operationToEdit || isCloneMode.value || !!props.operationToEdit.purchaseGroupId,
+  canChoose: () => !mainStore.chatFinance && (!props.operationToEdit || isCloneMode.value || !!props.operationToEdit.purchaseGroupId),
   canAccess: id => permissions.canAccessAccount(id), direction: 'income'
 });
 const { isManaged: isManagedCounterparty, peerAccountId: purchaseAccountId, peerOptions: purchaseAccountOptions } = managedParty;
@@ -377,14 +378,14 @@ const contractorOptions = computed(() => {
     opts.push({ label: 'Мои компании', isHeader: true });
     opts.push(...managedParty.ownOptions.value);
   }
-  opts.push({ isActionRow: true });
+  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   return opts;
 });
 
 const projectOptions = computed(() => {
   const opts = mainStore.projects.map(p => ({ value: p._id, label: p.name }));
   opts.unshift({ value: ALL_PROJECTS, label: 'Все проекты', isExclusive: true }, { value: null, label: 'Без проекта' });
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
+  if (!mainStore.chatFinance) opts.push({ value: '--CREATE_NEW--', label: '+ Создать проект', isSpecial: true });
   return opts;
 });
 
@@ -399,7 +400,7 @@ const categoryOptions = computed(() => {
   
   const opts = validCats.map(c => ({ value: c._id, label: c.name }));
   opts.unshift({ value: null, label: 'Без категории' });
-  opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
+  if (!mainStore.chatFinance) opts.push({ value: '--CREATE_NEW--', label: '+ Создать категорию', isSpecial: true });
   return opts;
 });
 
@@ -431,6 +432,7 @@ const myCreditsProjectId = computed(() => {
 
 const isOwnerSelectVisible = true;
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
+    onError: showError,
     routes: [{ key: 'account', label: 'Счёт', accountId: selectedAccountId, ownerKey: selectedOwner, creating: isCreatingAccount }],
     ready: computed(() => !isInitialLoad.value),
     enabled: computed(() => canEdit.value),
@@ -552,6 +554,7 @@ const preparePayload = (options = {}) => {
 };
 
 const handleSave = async (options = {}) => {
+    if (isSaving.value) return;
     const rawAmount = parseFloat(amount.value.replace(/\s/g, ''));
     if (!rawAmount || rawAmount <= 0) { showError('Введите сумму'); return; }
     const purchaseError = managedParty.validate();
@@ -561,6 +564,13 @@ const handleSave = async (options = {}) => {
     
     const payload = preparePayload(options);
     const counterpartyDefaults = buildCounterpartyDefaultsPayload();
+    if (props.submitOperation) {
+        isSaving.value = true;
+        try { await props.submitOperation(payload); emit('close'); }
+        catch (error) { showError(error.response?.data?.message || error.message); }
+        finally { isSaving.value = false; }
+        return;
+    }
 
     try {
         await mainStore.saveAccountOwners([{ accountId: selectedAccountId.value, ownerKey: selectedOwner.value }]);
@@ -618,6 +628,7 @@ const confirmDelete = () => { isDeleteConfirmVisible.value = false; emit('close'
 onMounted(async () => {
     isInitialLoad.value = true;
     if (props.date) editableDate.value = toInputDate(props.date);
+    if (mainStore.chatFinance && mainStore.accounts.length === 1) selectedAccountId.value = mainStore.accounts[0]._id;
     
     if (props.operationToEdit) {
         const op = props.operationToEdit;
@@ -863,8 +874,8 @@ const handleMainAction = async () => {
 
       <!-- ВЛАДЕЛЕЦ СЧЁТА -->
       <div v-if="isOwnerSelectVisible && !showCreateOwnerModal" class="input-spacing">
-          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly">
-              <template #action-item v-if="canEdit">
+          <BaseSelect hide-selected-label v-model="selectedOwner" :options="ownerOptions" placeholder="Владельцы счетов" label="Владельцы счетов" :disabled="isReadOnly || mainStore.chatFinance">
+              <template #action-item v-if="canEdit && !mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('company')" class="btn-dual-action left">+ Создать Компанию</button>
                       <button @click="openCreateOwnerModal('individual')" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -882,7 +893,7 @@ const handleMainAction = async () => {
       <!-- КОНТРАГЕНТ -->
       <div v-if="!showCreateContractorModal" class="input-spacing">
           <BaseSelect hide-selected-label searchable v-model="selectedContractorValue" :options="contractorOptions" placeholder="От кого" label="От кого">
-              <template #action-item="{ query }">
+              <template #action-item="{ query }" v-if="!mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateContractorModal('contractor', query)" class="btn-dual-action left">+ Созд. контрагента</button>
                       <button @click="openCreateContractorModal('individual', query)" class="btn-dual-action right">+ Созд. физлицо</button>

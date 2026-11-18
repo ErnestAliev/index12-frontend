@@ -1,9 +1,9 @@
 import { nextTick, ref, watch } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { getAccountOwnerKey, isValidOwnerKey, needsAccountOwnerRepair } from '@/utils/accountOwnership.js';
 
-export function useAccountOwnerRepair({ routes, ready, enabled, existing }) {
-  const store = useMainStore();
+export function useAccountOwnerRepair({ routes, ready, enabled, existing, onError }) {
+  const store = useOperationStore();
   const showOwnerRepair = ref(false);
   const ownerRepairItems = ref([]);
   const brokenRoutes = () => routes.filter(route => {
@@ -16,6 +16,7 @@ export function useAccountOwnerRepair({ routes, ready, enabled, existing }) {
   function ensureAccountOwnership() {
     const broken = brokenRoutes();
     if (!broken.length) return true;
+    if (store.chatFinance) { onError?.('У счёта не настроен владелец. Обратитесь к владельцу системы или выберите другой счёт'); return false; }
     ownerRepairItems.value = broken.map(route => ({
       key: route.key, label: route.label,
       accountId: route.accountId.value, ownerKey: route.ownerKey.value,

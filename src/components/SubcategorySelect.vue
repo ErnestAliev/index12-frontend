@@ -2,7 +2,7 @@
 import UiIcon from '@/components/UiIcon.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import BaseSelect from './BaseSelect.vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { entityId } from '@/utils/subcategories.js';
 
 const props = defineProps({
@@ -12,7 +12,7 @@ const props = defineProps({
   hideSelectedLabel: { type: Boolean, default: false }
 });
 const emit = defineEmits(['update:modelValue']);
-const store = useMainStore();
+const store = useOperationStore();
 const creating = ref(false);
 const name = ref('');
 const error = ref('');
@@ -24,7 +24,7 @@ const parents = computed(() => parentIds.value.map(id => ({ value: id, label: st
 const options = computed(() => [
   { value: null, label: 'Без подкатегории' },
   ...store.subcategories.filter(item => parentIds.value.includes(entityId(item.parentCategoryId))).map(item => ({ value: item._id, label: parents.value.length > 1 ? `${parents.value.find(parent => parent.value === entityId(item.parentCategoryId))?.label} → ${item.name}` : item.name })),
-  { value: '--CREATE_NEW--', label: '+ Добавить подкатегорию' }
+  ...(!store.chatFinance ? [{ value: '--CREATE_NEW--', label: '+ Добавить подкатегорию' }] : [])
 ]);
 watch(() => parentIds.value.join('|'), () => {
   const ids = parentIds.value;

@@ -1,8 +1,15 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
-defineProps({ disabled: Boolean, subtask: Boolean });
-const emit = defineEmits(["task", "approval", "file"]),
+defineProps({ disabled: Boolean, subtask: Boolean, finance: Boolean });
+const emit = defineEmits([
+    "task",
+    "approval",
+    "file",
+    "income",
+    "expense",
+    "transfer",
+  ]),
   open = ref(false),
   root = ref(null),
   button = ref(null);
@@ -65,10 +72,25 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", close));
         class="team-add-task"
         @click="choose('task')"
       >
-        <UiIcon name="plus" />{{ subtask ? "Новая подзадача" : "Новая задача" }}</button
-      ><button v-if="subtask" type="button" role="menuitem" @click="choose('approval')">
-        <UiIcon name="check" />Добавить согласование
-      </button><button type="button" role="menuitem" @click="choose('file')">
+        <UiIcon name="plus" />{{
+          subtask ? "Новая подзадача" : "Новая задача"
+        }}</button
+      ><button
+        v-if="subtask"
+        type="button"
+        role="menuitem"
+        @click="choose('approval')"
+      >
+        <UiIcon name="check" />Добавить согласование</button
+      ><template v-if="finance"
+        ><button type="button" role="menuitem" @click="choose('income')">
+          <UiIcon name="plus" />Создать доход</button
+        ><button type="button" role="menuitem" @click="choose('expense')">
+          <UiIcon name="minus" />Создать расход</button
+        ><button type="button" role="menuitem" @click="choose('transfer')">
+          <UiIcon name="forward" />Создать перевод
+        </button></template
+      ><button type="button" role="menuitem" @click="choose('file')">
         <UiIcon name="attach" />Загрузить файл или фото
       </button>
     </div>

@@ -286,6 +286,20 @@ try {
         (await page.evaluate(() => accessWrites.at(-1))).body.access,
         { chat: true, system: true, onec: false },
       );
+      // Account grants are independent of the finance-read checkbox and apply live.
+      if (compact) {
+        await activate(rowMenu);
+        const accountMenu = page.getByRole('dialog', { name: 'Доступы: Сотрудник', exact: true });
+        await activate(accountMenu.getByRole('button', { name: /^Счета/ }));
+      } else await activate(page.getByRole('button', { name: 'Счета: Сотрудник', exact: true }));
+      const accountDialog = page.getByRole('dialog', { name: 'Счета: Сотрудник', exact: true });
+      await accountDialog.getByRole('checkbox', { name: 'Касса сотрудника', exact: true }).waitFor();
+      await activate(accountDialog.getByRole('checkbox', { name: 'Касса сотрудника', exact: true }));
+      await page.waitForFunction(() => searchChat.state.members.find(row => row.name === 'Сотрудник').accountIds?.length === 1);
+      await activate(accountDialog.getByRole('checkbox', { name: 'BCC UU', exact: true }));
+      await page.waitForFunction(() => searchChat.state.members.find(row => row.name === 'Сотрудник').accountIds?.length === 2);
+      assert.deepEqual((await page.evaluate(() => accessWrites.at(-1))).body.accountIds, ['000000000000000000000001', '000000000000000000000002']);
+      await activate(accountDialog.getByRole('button', { name: 'Закрыть счета: сотрудник', exact: true }));
       assert.deepEqual(errors, []);
       console.log(
         `PASS ${engine} ${theme} ${width}: role defaults, personal overrides, private areas locked and compact checkbox geometry`,

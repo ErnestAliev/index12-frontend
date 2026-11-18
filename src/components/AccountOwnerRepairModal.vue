@@ -1,7 +1,7 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
 import { computed, ref } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { getAccountOwnerKey, isValidOwnerKey } from '@/utils/accountOwnership.js';
 import BaseSelect from './BaseSelect.vue';
@@ -9,7 +9,7 @@ import InfoModal from './InfoModal.vue';
 
 const props = defineProps({ items: { type: Array, required: true } });
 const emit = defineEmits(['close', 'saved']);
-const store = useMainStore();
+const store = useOperationStore();
 const permissions = usePermissions();
 const rows = ref(props.items.map(item => {
   const account = store.accounts.find(a => a._id === item.accountId);

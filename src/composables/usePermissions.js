@@ -1,5 +1,5 @@
 import { computed } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 
 /**
  * Centralized permission management composable
@@ -14,7 +14,7 @@ import { useMainStore } from '@/stores/mainStore';
  * }
  */
 export function usePermissions() {
-    const mainStore = useMainStore();
+    const mainStore = useOperationStore();
 
     // Get current workspace role - mainStore.workspaceRole is already a computed ref
     // Vue auto-unwraps it in computed context
@@ -71,7 +71,7 @@ export function usePermissions() {
      * - Manager: NO (HIDDEN for security)
      * - Admin: YES (full access)
      */
-    const canSeeBalances = computed(() => !isManager.value && !isAnalyst.value);
+    const canSeeBalances = computed(() => !mainStore.chatFinance && !isManager.value && !isAnalyst.value);
 
     /**
      * Can create transfer operations
@@ -79,7 +79,7 @@ export function usePermissions() {
      * - Manager: NO (transfers forbidden)
      * - Admin: YES
      */
-    const canCreateTransfer = computed(() => isAdmin.value);
+    const canCreateTransfer = computed(() => mainStore.chatFinance || isAdmin.value);
 
     /**
      * Can manage workspace settings (invites, roles, etc)
@@ -193,6 +193,7 @@ export function usePermissions() {
 
     function canAccessAccount(accountId) {
         if (!accountId) return false;
+        if (mainStore.chatFinance) return mainStore.accounts.some(account => String(account._id) === String(accountId));
         if (isAdmin.value) return true;
         if (isAnalyst.value) return false;
         if (!isManager.value) return true;
@@ -200,6 +201,7 @@ export function usePermissions() {
     }
 
     function canSeeAccountBalance(accountId) {
+        if (mainStore.chatFinance) return false;
         if (isAdmin.value) return true;
         if (!isManager.value) return false;
         return canAccessAccount(accountId);

@@ -3,6 +3,7 @@ import { computed, ref, onBeforeUnmount, nextTick } from "vue";
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import TeamChatDialog from "./TeamChatDialog.vue";
 import TeamChatRoleSelect from "./TeamChatRoleSelect.vue";
+import TeamAccountAccess from './TeamAccountAccess.vue';
 import TeamAccessPermissions from "./TeamAccessPermissions.vue";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({ formOnly: Boolean });
@@ -23,6 +24,8 @@ const rightsFor = (role) => ({
   ...chat.me?.roleAccess?.[role],
 });
 const accessPreview = ref({});
+const accountMemberId = ref(null);
+const accountMember = computed(() => members.value.find(member => member._id === accountMemberId.value));
 const accessMemberId = ref(null);
 const accessMember = computed(() =>
   members.value.find((member) => member._id === accessMemberId.value),
@@ -483,6 +486,7 @@ async function remove(member) {
             <UiIcon v-if="item.icon" :name="item.icon" />
             <span v-else class="access-onec">1С</span>
           </button>
+          <button v-if="!member.owner" type="button" class="access-right" :aria-label="`Счета: ${member.name}`" title="Счета" :disabled="pending.has(member._id)" @click="accountMemberId = member._id"><UiIcon name="settings" /></button>
         </div>
         <button
           v-if="!member.owner"
@@ -554,6 +558,7 @@ async function remove(member) {
         </button>
       </div>
     </template>
+    <TeamAccountAccess v-if="accountMember" :member="accountMember" :save="accountIds => change(accountMember, { accountIds })" @close="accountMemberId = null" />
     <TeamChatDialog
       v-if="accessMember"
       :title="`Доступы: ${accessMember.name}`"
@@ -592,6 +597,7 @@ async function remove(member) {
             />
           </button>
         </div>
+        <button v-if="!accessMember.owner" type="button" class="access-menu-item" :disabled="pending.has(accessMember._id)" @click="accessAction(member => accountMemberId = member._id)"><UiIcon name="wallet" /><span>Счета</span><span class="access-menu-check">{{ accessMember.accountIds?.length || 0 }}</span></button>
         <hr />
         <button
           type="button"
@@ -1016,7 +1022,7 @@ async function remove(member) {
 }
 @container (min-width: 620px) {
   .access-row {
-    grid-template-columns: minmax(0, 1fr) 132px 136px 44px 44px 44px;
+    grid-template-columns: minmax(0, 1fr) 132px 182px 44px 44px 44px;
   }
   .team-access .access-row > .access-row-action {
     display: grid;

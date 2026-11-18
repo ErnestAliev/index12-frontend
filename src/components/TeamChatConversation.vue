@@ -36,6 +36,9 @@ import CodexComposer from "./CodexComposer.vue";
 import ChatFileDropOverlay from './ChatFileDropOverlay.vue';
 import { useFileDrop } from '@/composables/useFileDrop';
 import { useChatTransfer } from '@/composables/useChatTransfer';
+import TeamFinanceDialog from './TeamFinanceDialog.vue';
+import TeamFinanceMessage from './TeamFinanceMessage.vue';
+const financeType = ref(null);
 import TeamChatAddMenu from "./TeamChatAddMenu.vue";
 import TeamApprovalDialog from './TeamApprovalDialog.vue';
 import TeamApprovalMessage from './TeamApprovalMessage.vue';
@@ -93,7 +96,7 @@ const thread = computed(() =>
   props.taskId ? chat.threads[props.taskId] || emptyThread : chat.state,
 );
 const approvalOpen=ref(false);
-watch(()=>props.taskId,()=>{approvalOpen.value=false;});
+watch(()=>props.taskId,()=>{approvalOpen.value=false;financeType.value=null;});
 async function approvalAdded(){approvalOpen.value=false;await nextTick();if(feed.value)feed.value.scrollTop=feed.value.scrollHeight;}
 const historyReady = computed(() =>
   props.taskId ? !!thread.value.ready : chat.historyReady,
@@ -162,7 +165,7 @@ function openMessageMenu(row, touchHold = false) {
 }
 function holdMessage(event, row) {
   if (event.target.closest('[data-fragment-editor]') || (event.target.closest('[data-fragment-source]') && (event.pointerType !== 'touch' || quoteModeId.value === row._id))) { cancelHold(); resetSwipe(); return; }
-  if(row.kind==='approval_request'&&event.target.closest('button'))return;
+  if(['approval_request','finance_operation'].includes(row.kind)&&event.target.closest('button'))return;
   if (["task", "task-files"].includes(row.kind)) return;
   if (
     event.button !== 0 ||
@@ -1177,6 +1180,7 @@ watch(
               'task-message': m.kind === 'task',
               self: m.authorId === chat.me.actorId,
               'approval-message': m.kind === 'approval_request',
+              'finance-message': m.kind === 'finance_operation',
               'reply-target': highlightedMessage === m._id,
               'search-current':
                 search.open && search.result?.messageId === m._id,
@@ -1229,9 +1233,10 @@ watch(
                 v-if="search.open && search.result?.taskMatch?.taskId === m.taskId && m.kind === 'task'"
                 type="button" class="team-search-inside" @click="openTask(m.taskId)"
               ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
-              <MessageFragment v-if="m.text && m.kind !== 'task' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
+              <MessageFragment v-if="m.text && m.kind !== 'task' && m.kind !== 'finance_operation' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
                 <CodexMessageText :text="m.text" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
               </MessageFragment>
+              <TeamFinanceMessage v-if="m.kind === 'finance_operation' && m.financeOperation" :message="m" />
               <TeamApprovalMessage v-if="m.kind === 'approval_request' && m.approvalRequest" :message="m" />
               <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
               <button
@@ -1408,14 +1413,17 @@ watch(
             </div> </template
           ><template #leading
             ><TeamChatAddMenu
-              :subtask="!!taskId"
+              :finance="!!chat.me?.owner || !!chat.me?.accountIds?.length"
+            @income="financeType = 'income'" @expense="financeType = 'expense'" @transfer="financeType = 'transfer'"
+            :subtask="!!taskId"
               :disabled="uploading"
               @task="startTask"
               @approval="approvalOpen = true"
               @file="input.click()" /></template
         ></CodexComposer>
       </div>
-      <TeamApprovalDialog v-if="approvalOpen && taskId" :task-id="taskId" @close="approvalOpen = false" @added="approvalAdded" />
+      <TeamFinanceDialog v-if="financeType" :type="financeType" :task-id="taskId" @close="financeType = null" />
+    <TeamApprovalDialog v-if="approvalOpen && taskId" :task-id="taskId" @close="approvalOpen = false" @added="approvalAdded" />
     </template>
   </div>
 </template>

@@ -3,7 +3,7 @@ import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import { useMainStore } from '@/stores/mainStore';
+import { useOperationStore } from '@/composables/useOperationStore';
 import { usePermissions } from '@/composables/usePermissions';
 import { formatNumber as formatBalance } from '@/utils/formatters.js'; 
 import { formatAmountInputEvent } from '@/utils/amountInput.js';
@@ -28,6 +28,7 @@ import { isSystemWithdrawal } from '@/utils/transferLabels.js';
  */
 
 const props = defineProps({
+  submitOperation: { type: Function, default: null },
   date: { type: Date, required: true },
   cellIndex: { type: Number, required: true },
   transferToEdit: { type: Object, default: null },
@@ -37,7 +38,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save', 'operation-deleted']);
 
-const mainStore = useMainStore();
+const mainStore = useOperationStore();
 const permissions = usePermissions();
 
 // --- ДАННЫЕ ФОРМЫ ---
@@ -209,7 +210,7 @@ const fromAccountOptions = computed(() => {
     }
     return option;
   });
-  options.push({ isActionRow: true });
+  if (!mainStore.chatFinance) options.push({ isActionRow: true });
   return options;
 });
 
@@ -229,7 +230,7 @@ const toAccountOptions = computed(() => {
     }
     return option;
   });
-  options.push({ isActionRow: true });
+  if (!mainStore.chatFinance) options.push({ isActionRow: true });
   return options;
 });
 
@@ -256,7 +257,7 @@ const ownerOptions = computed(() => {
           opts.push(option); 
       });
   }
-  opts.push({ isActionRow: true });
+  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
   return opts;
 });
 
@@ -370,6 +371,7 @@ const ownershipReady = ref(false);
 const isFromOwnerSelectVisible = true;
 const isToOwnerSelectVisible = computed(() => !isWithdrawal.value);
 const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccountOwners, onOwnerRepairSaved } = useAccountOwnerRepair({
+    onError: showError,
   routes: [
     { key: 'from', label: 'Отправитель', accountId: fromAccountId, ownerKey: selectedFromOwner, creating: isCreatingFromAccount },
     { key: 'to', label: 'Получатель', accountId: toAccountId, ownerKey: selectedToOwner, creating: isCreatingToAccount, active: () => !isWithdrawal.value, repairMissing: () => !isSystemWithdrawal(props.transferToEdit) },
@@ -381,7 +383,7 @@ const { showOwnerRepair, ownerRepairItems, ensureAccountOwnership, hydrateAccoun
 
 onMounted(async () => {
   let transferCategory = mainStore.categories.find(c => c.name.toLowerCase() === 'перевод');
-  if (!transferCategory) { try { transferCategory = await mainStore.addCategory('Перевод'); } catch (e) {} }
+  if (!transferCategory && !mainStore.chatFinance) { try { transferCategory = await mainStore.addCategory('Перевод'); } catch (e) {} }
   const defaultCategoryId = transferCategory ? transferCategory._id : null;
 
   if (props.transferToEdit) {
@@ -497,6 +499,7 @@ const saveNewToAccount = async () => {
 };
 
 const handleSave = async () => {
+  if (isInlineSaving.value) return;
   errorMessage.value = '';
   
   // 🟢 ВАЛИДАЦИЯ СРЕДСТВ
@@ -570,6 +573,13 @@ const handleSave = async () => {
       withdrawalRecipient: isWithdrawal.value ? withdrawalRecipient.value.trim() : null
   };
   
+  if (props.submitOperation) {
+    isInlineSaving.value = true;
+    try { await props.submitOperation(transferPayload); emit('close'); }
+    catch (error) { showError(error.response?.data?.message || error.message); }
+    finally { isInlineSaving.value = false; }
+    return;
+  }
   emit('save', { mode: (!isEdit || isClone) ? 'create' : 'edit', id: (!isEdit || isClone) ? null : transferId, data: transferPayload, originalTransfer: isEdit ? props.transferToEdit : null });
 };
 
@@ -601,7 +611,7 @@ const closePopup = () => { emit('close'); };
       
       <!-- СЧЕТ ОТПРАВИТЕЛЯ (с динамическим балансом) -->
       <BaseSelect hide-selected-label v-if="!isCreatingFromAccount" searchable v-model="fromAccountId" :options="fromAccountOptions" placeholder="Со счета" label="Со счета" class="input-spacing" @change="handleFromAccountChange" :disabled="isReadOnly">
-          <template #action-item v-if="canEdit">
+          <template #action-item v-if="canEdit && !mainStore.chatFinance">
               <div class="dual-action-row">
                   <button @click="showFromAccountInput" class="btn-dual-action left">Создать счет</button>
                   <button @click="openCashChoice('from')" class="btn-dual-action right"> Создать кассу</button>
@@ -619,8 +629,8 @@ const closePopup = () => { emit('close'); };
 
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Отправитель -->
       <div v-if="isFromOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'from')" class="input-spacing">
-          <BaseSelect hide-selected-label searchable v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly">
-              <template #action-item="{ query }" v-if="canEdit">
+          <BaseSelect hide-selected-label searchable v-model="selectedFromOwner" :options="ownerOptions" placeholder="Владельцы счетов (отправитель)" label="Владельцы счетов (отправитель)" @change="handleFromOwnerChange" :disabled="isReadOnly || mainStore.chatFinance">
+              <template #action-item="{ query }" v-if="canEdit && !mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('from', 'company', query)" class="btn-dual-action left">+ Создать Компанию</button>
                       <button @click="openCreateOwnerModal('from', 'individual', query)" class="btn-dual-action right">+ Создать Физлицо</button>
@@ -638,7 +648,7 @@ const closePopup = () => { emit('close'); };
       <template v-if="!isWithdrawal">
       <!-- СЧЕТ ПОЛУЧАТЕЛЯ -->
       <BaseSelect hide-selected-label v-if="!isCreatingToAccount" searchable v-model="toAccountId" :options="toAccountOptions" placeholder="На счет" label="На счет" class="input-spacing" @change="handleToAccountChange" :disabled="isReadOnly">
-          <template #action-item v-if="canEdit">
+          <template #action-item v-if="canEdit && !mainStore.chatFinance">
               <div class="dual-action-row">
                   <button @click="showToAccountInput" class="btn-dual-action left">Создать счет</button>
                   <button @click="openCashChoice('to')" class="btn-dual-action right"> Создать кассу</button>
@@ -656,8 +666,8 @@ const closePopup = () => { emit('close'); };
 
       <!-- 🟢 УСЛОВНЫЙ РЕНДЕРИНГ: Получатель -->
       <div v-if="isToOwnerSelectVisible && !(showCreateOwnerModal && creatingOwnerFor === 'to')" class="input-spacing">
-          <BaseSelect hide-selected-label searchable v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly">
-              <template #action-item="{ query }" v-if="canEdit">
+          <BaseSelect hide-selected-label searchable v-model="selectedToOwner" :options="ownerOptions" placeholder="Владельцы счетов (получатель)" label="Владельцы счетов (получатель)" @change="handleToOwnerChange" :disabled="isReadOnly || mainStore.chatFinance">
+              <template #action-item="{ query }" v-if="canEdit && !mainStore.chatFinance">
                   <div class="dual-action-row">
                       <button @click="openCreateOwnerModal('to', 'company', query)" class="btn-dual-action left">+ Создать Компанию</button>
                       <button @click="openCreateOwnerModal('to', 'individual', query)" class="btn-dual-action right">+ Создать Физлицо</button>
