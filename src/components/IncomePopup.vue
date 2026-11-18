@@ -1,4 +1,7 @@
 <script setup>
+import OperationDetails from './OperationDetails.vue';
+import { useInputModality } from '@/composables/useInputModality';
+const keyboardNavigation = useInputModality();
 import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
@@ -844,14 +847,13 @@ const handleMainAction = async () => {
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="closePopup">
+  <div class="popup-overlay" :class="{ 'keyboard-navigation': keyboardNavigation }" @click.self="closePopup">
     <div class="popup-content financial-operation-popup theme-income">
-      <h3>{{ title }}</h3>
+      <div class="operation-heading"><h3>{{ title }}</h3><slot name="header-actions" /></div>
 
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">
-           <span v-if="amount" class="floating-label">Сумма дохода, ₸</span>
-           <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode || isReadOnly" />
+           <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" aria-label="Сумма, ₸" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode || isReadOnly" />
         </div>
       </div>
 
@@ -933,12 +935,12 @@ const handleMainAction = async () => {
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
       <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :category-ids="[selectedCategoryId]" :disabled="isReadOnly || isProtectedMode" />
-      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к доходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
+      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к доходу" maxlength="10000" rows="1" :disabled="isReadOnly"></textarea>
+      <OperationDetails v-model="description" :operation="props.operationToEdit" :disabled="isReadOnly" @navigate="emit('close')" />
 
       
       <div class="custom-input-box input-spacing has-value date-box" :class="{ 'is-disabled': isProtectedMode }">
           <div class="input-inner-content">
-              <span class="floating-label">Дата операции</span>
               <div class="date-display-row">
                   <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
                   
@@ -946,7 +948,7 @@ const handleMainAction = async () => {
                      {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                  </span>
 
-                  <input type="date" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
+                  <input type="date" aria-label="Дата операции" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isProtectedMode || isReadOnly" />
                   <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
               </div>
           </div>

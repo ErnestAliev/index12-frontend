@@ -247,7 +247,16 @@ onBeforeUnmount(() => {
       :transfer-to-edit="operationType === 'transfer' ? operation : null"
       :submit-operation="submit"
       @close="close"
-    />
+      ><template #header-actions
+        ><button
+          class="finance-close"
+          type="button"
+          aria-label="Закрыть операцию"
+          :disabled="busy"
+          @click="close"
+        >
+          <UiIcon name="close" /></button></template
+    ></component>
     <div v-else-if="ready" class="finance-loading">
       <TeamOperationShare
         :message="{ operationShare: { ...operationSnapshot, mode: 'table' } }"
@@ -259,7 +268,8 @@ onBeforeUnmount(() => {
       <button v-if="error" @click="load">Повторить</button>
     </div>
     <button
-      class="finance-close"
+      v-if="!ready || !component"
+      class="finance-close finance-close-floating"
       type="button"
       aria-label="Закрыть операцию"
       :disabled="busy"
@@ -288,20 +298,27 @@ onBeforeUnmount(() => {
   background: #0005;
 }
 .finance-close {
-  position: fixed;
-  top: calc(var(--finance-top, 0px) + var(--safe-area-top, 0px) + 10px);
-  right: calc(var(--safe-area-right, 0px) + 12px);
+  position: static;
   z-index: 5000;
   display: grid;
   place-items: center;
   width: 44px;
-  height: 44px;
+  min-height: 44px;
   padding: 0;
   border: 0;
   border-radius: 8px;
   background: var(--codex-pane-surface, #fff);
   color: inherit;
   cursor: pointer;
+}
+.finance-close:focus-visible {
+  outline: 2px solid var(--codex-pane-focus, #21823e);
+  outline-offset: 2px;
+}
+.finance-close-floating {
+  position: fixed;
+  top: calc(var(--finance-top, 0px) + var(--safe-area-top, 0px) + 10px);
+  right: calc(var(--safe-area-right, 0px) + 12px);
 }
 .finance-loading {
   position: absolute;
@@ -318,7 +335,7 @@ onBeforeUnmount(() => {
   left: var(--finance-left, 0px);
   width: var(--finance-width, 100%);
   height: var(--finance-height, 100%);
-  padding: calc(var(--safe-area-top, 0px) + 60px)
+  padding: calc(var(--safe-area-top, 0px) + 12px)
     calc(var(--safe-area-right, 0px) + 12px) var(--finance-bottom, 12px)
     calc(var(--safe-area-left, 0px) + 12px);
   box-sizing: border-box;
@@ -330,6 +347,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.team-finance-dialog:not(.keyboard-navigation) :deep(button:focus),
 .team-finance-dialog:not(.keyboard-navigation) :deep(input:focus),
 .team-finance-dialog:not(.keyboard-navigation) :deep(textarea:focus) {
   outline: 0 !important;

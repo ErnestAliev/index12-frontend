@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import OperationText from "./OperationText.vue";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({ message: { type: Object, required: true } });
 const emit = defineEmits(["open"]);
@@ -31,7 +32,7 @@ const amount = computed(
         <tbody>
           <tr v-for="row in share.rows" :key="row.label">
             <th scope="row">{{ row.label }}</th>
-            <td>{{ row.value || "—" }}</td>
+            <td><OperationText :text="row.value || '—'" :workspace-id="message.workspaceId" /></td>
           </tr>
         </tbody>
       </table>

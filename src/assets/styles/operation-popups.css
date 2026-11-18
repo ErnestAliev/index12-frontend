@@ -106,3 +106,35 @@
 :root:not([data-theme="light"]) .financial-operation-popup :is(.right-text, .option-right).is-negative {
   color: var(--color-danger);
 }
+
+:root .popup-overlay:has(> .financial-operation-popup) { box-sizing:border-box;padding:calc(var(--safe-area-top,0px) + 12px) calc(var(--safe-area-right,0px) + 12px) calc(var(--safe-area-bottom,0px) + 12px) calc(var(--safe-area-left,0px) + 12px); }
+
+/* The same compact operation editor in the ledger and inside the work chat. */
+:root .financial-operation-popup.financial-operation-popup {
+  box-sizing: border-box;
+  padding: 18px 20px;
+  margin:0;
+  max-height:calc(100dvh - 24px - var(--safe-area-top,0px) - var(--safe-area-bottom,0px));
+  overflow-y:auto;
+}
+:root .financial-operation-popup.financial-operation-popup :is(.operation-heading, .header-row) {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 12px;
+}
+:root .financial-operation-popup.financial-operation-popup h3 { flex:1; min-width:0; margin:0; font-size:18px; line-height:1.3; }
+:root .financial-operation-popup.financial-operation-popup :is(.custom-input-box,.base-select .select-trigger) { height:44px; }
+:root .financial-operation-popup.financial-operation-popup .custom-input-box .real-input { border:0; padding:0; border-radius:0; background:transparent; box-shadow:none; font-size:15px!important; }
+:root .financial-operation-popup.financial-operation-popup .custom-input-box .date-overlay { height:100%; }
+:root .financial-operation-popup.financial-operation-popup .input-spacing { margin-bottom:8px; }
+:root .financial-operation-popup.financial-operation-popup .operation-comment { display:block; min-height:44px; height:44px; margin:0 0 4px; padding:10px 12px; font-size:14px; line-height:22px; }
+:root .financial-operation-popup.financial-operation-popup .popup-actions-row { margin-top:8px; gap:8px; }
+:root .financial-operation-popup.financial-operation-popup .popup-actions-row > button.btn-submit { height:44px; min-height:44px; padding:0 14px; font-size:14px; background:#21823e; color:#fff; border:0; }
+:root .financial-operation-popup.financial-operation-popup .popup-actions-row > button.btn-submit-edit { background:#21823e; color:#fff; border:0; }
+:root .financial-operation-popup.financial-operation-popup .popup-actions-row > button.btn-submit:hover:not(:disabled) { background:#196b31; }
+:root .financial-operation-popup.financial-operation-popup .icon-btn { width:44px; height:44px; }
+:root .popup-overlay:not(.keyboard-navigation) .financial-operation-popup .custom-input-box:focus-within { border-color:var(--color-border)!important; box-shadow:none!important; }
+:root .popup-overlay:not(.keyboard-navigation) .financial-operation-popup :is(input, textarea, button):focus { outline:0!important; box-shadow:none!important; }
+@media (max-width:600px) {
+  :root .financial-operation-popup.financial-operation-popup { padding:16px; }
+  :root .financial-operation-popup.financial-operation-popup h3 { font-size:16px; }
+  :root .financial-operation-popup.financial-operation-popup :is(.real-input,.select-search-input,.operation-comment,.operation-details textarea) { font-size:16px!important; }
+}

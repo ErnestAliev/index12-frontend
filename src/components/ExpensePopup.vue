@@ -1,4 +1,7 @@
 <script setup>
+import OperationDetails from './OperationDetails.vue';
+import { useInputModality } from '@/composables/useInputModality';
+const keyboardNavigation = useInputModality();
 import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
@@ -1047,7 +1050,7 @@ watch(defaultProjectId, (defId) => {
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="$emit('close')">
+  <div class="popup-overlay" :class="{ 'keyboard-navigation': keyboardNavigation }" @click.self="$emit('close')">
     <div class="popup-content financial-operation-popup theme-expense">
       <div class="header-row">
         <h3>{{ title }}</h3>
@@ -1055,13 +1058,13 @@ watch(defaultProjectId, (defId) => {
             <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="offset-label">Взаимовычет</span>
         </button>
+        <slot name="header-actions" />
       </div>
       
       <!-- СУММА -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">
-             <span v-if="amount" class="floating-label">Сумма расхода, ₸</span>
-             <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" ref="amountInput" @input="onAmountInput" :disabled="isReadOnly" />
+             <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" aria-label="Сумма, ₸" ref="amountInput" @input="onAmountInput" :disabled="isReadOnly" />
           </div>
       </div>
       
@@ -1161,13 +1164,13 @@ watch(defaultProjectId, (defId) => {
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
       <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
-      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к расходу" maxlength="10000" rows="2" :disabled="isReadOnly"></textarea>
+      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к расходу" maxlength="10000" rows="1" :disabled="isReadOnly"></textarea>
+      <OperationDetails v-model="description" :operation="props.operationToEdit" :disabled="isReadOnly" @navigate="emit('close')" />
 
 
       <!-- ДАТА + ИНДИКАТОР -->
       <div class="custom-input-box input-spacing has-value date-box">
          <div class="input-inner-content">
-            <span class="floating-label">Дата операции</span>
             <div class="date-display-row">
                <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
                
@@ -1176,7 +1179,7 @@ watch(defaultProjectId, (defId) => {
                    {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                </span>
 
-               <input type="date" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isReadOnly || isOffsetEditLocked" />
+               <input type="date" aria-label="Дата операции" v-model="editableDate" class="real-input date-overlay" :min="effectiveMinAllowedDate ? toInputDate(effectiveMinAllowedDate) : null" :max="effectiveMaxAllowedDate ? toInputDate(effectiveMaxAllowedDate) : null" :disabled="isReadOnly || isOffsetEditLocked" />
                
                <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             </div>

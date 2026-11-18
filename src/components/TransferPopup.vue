@@ -1,4 +1,7 @@
 <script setup>
+import OperationDetails from './OperationDetails.vue';
+import { useInputModality } from '@/composables/useInputModality';
+const keyboardNavigation = useInputModality();
 import UiIcon from '@/components/UiIcon.vue';
 import { ALL_PROJECTS, projectFields, projectSelection } from '@/utils/projectScope';
 import SubcategorySelect from './SubcategorySelect.vue';
@@ -68,7 +71,7 @@ const isInlineSaving = ref(false);
 
 const transferMode = ref('internal');
 const isWithdrawal = computed(() => transferMode.value === 'withdrawal');
-const description = ref('');
+const description = ref(''), comment = ref('');
 const withdrawalRecipient = ref('');
 const recipientOptions = computed(() => [...new Set([...mainStore.individuals, ...mainStore.companies, ...mainStore.contractors].map(item => item.name).filter(Boolean))]);
 
@@ -400,6 +403,7 @@ onMounted(async () => {
 
     transferMode.value = isSystemWithdrawal(transfer) ? 'withdrawal' : 'internal';
     description.value = transfer.description || '';
+    comment.value = transfer.comment || '';
     withdrawalRecipient.value = transfer.withdrawalRecipient || '';
 
     const savedCategoryId = props.transferToEdit?.categoryId?._id || props.transferToEdit?.categoryId;
@@ -570,7 +574,7 @@ const handleSave = async () => {
       fromCompanyId: fromCompanyId, toCompanyId: toCompanyId, 
       fromIndividualId: fromIndividualId, toIndividualId: toIndividualId, 
       categoryId: finalCategoryId, subcategoryId: subcategoryId.value, transferPurpose: apiTransferPurpose,
-      transferReason: null, description: description.value.trim(),
+      transferReason: null, description: description.value.trim(), comment: comment.value,
       withdrawalRecipient: isWithdrawal.value ? withdrawalRecipient.value.trim() : null
   };
   
@@ -588,9 +592,9 @@ const closePopup = () => { emit('close'); };
 </script>
 
 <template>
-  <div class="popup-overlay" @click.self="closePopup">
+  <div class="popup-overlay" :class="{ 'keyboard-navigation': keyboardNavigation }" @click.self="closePopup">
     <div class="popup-content financial-operation-popup theme-transfer">
-      <h3>{{ title }}</h3>
+      <div class="operation-heading"><h3>{{ title }}</h3><slot name="header-actions" /></div>
 
       <div class="transfer-modes input-spacing" role="group" aria-label="Вид операции">
         <button type="button" :aria-pressed="!isWithdrawal" :class="{ active: !isWithdrawal }" @click="transferMode = 'internal'" :disabled="isReadOnly">Между счетами</button>
@@ -600,7 +604,6 @@ const closePopup = () => { emit('close'); };
       <!-- СУММА + ВАЛИДАЦИЯ -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
         <div class="input-inner-content">
-           <span v-if="amount" class="floating-label">Сумма, ₸</span>
            <input type="text" inputmode="decimal" v-model="amount" :placeholder="amount ? '' : 'Сумма, ₸'" aria-label="Сумма, ₸" ref="amountInput" class="real-input" @input="onAmountInput" autocomplete="off" :disabled="isReadOnly" />
         </div>
     </div>
@@ -696,11 +699,11 @@ const closePopup = () => { emit('close'); };
       <div v-if="isWithdrawal" class="input-spacing">
         <BaseSelect hide-selected-label searchable allow-custom v-model="withdrawalRecipient" :options="recipientOptions.map(name => ({ value: name, label: name }))" label="Получатель средств" placeholder="Получатель средств" :disabled="isReadOnly" />
       </div>
-      <input v-model="description" class="form-input input-spacing" aria-label="Комментарий" placeholder="Комментарий (необязательно)" maxlength="10000" :disabled="isReadOnly" />
+      <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к переводу" maxlength="10000" rows="1" :disabled="isReadOnly"></textarea>
+      <OperationDetails v-model="description" :operation="props.transferToEdit" :disabled="isReadOnly" @navigate="emit('close')" />
 
       <div class="custom-input-box input-spacing has-value date-box">
          <div class="input-inner-content">
-            <span class="floating-label">Дата</span>
             <div class="date-display-row">
                <span class="date-value-text">{{ toDisplayDate(editableDate) }}</span>
                
@@ -709,7 +712,7 @@ const closePopup = () => { emit('close'); };
                      {{ isFutureDate ? 'ПЛАН' : 'ФАКТ' }}
                  </span>
 
-               <input type="date" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" :disabled="isReadOnly" />
+               <input type="date" aria-label="Дата операции" v-model="editableDate" class="real-input date-overlay" :min="minDateString" :max="maxDateString" :disabled="isReadOnly" />
                <svg class="calendar-icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             </div>
          </div>
