@@ -938,9 +938,13 @@ const handleWithdrawalSaved = async ({ mode, id, data }) => { isWithdrawalPopupV
 .header-dashboard.portrait-tablet :deep(.card-title) { font-size: var(--appearance-widgets-labelSize, 12px); line-height: 1.25; }
 .header-dashboard.portrait-tablet :deep(.card-actions) { gap: 4px; flex-shrink: 0; }
 .header-dashboard.portrait-tablet :deep(.action-square-btn) { width: 22px; height: 22px; flex-shrink: 0; }
-.header-dashboard.portrait-tablet :deep(.card-item) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.header-dashboard.portrait-tablet :deep(.card-item) { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; align-self: stretch; gap: 6px; }
 .header-dashboard.portrait-tablet :deep(.card-items-list) { padding-right: 0; }
-.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) { display: flex; }
+.header-dashboard.portrait-tablet :deep(.card-items-list.forecast-mode) {
+  display: flex;
+  /* The desktop grid centers its cells; stacked rows must fill the card. */
+  align-items: stretch;
+}
 .header-dashboard.portrait-tablet :deep(.forecast-mode .card-item) { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .header-dashboard.portrait-tablet :deep(.forecast-display) { display: flex; justify-content: flex-end; gap: 4px; }
 .header-dashboard.portrait-tablet :deep(.card-item),
