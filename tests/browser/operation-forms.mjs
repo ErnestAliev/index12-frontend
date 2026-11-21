@@ -42,6 +42,7 @@ try {
           heading: css('h3').fontSize, amount: css('[inputmode="decimal"]').fontSize,
           date: css('.date-value-text').fontSize, comment: css('.operation-comment').fontSize,
           values: [...el.querySelectorAll('.select-search-input, .selected-text, .placeholder')].map(item => getComputedStyle(item).fontSize),
+          weights: [...el.querySelectorAll('[inputmode="decimal"], .select-search-input, .selected-text, .placeholder, .operation-comment, .date-value-text')].map(item => getComputedStyle(item).fontWeight),
           fields: [...el.querySelectorAll('.select-trigger, .custom-input-box, .operation-comment')].map(item => item.getBoundingClientRect().height),
           commentBox: rect('.operation-comment'), dateBox: rect('.date-box'), dateInput: rect('.date-overlay'),
           dateText: rect('.date-value-text'), badge: rect('.date-badge'), icon: rect('.calendar-icon-svg'),
@@ -50,7 +51,8 @@ try {
         };
       });
       assert.equal(geometry.heading, '18px');
-      assert.ok([geometry.amount, geometry.date, geometry.comment, ...geometry.values].every(size => size === '16px'), JSON.stringify(geometry));
+      assert.ok([geometry.amount, geometry.date, geometry.comment, ...geometry.values].every(size => size === '14px'), JSON.stringify(geometry));
+      assert.ok(geometry.weights.every(weight => weight === '400'), JSON.stringify(geometry));
       assert.ok(geometry.fields.every(height => Math.abs(height - 44) < 1), JSON.stringify(geometry));
       assert.ok(geometry.form.left >= 31 && geometry.form.right <= width - 31 && geometry.form.width <= 440);
       assert.ok(geometry.scroll <= geometry.client + 1, JSON.stringify(geometry));
@@ -70,7 +72,7 @@ try {
       assert.equal((await form.locator('.date-badge').innerText()).trim(), 'ПЛАН');
       await form.locator('.operation-details-toggle').click();
       await form.getByRole('button', { name: 'Изменить описание' }).click();
-      assert.equal(await form.getByLabel('Описание операции').evaluate(el => getComputedStyle(el).fontSize), '16px');
+      assert.equal(await form.getByLabel('Описание операции').evaluate(el => getComputedStyle(el).fontSize), '14px');
       const comment = form.locator('.operation-comment');
       await comment.fill('Комментарий без увеличенного шрифта');
       const focus = await comment.evaluate(el => ({ outline: getComputedStyle(el).outlineWidth, shadow: getComputedStyle(el).boxShadow }));
@@ -86,7 +88,13 @@ try {
       // Empty controls use the same scale as populated controls.
       await page.evaluate(type => operationForms.open(type), type);
       await form.waitFor();
-      assert.ok((await form.locator('.placeholder').evaluateAll(items => items.map(el => getComputedStyle(el).fontSize))).every(size => size === '16px'));
+      const emptyFields = await form.locator('[inputmode="decimal"], .select-search-input, .selected-text, .placeholder, .operation-comment').evaluateAll(items => items.map(el => ({
+        text: el.value || el.textContent,
+        size: getComputedStyle(el).fontSize,
+        weight: getComputedStyle(el).fontWeight,
+        placeholderWeight: el.matches('input, textarea') ? getComputedStyle(el, '::placeholder').fontWeight : '400',
+      })));
+      assert.ok(emptyFields.every(field => field.size === '14px' && field.weight === '400' && field.placeholderWeight === '400'), JSON.stringify(emptyFields));
       console.log(`PASS ${engine} ${width} ${theme} ${type}: type scale, fields, comment, date hit area/picker value, safe area, reduced viewport`);
     }
     assert.deepEqual(errors, []);

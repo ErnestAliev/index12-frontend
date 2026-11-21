@@ -111,7 +111,7 @@
 
 /* One type scale and field geometry for all three operation forms. */
 :root .financial-operation-popup.financial-operation-popup {
-  --operation-field-size: 16px;
+  --operation-field-size: 14px;
   --operation-secondary-size: 12px;
   --operation-field-height: 44px;
   --operation-field-padding: 12px;
@@ -150,8 +150,12 @@
   .operation-comment, .operation-details-body textarea, .option-label
 ) {
   font-size: var(--operation-field-size) !important;
-  font-weight: 400;
+  font-weight: 400 !important;
   line-height: 22px;
+}
+:root .financial-operation-popup.financial-operation-popup :is(input, textarea)::placeholder {
+  font-size: var(--operation-field-size);
+  font-weight: 400;
 }
 :root .financial-operation-popup.financial-operation-popup :is(
   .custom-input-box, .base-select .select-trigger, .form-input,
