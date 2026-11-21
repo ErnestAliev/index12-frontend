@@ -128,11 +128,31 @@
   line-height: 1.375;
 }
 :root .financial-operation-popup.financial-operation-popup :is(.operation-heading, .header-row) {
+  position: sticky;
+  top: -16px;
+  z-index: 2100;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 12px;
+  min-height: 60px;
+  margin: -16px -16px 12px;
+  padding: 8px 8px 8px 16px;
+  background: inherit;
 }
+:root .financial-operation-popup.financial-operation-popup :is(.operation-close, .finance-close) {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+:root .financial-operation-popup.financial-operation-popup :is(.operation-close, .finance-close) .ui-icon { width: 20px; height: 20px; }
 :root .financial-operation-popup.financial-operation-popup h3 {
   flex: 1;
   min-width: 0;
@@ -212,8 +232,21 @@
   line-height: 20px;
 }
 :root .financial-operation-popup.financial-operation-popup :is(.operation-details-toggle, .operation-description-edit) { min-height: 44px; }
-:root .financial-operation-popup.financial-operation-popup .transfer-modes { padding: 2px; }
-:root .financial-operation-popup.financial-operation-popup .transfer-modes button { min-height: 40px; padding: 6px; }
+:root .financial-operation-popup.financial-operation-popup .transfer-modes { display: flex; flex: none; gap: 2px; padding: 0; background: transparent; }
+:root .financial-operation-popup.financial-operation-popup .transfer-modes button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+:root .financial-operation-popup.financial-operation-popup .transfer-modes button.active { background: var(--color-background-soft); border-color: var(--color-border); color: var(--color-primary); }
+:root .financial-operation-popup.financial-operation-popup .transfer-modes .ui-icon { width: 20px; height: 20px; }
 :root .financial-operation-popup.financial-operation-popup .list-item-wrapper:not(.is-header):not(.is-action-row) {
   min-height: 44px;
   padding: 10px var(--operation-field-padding);

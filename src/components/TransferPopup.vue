@@ -571,11 +571,15 @@ const closePopup = () => { emit('close'); };
 <template>
   <div class="popup-overlay" :class="{ 'keyboard-navigation': keyboardNavigation }" @click.self="closePopup">
     <div class="popup-content financial-operation-popup theme-transfer">
-      <div class="operation-heading"><h3>{{ title }}</h3><slot name="header-actions" /></div>
-
-      <div class="transfer-modes input-spacing" role="group" aria-label="Вид операции">
-        <button type="button" :aria-pressed="!isWithdrawal" :class="{ active: !isWithdrawal }" @click="transferMode = 'internal'" :disabled="isReadOnly">Между счетами</button>
-        <button type="button" :aria-pressed="isWithdrawal" :class="{ active: isWithdrawal }" @click="transferMode = 'withdrawal'" :disabled="isReadOnly">Вывод из системы</button>
+      <div class="operation-heading">
+        <h3>{{ title }}</h3>
+        <div class="transfer-modes" role="group" aria-label="Вид операции">
+          <button type="button" aria-label="Между счетами" title="Между счетами" :aria-pressed="!isWithdrawal" :class="{ active: !isWithdrawal }" @click="transferMode = 'internal'" :disabled="isReadOnly"><UiIcon name="transfer" /></button>
+          <button type="button" aria-label="Вывод из системы" title="Вывод из системы" :aria-pressed="isWithdrawal" :class="{ active: isWithdrawal }" @click="transferMode = 'withdrawal'" :disabled="isReadOnly"><UiIcon name="logout" /></button>
+        </div>
+        <slot name="header-actions">
+          <button type="button" class="operation-close" aria-label="Закрыть операцию" title="Закрыть" @click="closePopup"><UiIcon name="close" /></button>
+        </slot>
       </div>
 
       <!-- СУММА + ВАЛИДАЦИЯ -->
@@ -721,10 +725,6 @@ const closePopup = () => { emit('close'); };
 </template>
 
 <style scoped>
-.transfer-modes { display: flex; gap: 4px; padding: 4px; background: #e6e6e6; border-radius: 9px; }
-.transfer-modes button { flex: 1; border: 0; border-radius: 7px; padding: 11px 6px; font-size: 13px; font-weight: 600; color: #666; background: transparent; cursor: pointer; }
-.transfer-modes button.active { background: #2f3340; color: #fff; }
-.transfer-modes button:focus-visible { outline: 2px solid #007aff; outline-offset: 2px; }
 /* 🟢 CSS ПЕРЕМЕННЫЕ */
 .popup-content {
     /* 🟢 Цвет ТЕМНО-СИНИЙ */

@@ -1033,7 +1033,9 @@ watch(defaultProjectId, (defId) => {
             <svg viewBox="0 0 24 24" class="offset-icon"><path d="M5 12h14M12 5v14M8 4l-4 4m0 0 4 4M16 16l4-4m0 0-4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="offset-label">Взаимовычет</span>
         </button>
-        <slot name="header-actions" />
+        <slot name="header-actions">
+          <button type="button" class="operation-close" aria-label="Закрыть операцию" title="Закрыть" @click="emit('close')"><UiIcon name="close" /></button>
+        </slot>
       </div>
       
       <!-- СУММА -->

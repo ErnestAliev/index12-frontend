@@ -822,7 +822,12 @@ const handleMainAction = async () => {
 <template>
   <div class="popup-overlay" :class="{ 'keyboard-navigation': keyboardNavigation }" @click.self="closePopup">
     <div class="popup-content financial-operation-popup theme-income">
-      <div class="operation-heading"><h3>{{ title }}</h3><slot name="header-actions" /></div>
+      <div class="operation-heading">
+        <h3>{{ title }}</h3>
+        <slot name="header-actions">
+          <button type="button" class="operation-close" aria-label="Закрыть операцию" title="Закрыть" @click="closePopup"><UiIcon name="close" /></button>
+        </slot>
+      </div>
 
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">

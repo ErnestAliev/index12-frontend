@@ -16,7 +16,8 @@ try {
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   });
   for (const width of [320, 390, 768, 1024, 1440]) {
-    const context = await browser.newContext({ viewport: { width, height: 950 }, hasTouch: width <= 1024 });
+    const height = width === 390 ? 844 : 950;
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: width <= 1024 });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(10000);
@@ -27,7 +28,7 @@ try {
       await page.evaluate(({ theme, type }) => {
         document.documentElement.dataset.theme = theme;
         for (const side of ['top', 'bottom', 'left', 'right']) {
-          document.documentElement.style.setProperty(`--safe-area-${side}`, side === 'bottom' ? '34px' : '20px');
+          document.documentElement.style.setProperty(`--safe-area-${side}`, side === 'bottom' ? '34px' : side === 'top' && innerWidth === 390 ? '47px' : '20px');
         }
         operationForms.open(type, true);
       }, { theme, type });
@@ -63,6 +64,21 @@ try {
       assert.equal(geometry.commentBorder, geometry.fieldBorder);
       assert.ok(geometry.dateInput.height >= 42 && geometry.dateInput.width >= geometry.dateBox.width - 2);
       assert.ok(geometry.dateText.right <= geometry.badge.left && geometry.badge.right <= geometry.icon.left);
+      const close = form.getByRole('button', { name: 'Закрыть операцию', exact: true });
+      assert.equal(await close.count(), 1);
+      const closeBox = await close.boundingBox();
+      assert.equal(closeBox.width, 44);
+      assert.equal(closeBox.height, 44);
+      if (type === 'transfer') {
+        const modes = form.getByRole('group', { name: 'Вид операции' });
+        assert.equal(await modes.locator('..').getAttribute('class'), 'operation-heading');
+        const activate = element => width <= 1024 ? element.tap() : element.click();
+        await activate(modes.getByRole('button', { name: 'Вывод из системы', exact: true }));
+        assert.equal(await modes.getByRole('button', { name: 'Вывод из системы', exact: true }).getAttribute('aria-pressed'), 'true');
+        await form.getByRole('combobox', { name: 'Получатель средств' }).waitFor();
+        await activate(modes.getByRole('button', { name: 'Между счетами', exact: true }));
+        assert.equal(await modes.getByRole('button', { name: 'Между счетами', exact: true }).getAttribute('aria-pressed'), 'true');
+      }
       const date = form.getByLabel('Дата операции', { exact: true });
       await date.scrollIntoViewIfNeeded();
       await date.evaluate(el => el.addEventListener('click', event => { event.preventDefault(); el.dataset.tapped = 'yes'; }, { once: true }));
@@ -86,10 +102,24 @@ try {
       await save.scrollIntoViewIfNeeded();
       const saveBox = await save.boundingBox();
       assert.ok(saveBox.y >= 20 && saveBox.y + saveBox.height <= 460 - 45, JSON.stringify(saveBox));
-      await page.setViewportSize({ width, height: 950 });
+      // The close action remains visible while the long form is scrolled down.
+      const stickyClose = await close.boundingBox();
+      assert.ok(stickyClose.y >= 20 && stickyClose.y + stickyClose.height < 160, JSON.stringify(stickyClose));
+      if (width <= 1024) await close.tap(); else await close.click();
+      await form.waitFor({ state: 'detached' });
+      await page.setViewportSize({ width, height });
       // Empty controls use the same scale as populated controls.
       await page.evaluate(type => operationForms.open(type), type);
       await form.waitFor();
+      if (width === 390) {
+        const phone = await form.evaluate(el => ({
+          height: el.clientHeight, content: el.scrollHeight,
+          close: el.querySelector('.operation-close').getBoundingClientRect().toJSON(),
+          save: el.querySelector('.btn-submit').getBoundingClientRect().toJSON(),
+        }));
+        assert.ok(phone.content <= phone.height + 1, JSON.stringify(phone));
+        assert.ok(phone.close.top >= 47 && phone.save.bottom <= height - 46, JSON.stringify(phone));
+      }
       const emptyFields = await form.locator('[inputmode="decimal"], .select-search-input, .selected-text, .placeholder, .operation-comment').evaluateAll(items => items.map(el => ({
         text: el.value || el.textContent,
         size: getComputedStyle(el).fontSize,
