@@ -43,6 +43,7 @@ try {
           date: css('.date-value-text').fontSize, comment: css('.operation-comment').fontSize,
           values: [...el.querySelectorAll('.select-search-input, .selected-text, .placeholder')].map(item => getComputedStyle(item).fontSize),
           weights: [...el.querySelectorAll('[inputmode="decimal"], .select-search-input, .selected-text, .placeholder, .operation-comment, .date-value-text')].map(item => getComputedStyle(item).fontWeight),
+          colors: [...el.querySelectorAll('[inputmode="decimal"], .select-search-input, .selected-text, .placeholder, .operation-comment, .date-value-text')].map(item => getComputedStyle(item).color),
           fields: [...el.querySelectorAll('.select-trigger, .custom-input-box, .operation-comment')].map(item => item.getBoundingClientRect().height),
           commentBox: rect('.operation-comment'), dateBox: rect('.date-box'), dateInput: rect('.date-overlay'),
           dateText: rect('.date-value-text'), badge: rect('.date-badge'), icon: rect('.calendar-icon-svg'),
@@ -53,6 +54,7 @@ try {
       assert.equal(geometry.heading, '18px');
       assert.ok([geometry.amount, geometry.date, geometry.comment, ...geometry.values].every(size => size === '14px'), JSON.stringify(geometry));
       assert.ok(geometry.weights.every(weight => weight === '400'), JSON.stringify(geometry));
+      assert.ok(geometry.colors.every(color => color === geometry.colors[0]), JSON.stringify(geometry));
       assert.ok(geometry.fields.every(height => Math.abs(height - 44) < 1), JSON.stringify(geometry));
       assert.ok(geometry.form.left >= 31 && geometry.form.right <= width - 31 && geometry.form.width <= 440);
       assert.ok(geometry.scroll <= geometry.client + 1, JSON.stringify(geometry));
@@ -92,9 +94,12 @@ try {
         text: el.value || el.textContent,
         size: getComputedStyle(el).fontSize,
         weight: getComputedStyle(el).fontWeight,
+        color: getComputedStyle(el).color,
+        placeholderColor: el.matches('input, textarea') ? getComputedStyle(el, '::placeholder').color : getComputedStyle(el).color,
         placeholderWeight: el.matches('input, textarea') ? getComputedStyle(el, '::placeholder').fontWeight : '400',
       })));
       assert.ok(emptyFields.every(field => field.size === '14px' && field.weight === '400' && field.placeholderWeight === '400'), JSON.stringify(emptyFields));
+      assert.ok(emptyFields.every(field => field.color === emptyFields[0].color && field.placeholderColor === field.color), JSON.stringify(emptyFields));
       console.log(`PASS ${engine} ${width} ${theme} ${type}: type scale, fields, comment, date hit area/picker value, safe area, reduced viewport`);
     }
     assert.deepEqual(errors, []);

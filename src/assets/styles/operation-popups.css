@@ -151,11 +151,17 @@
 ) {
   font-size: var(--operation-field-size) !important;
   font-weight: 400 !important;
+  color: var(--color-text-soft);
   line-height: 22px;
+}
+:root .financial-operation-popup.financial-operation-popup :is(input, textarea) {
+  -webkit-text-fill-color: currentColor;
 }
 :root .financial-operation-popup.financial-operation-popup :is(input, textarea)::placeholder {
   font-size: var(--operation-field-size);
   font-weight: 400;
+  color: var(--color-text-soft);
+  opacity: 1;
 }
 :root .financial-operation-popup.financial-operation-popup :is(
   .custom-input-box, .base-select .select-trigger, .form-input,
