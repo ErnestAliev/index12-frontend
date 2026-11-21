@@ -44,6 +44,20 @@ export function useAccountOwnerRepair({ routes, ready, enabled, existing, onErro
     showOwnerRepair.value = false;
   }
 
+  // A link saved in the editor (or another tab) can arrive after the form opens.
+  // Follow that link unless the user has explicitly selected a different owner.
+  watch(() => routes.map(route => getAccountOwnerKey(
+    store.accounts.find(a => String(a._id) === String(route.accountId.value)),
+    store.companies, store.individuals,
+  )), (owners, previousOwners) => {
+    if (!ready.value || !enabled.value || showOwnerRepair.value) return;
+    routes.forEach((route, index) => {
+      if (route.creating.value || (route.active && !route.active())) return;
+      if (owners[index] && (!isValidOwnerKey(route.ownerKey.value, store.companies, store.individuals) ||
+        route.ownerKey.value === previousOwners[index])) route.ownerKey.value = owners[index];
+    });
+  });
+
   watch(() => [ready.value, enabled.value, existing.value,
     ...routes.flatMap(route => [route.accountId.value, route.ownerKey.value, route.creating.value, route.active?.()]),
     store.accounts, store.companies, store.individuals,

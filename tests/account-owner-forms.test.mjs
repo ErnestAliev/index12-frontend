@@ -74,6 +74,48 @@ const props = (type, extra) => ({ date: new Date(), cellIndex: 0,
   [type === 'transfer' ? 'transferToEdit' : 'operationToEdit']: operation(type, extra) });
 
 for (const [name, type] of [['IncomePopup', 'income'], ['ExpensePopup', 'expense'], ['TransferPopup', 'transfer']]) {
+  test(`${type}: linked individual is displayed with the correct type and stays selectable for hidden accounts`, async () => {
+    const f = fixture();
+    const state = await mount(name, props(type, type === 'transfer' ? {} : { accountId: 'personal', individualId: 'person' }));
+    const options = () => state.ownerOptions.filter(option => option.value);
+    const selected = () => type === 'transfer' ? state.selectedToOwner : state.selectedOwner;
+    assert.equal(selected(), 'individual-person');
+    assert.equal(options().find(option => option.value === selected())?.label, 'Физлицо');
+    assert.equal(options().some(option => option.value === 'company-person'), false);
+    assert.equal(state.ensureAccountOwnership(), true);
+    f.store.accounts[1].isExcluded = true;
+    f.store.accountVisibilityMode = 'open';
+    await settle();
+    assert.equal(options().find(option => option.value === selected())?.label, 'Физлицо', 'widget visibility cannot remove an owner from the form');
+    assert.equal(state.showOwnerRepair, false);
+  });
+
+  test(`${type}: creating an operation on a personal account fills its owner without repair`, async () => {
+    fixture();
+    const state = await mount(name, { date: new Date(), cellIndex: 0 });
+    if (type === 'transfer') state.handleToAccountChange('personal');
+    else state.selectedAccountId = 'personal';
+    await settle();
+    const selected = type === 'transfer' ? state.selectedToOwner : state.selectedOwner;
+    assert.equal(selected, 'individual-person');
+    assert.equal(state.ownerOptions.find(option => option.value === selected)?.label, 'Физлицо');
+    assert.equal(state.showOwnerRepair, false);
+  });
+
+  test(`${type}: an owner saved through the editor updates an already open form`, async () => {
+    const f = fixture();
+    const state = await mount(name, props(type));
+    await f.store.batchUpdateEntities('accounts', [{ _id: 'account', companyId: null, individualId: 'person' }]);
+    await settle();
+    assert.equal(type === 'transfer' ? state.selectedFromOwner : state.selectedOwner, 'individual-person');
+    assert.equal(state.showOwnerRepair, false);
+    assert.equal(state.ensureAccountOwnership(), true);
+    const reopened = await mount(name, props(type, type === 'transfer'
+      ? { fromIndividualId: 'person' } : { individualId: 'person' }));
+    assert.equal(type === 'transfer' ? reopened.selectedFromOwner : reopened.selectedOwner, 'individual-person');
+    assert.equal(reopened.showOwnerRepair, false);
+  });
+
   test(`${type}: account owner hydrates when the saved operation has lost its owner`, async () => {
     const f = fixture();
     const saved = [];
@@ -121,6 +163,15 @@ for (const [name, type] of [['IncomePopup', 'income'], ['ExpensePopup', 'expense
     assert.equal(state.showOwnerRepair, false);
   });
 }
+
+test('account editor persistence rejects a failed save after restoring server state', async () => {
+  const f = fixture();
+  axios.defaults.adapter = async config => {
+    if (config.url.includes('/accounts/batch-update')) throw new Error('Сохранение отклонено');
+    return { status: 200, data: config.url.includes('/snapshot') ? {} : [] };
+  };
+  await assert.rejects(f.store.batchUpdateEntities('accounts', [{ _id: 'account', individualId: 'person' }]), /Сохранение отклонено/);
+});
 
 test('transfer: both broken legs are repaired in one alert', async () => {
   const f = fixture();

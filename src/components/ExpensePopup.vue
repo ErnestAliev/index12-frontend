@@ -13,7 +13,7 @@ import { formatAmountInput, formatAmountInputEvent } from '@/utils/amountInput.j
 import BaseSelect from './BaseSelect.vue';
 import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
 import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
-import { getAccountOwnerKey } from '@/utils/accountOwnership.js';
+import { buildAccountOwnerOptions, getAccountOwnerKey } from '@/utils/accountOwnership.js';
 import { useManagedCounterparty } from '@/composables/useManagedCounterparty';
 import ConfirmationPopup from './ConfirmationPopup.vue';
 import InfoModal from './InfoModal.vue'; 
@@ -338,34 +338,9 @@ const accountOptions = computed(() => {
   return opts;
 });
 
-const ownerOptions = computed(() => {
-  const opts = [];
-  
-  if (mainStore.currentCompanyBalances.length) {
-      opts.push({ label: 'Компании', isHeader: true });
-      mainStore.currentCompanyBalances.forEach(c => { 
-          const option = { value: `company-${c._id}`, label: c.name };
-          if (permissions.shouldShowBalance.value) {
-              option.rightText = `${formatNumber(Math.abs(c.balance || 0))} ₸`;
-          }
-          opts.push(option); 
-      });
-  }
-  if (mainStore.currentIndividualBalances.length) {
-      opts.push({ label: 'Физлица', isHeader: true });
-      mainStore.currentIndividualBalances.forEach(i => { 
-          const nameLower = i.name.trim().toLowerCase();
-          if (nameLower === 'розничные клиенты' || nameLower  === 'розница') return;
-          const option = { value: `individual-${i._id}`, label: i.name };
-          if (permissions.shouldShowBalance.value) {
-              option.rightText = `${formatNumber(Math.abs(i.balance || 0))} ₸`;
-          }
-          opts.push(option); 
-      });
-  }
-  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
-  return opts;
-});
+const ownerOptions = computed(() => buildAccountOwnerOptions(
+  mainStore, permissions.shouldShowBalance.value ? formatNumber : null,
+));
 
 const managedParty = useManagedCounterparty({
   store: mainStore, selected: selectedContractorValue, accountId: selectedAccountId,

@@ -3153,6 +3153,7 @@ export const useMainStore = defineStore('mainStore', () => {
             await fetchAllEntities();
             // 🔥 FIX: Refresh snapshot even on error to ensure UI consistency
             await fetchSnapshot();
+            throw e;
         }
     }
 

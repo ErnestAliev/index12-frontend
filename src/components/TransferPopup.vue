@@ -14,7 +14,7 @@ import ConfirmationPopup from './ConfirmationPopup.vue';
 import BaseSelect from './BaseSelect.vue';
 import AccountOwnerRepairModal from './AccountOwnerRepairModal.vue';
 import { useAccountOwnerRepair } from '@/composables/useAccountOwnerRepair';
-import { getAccountOwnerKey } from '@/utils/accountOwnership.js';
+import { buildAccountOwnerOptions, getAccountOwnerKey } from '@/utils/accountOwnership.js';
 import InfoModal from './InfoModal.vue';
 import { accountSuggestions } from '@/data/accountSuggestions.js'; 
 import { isSystemWithdrawal } from '@/utils/transferLabels.js';
@@ -237,32 +237,9 @@ const toAccountOptions = computed(() => {
   return options;
 });
 
-const ownerOptions = computed(() => {
-  const opts = [];
-  
-  if (mainStore.currentCompanyBalances.length) {
-      opts.push({ label: 'Компании', isHeader: true });
-      mainStore.currentCompanyBalances.forEach(c => { 
-          const option = { value: `company-${c._id}`, label: c.name, isSpecial: false };
-          if (permissions.shouldShowBalance.value) {
-              option.rightText = `${formatBalance(Math.abs(c.balance || 0))} ₸`;
-          }
-          opts.push(option); 
-      });
-  }
-  if (mainStore.currentIndividualBalances.length) {
-      opts.push({ label: 'Физлица', isHeader: true });
-      mainStore.currentIndividualBalances.forEach(i => { 
-          const option = { value: `individual-${i._id}`, label: i.name, isSpecial: false };
-          if (permissions.shouldShowBalance.value) {
-              option.rightText = `${formatBalance(Math.abs(i.balance || 0))} ₸`;
-          }
-          opts.push(option); 
-      });
-  }
-  if (!mainStore.chatFinance) opts.push({ isActionRow: true });
-  return opts;
-});
+const ownerOptions = computed(() => buildAccountOwnerOptions(
+  mainStore, permissions.shouldShowBalance.value ? formatBalance : null,
+));
 
 const resolveOwnerKey = (accountId, selectedOwnerKey) => {
   if (selectedOwnerKey) return selectedOwnerKey;
