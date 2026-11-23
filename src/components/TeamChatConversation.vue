@@ -747,8 +747,9 @@ function attach(event) {
   return attachFiles(selectedFiles);
 }
 async function attachFiles(selectedFiles) {
-  if (uploading.value || !selectedFiles.length) return;
+  if (uploading.value || !selectedFiles.length) return [];
   uploading.value = true;
+  const attached = [];
   const workspace = chat.me?.workspaceId;
   const actor = chat.me?.actorId, taskId = props.taskId;
   const sameConversation = () => !disposed && workspace === chat.me?.workspaceId && actor === chat.me?.actorId && taskId === props.taskId;
@@ -769,17 +770,21 @@ async function attachFiles(selectedFiles) {
       if (!sameConversation()) return;
       cacheUpload(data.file, file);
       files.value.push(data.file);
+      attached.push(data.file);
     }
   });
   uploading.value = false;
+  return attached;
 }
-function attachSignedPdf(file) {
-  if (!props.active || chat.me?.status !== 'active' || tab.value !== 'messages' || uploading.value || transfer.pending.value) return;
-  closePreview();
+async function attachSignedPdf(file) {
+  if (!props.active || chat.me?.status !== 'active' || tab.value !== 'messages' || uploading.value || transfer.pending.value) return false;
+  const current = preview.value;
   // Reuse the ordinary attachment draft and Send action, preserving any text/files.
-  return attachFiles([file]);
+  const attached = await attachFiles([file]);
+  if (attached.length && preview.value === current) closePreview();
+  return attached.length > 0;
 }
-defineExpose({ attachSignedPdf, attachmentBusy: computed(() => uploading.value || transfer.pending.value) });
+defineExpose({ attachSignedPdf, attachmentBusy: computed(() => uploading.value || transfer.pending.value), attachmentError: localError });
 const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
   enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !transfer.pending.value && !preview.value && !quoteView.value && !selectedMessage.value && !droppedOperation.value && !openedOperationMessage.value && !financeType.value,
   onFiles: attachFiles,
@@ -1061,6 +1066,7 @@ watch(
       :media="preview"
       :allow-pdf-attachment="active && chat.me?.status === 'active' && tab === 'messages'"
       :attachment-busy="uploading || transfer.pending.value"
+      :attachment-error="localError"
       @close="closePreview"
       @retry="retryPreview"
       @attach-pdf="attachSignedPdf"

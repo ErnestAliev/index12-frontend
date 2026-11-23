@@ -11,6 +11,7 @@ export function canShareDeviceFile(file) {
 export function shareDeviceFile(file) {
   if (!canShareDeviceFile(file)) throw Error('Этот браузер не поддерживает передачу этого файла. Скачайте его на устройство.');
   // File bytes are prepared before the tap, preserving the mobile user gesture.
+  // Never include the preview's blob URL or a private chat/task URL in external shares.
   return navigator.share({ files: [file] });
 }
 export function saveDeviceFile(file, container = document.body) {

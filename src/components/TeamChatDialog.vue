@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import UiIcon from "./UiIcon.vue";
 import { useInputModality } from "@/composables/useInputModality";
 const keyboardNavigation = useInputModality();
-const props = defineProps({ title: String, busy: Boolean, bare: Boolean, dismissOutside: Boolean });
+const props = defineProps({ title: String, busy: Boolean, bare: Boolean, dismissOutside: Boolean, expanded: Boolean });
 const emit = defineEmits(["close"]),
   dialog = ref(null),
   bounds = ref({});
@@ -25,11 +25,13 @@ function resize() {
     bottom = innerHeight - height > 120 ? 0 : inset("bottom"),
     left = inset("left"),
     right = inset("right");
+  const edge = props.expanded && width <= 600 ? 0 : 24;
   bounds.value = {
     left: `${(v?.offsetLeft || 0) + left + (width - left - right) / 2}px`,
     top: `${(v?.offsetTop || 0) + top + (height - top - bottom) / 2}px`,
-    maxHeight: `${Math.max(160, height - top - bottom - 24)}px`,
-    width: `${Math.min(440, width - left - right - 24)}px`,
+    maxHeight: `${Math.max(160, height - top - bottom - edge)}px`,
+    height: props.expanded ? `${height - top - bottom - edge}px` : undefined,
+    width: `${Math.min(props.expanded ? 1100 : 440, width - left - right - edge)}px`,
   };
   nextTick(() => {
     if (dialog.value?.contains(document.activeElement))
@@ -64,8 +66,9 @@ onBeforeUnmount(() => {
     @cancel.prevent="!busy && emit('close')"
   >
     <header v-if="!bare">
-      <strong>{{ title }}</strong
-      ><button
+      <strong>{{ title }}</strong>
+      <slot name="header-actions" />
+      <button
         type="button"
         :disabled="busy"
         :aria-label="`Закрыть ${title.toLowerCase()}`"
@@ -131,7 +134,8 @@ header button {
 }
 .team-create-dialog:not(.keyboard-navigation) :deep(button:focus-visible),
 .team-create-dialog:not(.keyboard-navigation)
-  :deep(.zoom-image-stage:focus-visible) {
+  :deep(.zoom-image-stage:focus-visible),
+.team-create-dialog:not(.keyboard-navigation) :deep(.pdf-scroll:focus-visible) {
   outline: none !important;
   box-shadow: none !important;
 }

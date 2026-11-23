@@ -378,10 +378,11 @@ async function toggleList(t) {
 }
 const { preview, closePreview, download, retryPreview, cacheUpload, prefetch, readFile } = useTeamMedia();
 const discussion = ref(null);
-function attachSignedPdf(file) {
+async function attachSignedPdf(file) {
   if (!discussion.value || !props.threadActive || editing.value || chat.me?.status !== 'active') return;
-  closePreview();
-  return discussion.value.attachSignedPdf(file);
+  const current = preview.value;
+  const attached = await discussion.value.attachSignedPdf(file);
+  if (attached && preview.value === current) closePreview();
 }
 async function upload(event) {
   const files = [...event.target.files];
@@ -591,6 +592,7 @@ onBeforeUnmount(() => {
       :media="preview"
       :allow-pdf-attachment="!!discussion && threadActive && !editing && chat.me?.status === 'active'"
       :attachment-busy="discussion?.attachmentBusy"
+      :attachment-error="discussion?.attachmentError"
       @close="closePreview"
       @retry="retryPreview"
       @attach-pdf="attachSignedPdf"

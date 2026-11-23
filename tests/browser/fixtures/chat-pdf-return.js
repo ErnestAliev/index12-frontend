@@ -5,6 +5,7 @@ import { useTeamChatStore, teamApi } from '/src/stores/teamChatStore.js';
 import Frame from '/src/components/ChatWindowFrame.vue';
 import Conversation from '/src/components/TeamChatConversation.vue';
 import TaskPanel from '/src/components/TeamTaskPanel.vue';
+import { pdfDocument } from './pdf-document.js';
 
 const pinia = createPinia(), chat = useTeamChatStore(pinia);
 const inTask = new URLSearchParams(location.search).has('task');
@@ -23,16 +24,27 @@ chat.threads[task._id] = { messages: [], ready: true, hasMore: false };
 const uploads = [], sent = [];
 const uploaded = new Map();
 const fixture = { chat, original, task, uploads, sent, failUpload: false, holdUpload: false };
+const format = new URLSearchParams(location.search).get('format');
+const page = format === 'landscape' ? { width: 842, height: 595 } : format === 'rotated' ? { width: 595, height: 842, rotation: 90 } : { width: 595, height: 842 };
+fixture.originalBytes = pdfDocument(format === 'multiple' ? [page, page, page] : [page]);
+fixture.setFormat = format => {
+  const page = format === 'landscape' ? { width: 842, height: 595 } : format === 'rotated' ? { width: 595, height: 842, rotation: 90 } : { width: 595, height: 842 };
+  fixture.originalBytes = pdfDocument(format === 'multiple' ? [page, page, page] : [page]);
+  const id = crypto.randomUUID();
+  original.fileId = id;
+  chat.state.tasks[0].attachments[0].fileId = id;
+  for (const message of chat.state.messages) for (const file of message.attachments || []) if (file.name === original.name) file.fileId = id;
+};
 teamApi.defaults.adapter = async config => {
   let data = {};
   if (config.method === 'get' && config.url === '/files/' + original.fileId) {
-    data = new Blob(['%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF'], { type: 'application/pdf' });
+    data = new Blob([fixture.originalBytes], { type: 'application/pdf' });
   }
   if (config.method === 'post' && config.url === '/files') {
     if (fixture.holdUpload) await new Promise(resolve => { fixture.releaseUpload = resolve; });
     if (fixture.failUpload) throw Error('Не удалось загрузить PDF. Попробуйте ещё раз.');
     const name = decodeURIComponent(config.headers['x-file-name']);
-    const bytes = await config.data.text();
+    const bytes = Array.from(new Uint8Array(await config.data.arrayBuffer()));
     const file = { fileId: crypto.randomUUID(), name, mimeType: 'application/pdf', size: config.data.size };
     uploads.push({ ...file, bytes }); uploaded.set(file.fileId, file);
     data = { file };
