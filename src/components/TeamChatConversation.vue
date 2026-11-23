@@ -52,6 +52,7 @@ import TeamChatDialog from "./TeamChatDialog.vue";
 import TeamMediaPreview from "./TeamMediaPreview.vue";
 import { useTeamMedia } from "@/composables/useTeamMedia";
 import { useChatDictation } from "@/composables/useChatDictation";
+import { useTeamSlash } from '@/composables/useTeamSlash';
 const props = defineProps({
   mobile: Boolean,
   taskId: String,
@@ -60,7 +61,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["new", "composer-focus", "composer-blur", "reading-scroll"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
-import { completeTeamDestination, pendingTeamDestination } from '@/utils/teamDestination';
+import { completeTeamDestination, pendingTeamDestination, parseTeamDestination } from '@/utils/teamDestination';
 import {useAppUpdateStore} from '@/stores/appUpdateStore';
 import {draftKey,takeUpdateDraft} from '@/utils/updateDrafts';
 import TeamAppUpdate from './TeamAppUpdate.vue';
@@ -132,6 +133,13 @@ const dictation = useChatDictation({
   onError: (error) => {
     localError.value = error;
   },
+});
+const slash = useTeamSlash({
+  field: () => composeArea.value?.querySelector('textarea.codex-input'),
+  text: () => message.value, setText: value => { message.value = value; },
+  enabled: () => props.active && !search.open && !uploading.value && !transfer.pending.value && !dictation.recording.value,
+  taskId: () => props.taskId,
+  mention: person => { if (!mentionedPeople.value.some(row => row._id === person._id)) mentionedPeople.value.push(person); },
 });
 const { recording: dictating, supported: dictationSupported } = dictation;
 const selectedMessageId = ref(null);
@@ -313,7 +321,23 @@ async function showSavedFragment(quote) {
 }
 function messageClick(event, row) {
   if (event.target.closest('[data-fragment-editor]')) return;
-  if (event.target.closest('a')) return;
+  const link = event.target.closest('a');
+  if (link) {
+    const destination = parseTeamDestination(link.href);
+    if (destination?.workspaceId === chat.me?.workspaceId && (destination.taskId || destination.messageId) && !destination.releaseVersion && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      search.close(false);
+      chat.selectSection('messages');
+      chat.requestedTaskId = destination.taskId;
+      void nextTick(() => {
+        if (destination.workspaceId !== chat.me?.workspaceId) return;
+        chat.requestedTaskMessageId = destination.taskId ? destination.messageId : null;
+        chat.requestedMessageId = destination.taskId ? null : destination.messageId;
+      });
+      chat.show();
+    }
+    return;
+  }
   if (suppressedClick === row._id) {
     event.preventDefault();
     event.stopPropagation();
@@ -359,6 +383,8 @@ const mentionChoices = computed(() =>
 );
 function mentionInput(event) {
   if (!event.target.matches("textarea.codex-input")) return;
+  slash.update(event);
+  if (slash.open) { mentionQuery.value = null; return; }
   const field = event.target,
     end = field.selectionStart,
     match = field.value.slice(0, end).match(/(?:^|\s)@([^\s@]*)$/);
@@ -386,6 +412,7 @@ async function selectMention(person) {
   );
 }
 function mentionKeys(event) {
+  if (slash.keydown(event)) return;
   if (mentionQuery.value === null) return;
   if (event.key === "Escape") {
     event.preventDefault();
@@ -733,6 +760,7 @@ async function send() {
   });
   if (!id) return;
   message.value = "";
+  slash.close();
   replyDraft.value = null;
   mentionedPeople.value = [];
   mentionQuery.value = null;
@@ -1372,8 +1400,22 @@ watch(
         @focusout="emit('composer-blur')"
         @input.capture="mentionInput"
         @keyup.capture="mentionInput"
+        @click.capture="mentionInput"
         @keydown.capture="mentionKeys"
+        @compositionstart.capture="slash.close()"
+        @compositionend.capture="mentionInput"
       >
+        <div v-if="slash.open" :ref="element => slash.menu = element" class="team-slash-list" :style="{ maxHeight: slash.height + 'px' }" role="listbox" :aria-label="slash.group?.label || 'Вставить в сообщение'">
+          <div v-if="slash.group" class="team-slash-heading">{{ slash.group.label }}</div>
+          <button v-for="(item, index) in slash.choices" :key="item.key" type="button" role="option" :aria-selected="index === slash.index" @mousedown.prevent @click="slash.choose(item)">
+            <UiIcon :name="item.icon" />
+            <span class="team-slash-name">{{ item.name }}<small v-if="item.detail">{{ item.detail }}</small></span>
+            <UiIcon v-if="item.section" name="chevron-right" />
+          </button>
+          <p v-if="slash.loading" role="status">Загрузка…</p>
+          <p v-else-if="slash.error" role="alert">{{ slash.error }}</p>
+          <p v-else-if="!slash.choices.length" role="status">Ничего не найдено</p>
+        </div>
         <div
           v-if="mentionQuery !== null && mentionChoices.length"
           class="team-mention-list"
@@ -1454,6 +1496,15 @@ watch(
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>
+<style scoped>
+.team-slash-list { position:absolute;bottom:calc(100% + 4px);left:max(12px,var(--safe-area-left,0px));right:max(12px,var(--safe-area-right,0px));z-index:45;overflow:auto;overscroll-behavior:contain;padding:4px;border:1px solid var(--codex-pane-border);border-radius:8px;background:var(--codex-pane-surface);box-shadow:0 6px 24px #0003; }
+.team-compose-area .team-slash-list button { display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:var(--codex-pane-text);font:inherit;font-size:13px;font-weight:400;text-align:left;cursor:pointer; }
+.team-slash-list button[aria-selected="true"],.team-slash-list button:hover { background:var(--codex-pane-surface-soft); }
+.team-slash-list .ui-icon { flex:none;color:var(--codex-pane-muted); }
+.team-slash-name { flex:1;min-width:0;overflow-wrap:anywhere; }
+.team-slash-name small { display:block;color:var(--codex-pane-muted);font-size:11px;line-height:1.4; }
+.team-slash-heading,.team-slash-list p { margin:0;padding:7px 10px;color:var(--codex-pane-muted);font-size:12px;line-height:1.4; }
+</style>
 
 <style scoped>
 .team-attachment-row{display:flex;align-items:center;gap:4px;min-width:0}.team-attachment-row>.team-file{min-width:0;flex:1}.team-attachment-library{display:grid;place-items:center;flex:none;width:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.65}.team-attachment-library:hover{opacity:1}
