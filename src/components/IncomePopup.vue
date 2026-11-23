@@ -829,6 +829,7 @@ const handleMainAction = async () => {
         </slot>
       </div>
 
+      <slot name="operation-meta" />
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
         <div class="input-inner-content">
            <input type="text" inputmode="decimal" v-model="amount" placeholder="0 ₸" class="real-input" aria-label="Сумма, ₸" ref="amountInput" @input="onAmountInput" :disabled="isProtectedMode || isReadOnly" />

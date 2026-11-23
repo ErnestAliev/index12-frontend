@@ -17,6 +17,7 @@ import IncomePopup from "./IncomePopup.vue";
 import ExpensePopup from "./ExpensePopup.vue";
 import TransferPopup from "./TransferPopup.vue";
 import TeamOperationShare from "./TeamOperationShare.vue";
+import OperationAudit from "./OperationAudit.vue";
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({
   type: String,
@@ -30,6 +31,7 @@ const main = useMainStore();
 const ownerEditor = !!props.messageId && chat.me?.owner === true;
 const workspaceId = String(chat.me?.workspaceId || "");
 const actorId = chat.me?.actorId;
+const operationAudit = ref(null);
 const operation = ref(null),
   operationSnapshot = ref(null);
 const operationType = computed(() =>
@@ -136,6 +138,7 @@ async function load() {
       }
       if (active) {
         operation.value = data.operation;
+        operationAudit.value = data.audit;
         operationSnapshot.value = data.snapshot;
         ready.value = true;
       }
@@ -188,6 +191,10 @@ async function submit(payload) {
       await main.updateOperation(operation.value._id, data, {
         originalOperation: operation.value,
       });
+      try {
+        const { data: refreshed } = await teamApi.get(`/messages/${props.messageId}`);
+        chat.mergeMessage(refreshed.message);
+      } catch { /* The operation is saved; the chat stream will refresh the card. */ }
       return;
     }
     const chosen = new Date(payload.date);
@@ -247,7 +254,7 @@ onBeforeUnmount(() => {
       :transfer-to-edit="operationType === 'transfer' ? operation : null"
       :submit-operation="submit"
       @close="close"
-      ><template #header-actions
+      ><template #operation-meta><OperationAudit :audit="operationAudit" /></template><template #header-actions
         ><button
           class="finance-close"
           type="button"

@@ -1038,6 +1038,7 @@ watch(defaultProjectId, (defId) => {
         </slot>
       </div>
       
+      <slot name="operation-meta" />
       <!-- СУММА -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount }">
           <div class="input-inner-content">

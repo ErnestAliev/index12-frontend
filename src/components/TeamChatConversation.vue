@@ -1241,7 +1241,7 @@ watch(
                 <CodexMessageText :text="m.text" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
               </MessageFragment>
               <TeamOperationShare v-if="m.kind === 'operation_share' && m.operationShare" :message="m" @open="openedOperationMessage = $event" />
-              <TeamFinanceMessage v-if="m.kind === 'finance_operation' && m.financeOperation" :message="m" />
+              <TeamFinanceMessage v-if="m.kind === 'finance_operation' && m.financeOperation" :message="m" @open="openedOperationMessage = $event" />
               <TeamApprovalMessage v-if="m.kind === 'approval_request' && m.approvalRequest" :message="m" />
               <div v-for="file in m.attachments" :key="file.fileId" class="team-attachment-row">
               <button

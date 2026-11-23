@@ -1,7 +1,10 @@
 <script setup>
 import { computed } from "vue";
 import TeamApprovalMessage from "./TeamApprovalMessage.vue";
+import OperationAudit from "./OperationAudit.vue";
+import UiIcon from "./UiIcon.vue";
 const props = defineProps({ message: { type: Object, required: true } });
+const emit = defineEmits(['open']);
 const operation = computed(() => props.message.financeOperation);
 const title = computed(
   () =>
@@ -21,21 +24,26 @@ const date = computed(() =>
 </script>
 <template>
   <div class="team-finance-message" :data-operation-type="operation.type">
-    <div class="finance-heading">
+    <button type="button" class="finance-open" :aria-label="`Открыть операцию: ${title}`" @pointerdown.stop @click.stop="emit('open', message._id)">
+    <span class="finance-heading">
       <strong>{{ title }}</strong
       ><strong class="finance-amount">{{ money }}</strong>
-    </div>
-    <p class="finance-account">{{ operation.accounts.join(" → ") }}</p>
-    <p v-if="operation.partyName">{{ operation.partyName }}</p>
-    <p v-if="operation.description">{{ operation.description }}</p>
-    <p v-if="operation.comment">{{ operation.comment }}</p>
-    <p class="finance-meta">
+      <UiIcon name="chevron-right" />
+    </span>
+    <span class="finance-account">{{ operation.accounts.join(" → ") }}</span>
+    <span v-if="operation.partyName">{{ operation.partyName }}</span>
+    <span v-if="operation.description">{{ operation.description }}</span>
+    <span v-if="operation.comment">{{ operation.comment }}</span>
+    <span class="finance-meta">
       {{
         [date, operation.projectNames?.join(", "), operation.categoryName]
           .filter(Boolean)
           .join(" · ")
       }}
-    </p>
+    </span>
+    <span v-if="operation.unavailable" class="finance-meta">Операция удалена или недоступна</span>
+    </button>
+    <OperationAudit :audit="operation.audit || { createdAt: message.createdAt, createdByName: message.authorName }" />
     <TeamApprovalMessage v-if="message.approvalRequest" :message="message" />
   </div>
 </template>
@@ -48,6 +56,11 @@ const date = computed(() =>
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.finance-open { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.finance-open > span:not(.finance-heading) { display: block; margin: 4px 0; line-height: 1.4; white-space: pre-wrap; }
+.finance-open:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 3px; }
+.finance-heading > strong:first-child { flex: 1; }
+.finance-heading > .ui-icon { color: var(--codex-pane-muted); }
 .finance-heading {
   display: flex;
   align-items: baseline;

@@ -153,6 +153,7 @@ async function adapter(config) {
         options: data,
         snapshot: snapshot(),
         canEdit: chat.me.owner,
+        audit: messages.find(row => row.kind === 'finance_operation')?.financeOperation.audit || null,
       },
     };
   }
@@ -164,8 +165,18 @@ async function adapter(config) {
         response: { status: 503, data: { message: "Не удалось сохранить" } },
       });
     Object.assign(operation, body, { syncVersion: operation.syncVersion + 1 });
+    for (const message of messages.filter(row => row.kind === 'finance_operation')) {
+      Object.assign(message.financeOperation, {
+        amount: operation.amount, date: operation.date.slice(0, 10), description: operation.description,
+        comment: operation.comment,
+        audit: { ...message.financeOperation.audit, editedAt: '2026-11-23T10:15:30.000Z', editedByName: 'Эрнест' },
+      });
+      message.version++;
+    }
     return { status: 200, data: JSON.parse(JSON.stringify(operation)) };
   }
+  if (/^\/messages\/[^/]+$/.test(path) && config.method === 'get')
+    return { status: 200, data: { message: JSON.parse(JSON.stringify(messages.find(row => row._id === path.split('/').pop()))) } };
   if (path === "/snapshot")
     return {
       status: 200,
@@ -218,6 +229,24 @@ window.shareFixture = {
   operation,
   task,
   user,
+  financeCard(type, inTask = false) {
+    this.mode(type);
+    const message = {
+      _id: crypto.randomUUID(), kind: 'finance_operation', text: type, authorId: 'staff', authorName: 'Давид',
+      attachments: [], version: 0, createdAt: '2026-11-18T07:00:00.000Z',
+      ...(inTask ? { taskId: task._id } : {}),
+      financeOperation: {
+        operationId: operation._id, type, amount: operation.amount, date: operation.date.slice(0, 10),
+        accounts: type === 'transfer' ? ['BCC UU', 'Касса'] : ['BCC UU'],
+        description: operation.description, comment: '', projectNames: ['Пушкина 33'],
+        audit: { createdAt: '2026-11-18T07:00:00.000Z', createdByName: 'Давид', editedAt: null },
+      },
+    };
+    messages.push(message);
+    chat.mergeMessage(message);
+    if (inTask) this.thread();
+    return message._id;
+  },
   mode(type) {
     Object.assign(operation, {
       type,

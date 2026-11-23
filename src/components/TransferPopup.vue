@@ -582,6 +582,7 @@ const closePopup = () => { emit('close'); };
         </slot>
       </div>
 
+      <slot name="operation-meta" />
       <!-- СУММА + ВАЛИДАЦИЯ -->
       <div class="custom-input-box input-spacing" :class="{ 'has-value': !!amount, 'is-invalid': validationResult && !validationResult.isValid }">
         <div class="input-inner-content">

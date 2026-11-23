@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import { createServer } from 'vite';
+import { chromium, webkit } from 'playwright-core';
+const engine = process.argv.includes('--webkit') ? 'webkit' : 'chromium';
+const server = await createServer({ root: process.cwd(), envDir: '/private/tmp', cacheDir: '/private/tmp/index12-chat-finance-edit', server: { host: '127.0.0.1', port: 5236, strictPort: true } });
+let browser;
+try {
+  await server.listen();
+  browser = engine === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+  for (const width of [390, 1280]) for (const inTask of [false, true]) for (const type of ['income', 'expense', 'transfer']) {
+    const context = await browser.newContext({ viewport: { width, height: 950 }, hasTouch: width === 390 });
+    const page = await context.newPage(), errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.setDefaultTimeout(10000);
+    await page.goto('http://127.0.0.1:5236/tests/browser/fixtures/operation-share.html');
+    await page.waitForFunction(() => !!window.shareFixture);
+    const id = await page.evaluate(({ type, inTask }) => shareFixture.financeCard(type, inTask), { type, inTask });
+    const card = page.locator(`[data-message-id="${id}"]`);
+    await card.waitFor();
+    assert.match(await card.innerText(), /Создано:.*18\.11\.2026.*Давид/s);
+    assert.match(await card.innerText(), /Ещё не редактировалось/);
+    const activate = element => width === 390 ? element.tap() : element.click();
+    await activate(card.locator('.finance-open'));
+    const form = page.locator('dialog .financial-operation-popup');
+    await form.waitFor();
+    assert.match(await form.locator('.operation-audit').innerText(), /Давид/);
+    const originalId = await page.evaluate(() => shareFixture.operation._id);
+    await form.locator('input[inputmode="decimal"]').fill('150000');
+    await form.getByLabel('Дата операции', { exact: true }).fill('2026-11-23');
+    await form.locator('.operation-comment').fill('Правка владельца');
+    await activate(form.getByRole('button', { name: 'Описание', exact: true }));
+    await activate(form.getByRole('button', { name: 'Изменить описание', exact: true }));
+    await form.getByLabel('Описание операции').fill('Изменено внутри чата');
+    await activate(form.locator('.popup-actions-row .btn-submit'));
+    await form.waitFor({ state: 'detached' });
+    assert.match(await card.innerText(), /150.?000/);
+    assert.match(await card.innerText(), /Изменено внутри чата/);
+    assert.match(await card.innerText(), /Правка владельца/);
+    assert.match(await card.innerText(), /Изменено:.*23\.11\.2026.*Эрнест/s);
+    const saved = await page.evaluate(() => ({ operation: shareFixture.operation, writes: operationWrites }));
+    assert.equal(saved.operation._id, originalId);
+    assert.equal(saved.writes.length, 1);
+    assert.equal(saved.writes[0].id, originalId);
+    assert.ok(saved.operation.date.startsWith('2026-11-23'));
+    await activate(card.locator('.finance-open'));
+    await form.waitFor();
+    assert.equal(await form.getByLabel('Дата операции', { exact: true }).inputValue(), '2026-11-23');
+    assert.equal(await form.locator('.operation-comment').inputValue(), 'Правка владельца');
+    await activate(form.getByRole('button', { name: 'Закрыть операцию' }));
+    await form.waitFor({ state: 'detached' });
+    // The existing owner-only write policy is retained for invited staff.
+    await page.evaluate(() => shareFixture.staff());
+    await activate(card.locator('.finance-open'));
+    await form.waitFor();
+    assert.ok(await form.locator('input[inputmode="decimal"]').isDisabled());
+    assert.equal(await form.locator('.btn-submit').count(), 0);
+    assert.equal(await page.evaluate(() => operationWrites.length), 1);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} ${width} ${inTask ? 'task' : 'chat'} ${type}: same operation, edit/reopen, creator/editor audit, owner permissions`);
+    await context.close();
+  }
+} finally { await browser?.close(); await server.close(); }
