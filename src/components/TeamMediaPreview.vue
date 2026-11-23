@@ -6,9 +6,13 @@ import UiIcon from './UiIcon.vue';
 import { documentFormat } from '@/utils/documentFormats';
 const TeamDocumentPreview=defineAsyncComponent(()=>import('./TeamDocumentPreview.vue'));
 import { canShareDeviceFile, shareDeviceFile, saveDeviceFile } from '@/utils/deviceFiles';
-const props = defineProps({ media: { type: Object, required: true } });
-const emit = defineEmits(['close', 'retry']);
-const sharing = ref(false), actionError = ref(''), actions = ref(null);
+const props = defineProps({
+  media: { type: Object, required: true },
+  allowPdfAttachment: Boolean,
+  attachmentBusy: Boolean,
+});
+const emit = defineEmits(['close', 'retry', 'attach-pdf']);
+const sharing = ref(false), actionError = ref(''), actions = ref(null), pdfInput = ref(null);
 const shareAvailable = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 const shareSupported = computed(() => canShareDeviceFile(props.media.file));
 let active = true;
@@ -27,6 +31,17 @@ async function share() {
   catch (e) { if (active && e.name !== 'AbortError') actionError.value = e.name === 'NotAllowedError' ? 'Не удалось открыть отправку файла. Нажмите «Поделиться» ещё раз или скачайте файл.' : e.message || 'Не удалось передать файл'; }
   finally { if (active) sharing.value = false; }
 }
+function attachPdf(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file || !props.allowPdfAttachment || props.attachmentBusy || sharing.value) return;
+  actionError.value = '';
+  if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+    actionError.value = 'Выберите готовый документ в формате PDF.';
+    return;
+  }
+  emit('attach-pdf', file);
+}
 </script>
 <template>
   <TeamChatDialog class="media-preview-dialog" :class="{'document-preview-dialog':!!documentFormat(media)}" :title="media.name" :busy="sharing" @close="emit('close')">
@@ -44,6 +59,10 @@ async function share() {
     <footer ref="actions" class="media-actions">
       <button type="button" :disabled="!media.file || sharing" @click="save"><UiIcon name="download" />Скачать</button>
       <button v-if="shareAvailable" type="button" :disabled="!shareSupported || sharing" :title="media.file && !shareSupported ? 'Браузер не поддерживает передачу этого файла' : undefined" @click="share"><UiIcon name="share" />{{ sharing ? 'Отправка…' : 'Поделиться' }}</button>
+      <template v-if="allowPdfAttachment && media.mimeType === 'application/pdf'">
+        <input ref="pdfInput" class="signed-pdf-input" type="file" accept="application/pdf,.pdf" hidden @change="attachPdf" />
+        <button class="attach-pdf" type="button" :disabled="sharing || attachmentBusy" @click="pdfInput.click()"><UiIcon name="attach" />Прикрепить подписанный PDF</button>
+      </template>
     </footer>
   </TeamChatDialog>
 </template>
@@ -57,9 +76,10 @@ async function share() {
 .media-pdf-preview { display: block; width: 100%; height: 65dvh; min-height: 0; border: 0; flex: 1; }
 .media-player { display: flex; align-items: center; justify-content: center; flex: 1; min-height: 0; padding: 12px; overflow: hidden; }
 .media-player :is(video,audio) { width: 100%; max-height: 100%; min-width: 0; }
-.media-actions { display: flex; align-items: center; justify-content: center; flex: none; gap: 8px; padding: 8px max(12px,var(--safe-area-right,0px)) 12px max(12px,var(--safe-area-left,0px)); border-top: 1px solid var(--codex-pane-border,var(--color-border)); }
-.media-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--codex-pane-text,var(--color-text)); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.media-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; flex: none; gap: 8px; padding: 8px max(12px,var(--safe-area-right,0px)) 12px max(12px,var(--safe-area-left,0px)); border-top: 1px solid var(--codex-pane-border,var(--color-border)); }
+.media-preview-dialog .media-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--codex-pane-text,var(--color-text)); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .media-actions button:disabled { opacity: .45; cursor: default; }
+.media-preview-dialog .media-actions .attach-pdf { flex-basis: 100%; }
 .media-actions button:focus-visible { outline: 2px solid var(--codex-pane-focus,var(--color-primary)); outline-offset: -2px; }
 .media-action-error { flex: none; margin: 0; padding: 6px 12px; color: var(--codex-pane-danger,var(--color-danger)); font-size: 12px; line-height: 18px; }
 .media-preview-dialog :deep(header > strong) { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

@@ -99,7 +99,7 @@ const thread = computed(() =>
   props.taskId ? chat.threads[props.taskId] || emptyThread : chat.state,
 );
 const approvalOpen=ref(false);
-watch(()=>props.taskId,()=>{approvalOpen.value=false;financeType.value=null;droppedOperation.value=null;openedOperationMessage.value=null;});
+watch(()=>props.taskId,()=>{approvalOpen.value=false;financeType.value=null;droppedOperation.value=null;openedOperationMessage.value=null;closePreview();});
 async function approvalAdded(){approvalOpen.value=false;await nextTick();if(feed.value)feed.value.scrollTop=feed.value.scrollHeight;}
 const historyReady = computed(() =>
   props.taskId ? !!thread.value.ready : chat.historyReady,
@@ -750,12 +750,15 @@ async function attachFiles(selectedFiles) {
   if (uploading.value || !selectedFiles.length) return;
   uploading.value = true;
   const workspace = chat.me?.workspaceId;
+  const actor = chat.me?.actorId, taskId = props.taskId;
+  const sameConversation = () => !disposed && workspace === chat.me?.workspaceId && actor === chat.me?.actorId && taskId === props.taskId;
   await run(async () => {
     if (files.value.length + selectedFiles.length > 5 ||
         selectedFiles.some(file => file.size > 10 * 1024 * 1024) ||
         [...files.value, ...selectedFiles].reduce((sum, file) => sum + file.size, 0) > 25 * 1024 * 1024)
       throw Error('До пяти файлов: один до 10 МБ, всего до 25 МБ');
     for (const file of selectedFiles) {
+      if (!sameConversation()) return;
       const { data } = await teamApi.post("/files", file, {
         headers: {
           "Content-Type": "application/octet-stream",
@@ -763,13 +766,20 @@ async function attachFiles(selectedFiles) {
         },
         timeout: 60000,
       });
-      if (disposed || workspace !== chat.me?.workspaceId) return;
+      if (!sameConversation()) return;
       cacheUpload(data.file, file);
       files.value.push(data.file);
     }
   });
   uploading.value = false;
 }
+function attachSignedPdf(file) {
+  if (!props.active || chat.me?.status !== 'active' || tab.value !== 'messages' || uploading.value || transfer.pending.value) return;
+  closePreview();
+  // Reuse the ordinary attachment draft and Send action, preserving any text/files.
+  return attachFiles([file]);
+}
+defineExpose({ attachSignedPdf, attachmentBusy: computed(() => uploading.value || transfer.pending.value) });
 const { dragging: draggingFiles, dropEvents: fileDropEvents } = useFileDrop({
   enabled: () => props.active && chat.me?.status === 'active' && tab.value === 'messages' && !search.open && !uploading.value && !transfer.pending.value && !preview.value && !quoteView.value && !selectedMessage.value && !droppedOperation.value && !openedOperationMessage.value && !financeType.value,
   onFiles: attachFiles,
@@ -1049,8 +1059,11 @@ watch(
     <TeamMediaPreview
       v-if="preview"
       :media="preview"
+      :allow-pdf-attachment="active && chat.me?.status === 'active' && tab === 'messages'"
+      :attachment-busy="uploading || transfer.pending.value"
       @close="closePreview"
       @retry="retryPreview"
+      @attach-pdf="attachSignedPdf"
     />
     <TeamMessageMenu
       v-if="selectedMessage"

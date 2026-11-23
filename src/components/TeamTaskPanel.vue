@@ -377,6 +377,12 @@ async function toggleList(t) {
   }
 }
 const { preview, closePreview, download, retryPreview, cacheUpload, prefetch, readFile } = useTeamMedia();
+const discussion = ref(null);
+function attachSignedPdf(file) {
+  if (!discussion.value || !props.threadActive || editing.value || chat.me?.status !== 'active') return;
+  closePreview();
+  return discussion.value.attachSignedPdf(file);
+}
 async function upload(event) {
   const files = [...event.target.files];
   event.target.value = "";
@@ -524,6 +530,7 @@ watch(
   () => [props.taskId, props.creating, props.parentTaskId],
   async () => {
     const g = ++generation;
+    closePreview();
     error.value = "";
     editing.value = "";
     picker.value = "";
@@ -582,8 +589,11 @@ onBeforeUnmount(() => {
     <TeamMediaPreview
       v-if="preview"
       :media="preview"
+      :allow-pdf-attachment="!!discussion && threadActive && !editing && chat.me?.status === 'active'"
+      :attachment-busy="discussion?.attachmentBusy"
       @close="closePreview"
       @retry="retryPreview"
+      @attach-pdf="attachSignedPdf"
     />
     <input ref="fileInput" type="file" multiple hidden @change="upload" />
     <TeamTaskMenu
@@ -929,6 +939,7 @@ onBeforeUnmount(() => {
         </div>
         </Transition>
         <TeamChatConversation
+          ref="discussion"
           :active="threadActive && editing !== 'description'"
           :key="taskId"
           :task-id="taskId"
