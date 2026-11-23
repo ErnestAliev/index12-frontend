@@ -105,20 +105,14 @@ function toggle() {
   else open.value = true;
 }
 function select(value) {
+  if (search.open) search.close(false);
   if (value === "files") {
     chat.openFiles();
     close();
     return;
   }
-  if (search.open) search.close(false);
   if (value === "members" && !chat.isOwner) return;
-  if (value === "mcp") {
-    chat.requestedTaskId = null;
-    chat.requestedTaskMessageId = null;
-    chat.creatingTask = false;
-    chat.creatingTaskParentId = null;
-    chat.taskNotifications = false;
-  }
+  chat.selectSection(value);
   emit("update:modelValue", value);
   close();
 }
@@ -287,6 +281,7 @@ onBeforeUnmount(() => {
         "
         label="Фильтры чата"
       />
+      <button type="button" class="team-navigation-close" aria-label="Закрыть рабочий чат" title="Закрыть" @click="emit('close')"><UiIcon name="close" /></button>
     </div>
   </nav>
 </template>
@@ -305,11 +300,12 @@ onBeforeUnmount(() => {
 }
 .team-navigation-actions {
   grid-column: 3;
-  justify-self: center;
+  justify-self: end;
   display: flex;
   align-items: center;
   min-width: 0;
 }
+.team-chat-navigation .team-navigation-close { display:grid;place-items:center;flex:none;width:44px;min-width:44px;height:44px;padding:0;border:0;background:transparent;color:inherit;cursor:pointer; }
 .team-navigation-identity {
   min-width: 0;
   overflow: hidden;

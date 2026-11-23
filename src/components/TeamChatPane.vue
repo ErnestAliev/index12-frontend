@@ -11,17 +11,19 @@ import TeamTaskPanel from "./TeamTaskPanel.vue";
 import TeamChatAccess from "./TeamChatAccess.vue";
 import TeamChatMcp from "./TeamChatMcp.vue";
 import TeamAppUpdate from "./TeamAppUpdate.vue";
+import TeamFileLibrary from './TeamFileLibrary.vue';
 import { useAppUpdateStore } from "@/stores/appUpdateStore";
 const updates = useAppUpdateStore();
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
-const panelOpen = computed(
+const panelExists = computed(
   () =>
     chat.creatingTask ||
     chat.requestedTaskId ||
     chat.taskNotifications ||
     chat.tab === "tasks",
 );
+const panelOpen = computed(() => ['messages', 'tasks'].includes(chat.tab) && panelExists.value);
 function startTask(parentTaskId = null) {
   chat.creatingTaskParentId = parentTaskId;
   chat.creatingTask = true;
@@ -43,7 +45,6 @@ function createdTask(task) {
   chat.creatingTaskParentId = null;
   chat.requestedTaskMessageId = null;
   chat.requestedTaskId = task.parentTaskId || null;
-  chat.tab = "messages";
 }
 onMounted(() => {
   clearSearchFocus = search.registerFocus(() => searchBar.value?.focus());
@@ -70,9 +71,10 @@ onBeforeUnmount(() => {
       @new="startTask"
     />
     <TeamTaskPanel
-      v-if="panelOpen"
-      v-show="chat.tab !== 'updates'"
-      :thread-active="chat.tab !== 'updates'"
+      v-if="panelExists"
+      v-show="panelOpen"
+      :inert="!panelOpen"
+      :thread-active="panelOpen"
       :mobile="mobile"
       :creating="chat.creatingTask"
       :parent-task-id="chat.creatingTaskParentId"
@@ -82,6 +84,7 @@ onBeforeUnmount(() => {
       @created="createdTask"
       @new="startTask"
     />
+    <TeamFileLibrary v-if="chat.tab === 'files' && chat.me?.status === 'active'" embedded />
     <div
       v-if="chat.tab === 'members' && chat.isOwner && !panelOpen"
       class="team-scroll"

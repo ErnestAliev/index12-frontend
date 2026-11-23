@@ -16,6 +16,7 @@ import TeamFileThumbnail from "./TeamFileThumbnail.vue";
 import TeamFileInspector from "./TeamFileInspector.vue";
 import TeamFileControls from "./TeamFileControls.vue";
 import UiIcon from "./UiIcon.vue";
+const props = defineProps({ embedded: Boolean });
 const emit = defineEmits(["source-open"]);
 const chat = useTeamChatStore(),
   search = useTeamChatSearchStore();
@@ -81,6 +82,7 @@ const effectiveListShare = computed(
   () => listShare.value ?? (view.value === "list" ? 30 : 42),
 );
 const windowStyle = computed(() => ({
+  ...(props.embedded ? {} : {
   left:
     (mobile.value ? viewport.left : floating.value ? geometry.left : 0) + "px",
   top: (mobile.value ? viewport.top : floating.value ? geometry.top : 0) + "px",
@@ -89,6 +91,7 @@ const windowStyle = computed(() => ({
   height:
     (!mobile.value && floating.value ? geometry.height : viewport.height) +
     "px",
+  }),
   "--file-size": size.value + "px",
   "--file-list-share": effectiveListShare.value + "%",
   "--file-header-side": headerSide.value + "px",
@@ -276,6 +279,7 @@ async function viewed(id) {
   ];
 }
 function close() {
+  if (props.embedded) { chat.selectSection('messages'); return; }
   chat.fileLibraryOpen = false;
 }
 function dock() {
@@ -309,8 +313,10 @@ function sourceOpen(source) {
   });
   chat.show();
   emit("source-open");
-  if (mobile.value) close();
-  else if (!floating.value) dock();
+  if (!props.embedded) {
+    if (mobile.value) close();
+    else if (!floating.value) dock();
+  }
 }
 function measure() {
   const vv = window.visualViewport;
@@ -585,11 +591,11 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="embedded">
     <section
       ref="root"
       class="team-file-library"
-      :class="{ floating: floating && !mobile, 'file-resizing': resizing }"
+      :class="{ embedded, floating: !embedded && floating && !mobile, 'file-resizing': resizing }"
       :style="windowStyle"
       :data-keyboard="keyboard"
       role="region"
@@ -652,14 +658,14 @@ onBeforeUnmount(() => {
               />
             </button>
             <button
-              v-if="!mobile"
+              v-if="!embedded && !mobile"
               type="button"
               :aria-label="floating ? 'На весь экран' : 'Уменьшить окно файлов'"
               @click="toggleSize"
             >
               <UiIcon :name="floating ? 'maximize' : 'minimize'" />
             </button>
-            <button type="button" aria-label="Закрыть файлы" @click="close">
+            <button v-if="!embedded" type="button" aria-label="Закрыть файлы" @click="close">
               <UiIcon name="close" />
             </button>
           </div>
@@ -784,6 +790,7 @@ onBeforeUnmount(() => {
         />
         <TeamFileInspector
           v-if="selected"
+          :back-label="embedded ? 'Назад к файлам' : undefined"
           :file="selected"
           :tags="facets.tags"
           @close="selectedId = null"
@@ -793,7 +800,7 @@ onBeforeUnmount(() => {
           @viewed="viewed"
         />
       </div>
-      <template v-if="floating && !mobile">
+      <template v-if="!embedded && floating && !mobile">
         <div
           v-for="handle in windowEdges"
           :key="handle.edge"
@@ -1633,4 +1640,7 @@ onBeforeUnmount(() => {
   width: max-content;
   justify-self: end;
 }
+.team-file-library.embedded { position:relative;inset:auto;z-index:auto;flex:1;width:100%;height:100%;border:0;border-radius:0;box-shadow:none; }
+.embedded .file-library-header { padding-top:8px; }
+.embedded .file-library-title > :is(.ui-icon,h2) { display:none; }
 </style>

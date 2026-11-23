@@ -5,7 +5,6 @@ import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "@/components/ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "@/components/TeamChatPane.vue";
-import TeamFileLibrary from '@/components/TeamFileLibrary.vue';
 import TeamChatSetup from "@/components/TeamChatSetup.vue";
 import TeamChatInstallGate from "@/components/TeamChatInstallGate.vue";
 import UiIcon from "@/components/UiIcon.vue";
@@ -400,7 +399,6 @@ const closedText = (status) =>
       v-else
       :open="true"
       heading-owns-close
-      :hide-heading="chat.tab !== 'updates' && (!!chat.requestedTaskId || chat.creatingTask)"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"
@@ -413,7 +411,6 @@ const closedText = (status) =>
           @logout="logout" /></template
       ><TeamChatPane mobile
     /></ChatWindowFrame>
-    <TeamFileLibrary v-if="chat.fileLibraryOpen && chat.me?.status === 'active'" @source-open="chatClosed=false"/>
     <TeamChatSetup
       v-if="valid && !booting && mode === 'auth' && chat.me?.status !== 'installation_required'"
       ref="setup"

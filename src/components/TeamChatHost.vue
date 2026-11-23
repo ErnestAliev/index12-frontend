@@ -7,7 +7,6 @@ import ChatWindowFrame from "./ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
 import UiIcon from "./UiIcon.vue";
-import TeamFileLibrary from './TeamFileLibrary.vue';
 import { discardTeamDestination } from '@/utils/teamDestination';
 const props = defineProps({ priorityWorkspace: String });
 const emit = defineEmits(['priority-ready']);
@@ -133,12 +132,10 @@ async function decide(status) {
 }
 </script>
 <template>
-  <TeamFileLibrary v-if="!route.path.startsWith('/team/') && chat.fileLibraryOpen && chat.me?.status === 'active'"/>
   <ChatWindowFrame
     v-if="!route.path.startsWith('/team/')"
     :open="chat.open"
-    :heading-owns-close="!chat.isOwner"
-    :hide-heading="chat.tab !== 'updates' && !chat.isOwner && (!!chat.requestedTaskId || chat.creatingTask)"
+    heading-owns-close
     :mobile="route.name === 'mobile-home'"
     title="Сотрудники"
     window-id="team-chat-window"

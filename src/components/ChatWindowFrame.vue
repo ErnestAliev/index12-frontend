@@ -331,6 +331,8 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--codex-pane-muted);
 }
 .codex-window-header {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 9px;

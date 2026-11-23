@@ -20,7 +20,7 @@ import { documentFormat } from "@/utils/documentFormats";
 const TeamDocumentPreview = defineAsyncComponent(
   () => import("./TeamDocumentPreview.vue"),
 );
-const props = defineProps({ file: Object, tags: Array });
+const props = defineProps({ file: Object, tags: Array, backLabel: String });
 const emit = defineEmits(["close", "source", "tag", "description", "viewed"]);
 const { preview, download } = useTeamMedia({ recordViews: false });
 const expanded = ref(false),
@@ -72,15 +72,15 @@ async function share() {
 }
 </script>
 <template>
-  <aside class="file-inspector" aria-label="Сведения о файле">
+  <aside class="file-inspector" :class="{ 'has-back':!!backLabel }" aria-label="Сведения о файле">
     <header>
       <strong :title="file.name">{{ file.name }}</strong
       ><button
         type="button"
-        aria-label="Закрыть сведения о файле"
+        :aria-label="backLabel || 'Закрыть сведения о файле'"
         @click="emit('close')"
       >
-        <UiIcon name="close" />
+        <UiIcon :name="backLabel ? 'back' : 'close'" />
       </button>
     </header>
     <div class="inspector-scroll">
@@ -431,6 +431,7 @@ button:disabled {
     min-height: 44px;
   }
 }
+.file-inspector.has-back > header > button { order:-1; margin:0 8px 0 0; }
 </style>
 
 <style scoped>

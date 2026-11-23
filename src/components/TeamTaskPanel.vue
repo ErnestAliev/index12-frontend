@@ -440,7 +440,6 @@ async function saveDescription() {
     error.value = '';
   }
 }
-const canGoBack = computed(() => !props.creating || step.value !== 'who' || !!picker.value || !!recipientReturnStep.value);
 function back() {
   if (!props.creating) { close(); return; }
   if (busy.value || uploading.value) return;
@@ -455,6 +454,7 @@ function back() {
   if (picker.value) { picker.value = ''; return; }
   const previous = { what: 'project', project: 'when', urgent: 'when', when: 'who' }[step.value];
   if (previous) go(previous);
+  else emit('close');
 }
 function close() {
   if (props.creating) { back(); return; }
@@ -607,7 +607,7 @@ onBeforeUnmount(() => {
       @open="chat.requestedTaskId = menuTask._id"
     />
     <header v-if="creating || taskId" class="task-header">
-      <button aria-label="Назад" :disabled="busy || uploading || !canGoBack" @click="back">
+      <button aria-label="Назад" :disabled="busy || uploading" @click="back">
         <UiIcon name="back" />
       </button>
       <span v-if="creating" aria-hidden="true" />
@@ -624,14 +624,7 @@ onBeforeUnmount(() => {
         }}</span
         ><UiIcon :name="detailsCollapsed ? 'chevron-down' : 'chevron-up'" />
       </button>
-      <button
-        v-if="creating"
-        aria-label="Закрыть"
-        :disabled="busy || uploading"
-        @click="emit('close')"
-      >
-        <UiIcon name="close" />
-      </button>
+      <span v-if="creating" aria-hidden="true" />
       <button
         v-else-if="canDelete"
         aria-label="Удалить задачу"
@@ -959,8 +952,8 @@ onBeforeUnmount(() => {
     <template v-else-if="notifications">
       <header class="task-header">
         <span></span><span>Уведомления</span
-        ><button aria-label="Закрыть" @click="emit('close')">
-          <UiIcon name="close" />
+        ><button aria-label="Назад" @click="emit('close')">
+          <UiIcon name="back" />
         </button>
       </header>
       <div class="task-list">
