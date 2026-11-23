@@ -43,6 +43,7 @@ teamApi.defaults.adapter = async config => {
     data = { message: { _id: body.id, text: body.text, taskId: body.taskId, attachments: body.fileIds.map(id => uploaded.get(id)), authorId: chat.me.actorId, createdAt: new Date().toISOString() } };
   }
   if (config.method === 'get' && config.url === '/messages') data = { messages: [], hasMore: false };
+  if (config.method === 'get' && config.url === '/state') data = JSON.parse(JSON.stringify(chat.state));
   if (config.url === '/task-options') data = { projects: [], parties: [] };
   return { status: 200, data };
 };

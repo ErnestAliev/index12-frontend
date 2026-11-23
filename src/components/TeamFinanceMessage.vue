@@ -18,28 +18,47 @@ const money = computed(
       Math.abs(operation.value.amount),
     ) + " ₸",
 );
-const date = computed(() =>
-  operation.value.date?.split("-").reverse().join("."),
-);
+const rows = computed(() => {
+  const op = operation.value;
+  const values = new Map((op.rows || []).map(row => [row.label, row.value]));
+  const value = (key, fallback = '') => values.has(key) ? values.get(key) : fallback;
+  const result = [];
+  const add = (key, label, fallback, section = false) => result.push({
+    key, label, value: value(key, fallback) || '—', section,
+  });
+  if (op.type === 'transfer') {
+    add('Счёт списания', 'Со счёта', op.accounts?.[0]);
+    add('Владелец счёта списания', 'Отправитель');
+    add('Счёт зачисления', op.isWithdrawal ? 'Кому' : 'На счёт', op.accounts?.[1]);
+    if (!op.isWithdrawal) add('Владелец счёта зачисления', 'Получатель');
+  } else {
+    add('Счёт', op.type === 'income' ? 'На счёт' : 'Со счёта', op.accounts?.[0]);
+    add('Владелец счёта', 'Владелец');
+    const party = op.type === 'income' ? 'От кого' : 'Кому';
+    add(party, party, op.partyName);
+  }
+  add('Проект', 'Проект', op.projectNames?.join(', ') || 'Без проекта', true);
+  add('Категория', 'Категория', op.categoryName);
+  add('Подкатегория', 'Подкатегория');
+  add('Комментарий', 'Комментарий', op.comment, true);
+  add('Описание', 'Описание', op.description);
+  add('Дата', 'Дата', op.date?.slice(0, 10).split('-').reverse().join('.'), true);
+  return result;
+});
 </script>
 <template>
   <div class="team-finance-message" :data-operation-type="operation.type">
     <button type="button" class="finance-open" :aria-label="`Открыть операцию: ${title}`" @pointerdown.stop @click.stop="emit('open', message._id)">
     <span class="finance-heading">
-      <strong>{{ title }}</strong
+      <strong>{{ operation.isWithdrawal ? 'Вывод из системы' : title }}</strong
       ><strong class="finance-amount">{{ money }}</strong>
       <UiIcon name="chevron-right" />
     </span>
-    <span class="finance-account">{{ operation.accounts.join(" → ") }}</span>
-    <span v-if="operation.partyName">{{ operation.partyName }}</span>
-    <span v-if="operation.description">{{ operation.description }}</span>
-    <span v-if="operation.comment">{{ operation.comment }}</span>
-    <span class="finance-meta">
-      {{
-        [date, operation.projectNames?.join(", "), operation.categoryName]
-          .filter(Boolean)
-          .join(" · ")
-      }}
+    <span class="finance-fields">
+      <span v-for="row in rows" :key="row.key" class="finance-row" :class="{ 'section-start': row.section }" :data-field="row.key">
+        <span class="finance-label">{{ row.label }}</span>
+        <span class="finance-value">{{ row.value }}</span>
+      </span>
     </span>
     <span v-if="operation.unavailable" class="finance-meta">Операция удалена или недоступна</span>
     </button>
@@ -50,22 +69,26 @@ const date = computed(() =>
 <style scoped>
 .team-finance-message {
   min-width: 0;
-  width: 290px;
+  width: 320px;
   max-width: 100%;
   padding: 7px 0 3px;
   font-size: 13px;
   overflow-wrap: anywhere;
 }
-.finance-open { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.finance-open > span:not(.finance-heading) { display: block; margin: 4px 0; line-height: 1.4; white-space: pre-wrap; }
+.team-finance-message .finance-open { display: block; width: 100%; min-height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.finance-fields { display: grid; gap: 4px; line-height: 1.45; }
+.finance-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: baseline; min-width: 0; }
+.finance-row.section-start { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--codex-pane-border); }
+.finance-label { color: var(--codex-pane-muted); font-size: 12px; }
+.finance-value { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .finance-open:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 3px; }
 .finance-heading > strong:first-child { flex: 1; }
 .finance-heading > .ui-icon { color: var(--codex-pane-muted); }
 .finance-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   margin-bottom: 8px;
   font-size: 14px;
 }
@@ -76,13 +99,9 @@ const date = computed(() =>
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-p {
-  margin: 4px 0;
-  line-height: 1.4;
-  white-space: pre-wrap;
-}
-.finance-account,
 .finance-meta {
+  display: block;
+  margin: 6px 0;
   color: var(--codex-pane-muted);
   font-size: 12px;
 }

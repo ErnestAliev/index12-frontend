@@ -25,14 +25,14 @@ const data = {
     { _id: id(8), name: "Касса", companyId: id(2), initialBalance: 1000000 },
   ],
   companies: [{ _id: id(2), name: "ТОО UU" }],
-  individuals: [],
+  individuals: [{ _id: id(9), name: "Шерхан" }],
   contractors: [
     { _id: id(3), name: "Поставщик" },
     { _id: id(7), name: "Новый поставщик" },
   ],
   projects: [{ _id: id(4), name: "Пушкина 33" }],
   categories: [{ _id: id(5), name: "Услуги" }],
-  subcategories: [],
+  subcategories: [{ _id: id(11), name: "Монтаж", parentCategoryId: id(5) }],
 };
 Object.assign(main, data, { user });
 const operation = reactive({
@@ -111,6 +111,28 @@ function snapshot() {
     ],
   };
 }
+function financeRows() {
+  const rows = [];
+  const add = (label, value) => rows.push({ label, value: value || '' });
+  const name = (kind, value) => data[kind].find(row => row._id === value)?.name || '';
+  if (operation.type === 'transfer') {
+    add('Счёт списания', name('accounts', operation.fromAccountId));
+    add('Владелец счёта списания', name('companies', operation.fromCompanyId));
+    add('Счёт зачисления', operation.isWithdrawal ? operation.withdrawalRecipient : name('accounts', operation.toAccountId));
+    add('Владелец счёта зачисления', name('individuals', operation.toIndividualId));
+  } else {
+    add('Счёт', name('accounts', operation.accountId));
+    add('Владелец счёта', name('companies', operation.companyId));
+    add(operation.type === 'income' ? 'От кого' : 'Кому', name('contractors', operation.contractorId));
+  }
+  add('Проект', name('projects', operation.projectId) || 'Без проекта');
+  add('Категория', name('categories', operation.categoryId));
+  add('Подкатегория', name('subcategories', operation.subcategoryId));
+  add('Описание', operation.description);
+  add('Комментарий', operation.comment);
+  add('Дата', operation.date.slice(0, 10).split('-').reverse().join('.'));
+  return rows;
+}
 async function adapter(config) {
   const path = new URL(config.url, "http://fixture.invalid").pathname.replace(
     /^\/api(?:\/team-chat)?/,
@@ -167,6 +189,7 @@ async function adapter(config) {
     Object.assign(operation, body, { syncVersion: operation.syncVersion + 1 });
     for (const message of messages.filter(row => row.kind === 'finance_operation')) {
       Object.assign(message.financeOperation, {
+        rows: financeRows(),
         amount: operation.amount, date: operation.date.slice(0, 10), description: operation.description,
         comment: operation.comment,
         audit: { ...message.financeOperation.audit, editedAt: '2026-11-23T10:15:30.000Z', editedByName: 'Эрнест' },
@@ -229,14 +252,20 @@ window.shareFixture = {
   operation,
   task,
   user,
-  financeCard(type, inTask = false) {
+  financeCard(type, inTask = false, withdrawal = false) {
     this.mode(type);
+    Object.assign(main.accounts.find(row => row._id === id(8)), { name: 'Kaspi Gold Шерхан', companyId: null, individualId: id(9) });
+    Object.assign(operation, { subcategoryId: id(11), comment: 'По договору № 12\nВторая часть оплаты',
+      ...(type === 'transfer' ? { toCompanyId: null, toIndividualId: id(9) } : {}),
+      ...(withdrawal ? { isWithdrawal: true, transferPurpose: 'withdrawal', toAccountId: null, toIndividualId: null, withdrawalRecipient: 'Давид' } : {}),
+    });
     const message = {
       _id: crypto.randomUUID(), kind: 'finance_operation', text: type, authorId: 'staff', authorName: 'Давид',
       attachments: [], version: 0, createdAt: '2026-11-18T07:00:00.000Z',
       ...(inTask ? { taskId: task._id } : {}),
       financeOperation: {
         operationId: operation._id, type, amount: operation.amount, date: operation.date.slice(0, 10),
+        rows: financeRows(), isWithdrawal: withdrawal,
         accounts: type === 'transfer' ? ['BCC UU', 'Касса'] : ['BCC UU'],
         description: operation.description, comment: '', projectNames: ['Пушкина 33'],
         audit: { createdAt: '2026-11-18T07:00:00.000Z', createdByName: 'Давид', editedAt: null },
@@ -247,10 +276,17 @@ window.shareFixture = {
     if (inTask) this.thread();
     return message._id;
   },
+  clearFinance() {
+    messages.splice(0);
+    chat.state.messages = [];
+    chat.threads[task._id] = { messages: [], ready: true, hasMore: false };
+    chat.requestedTaskId = null;
+  },
   mode(type) {
     Object.assign(operation, {
       type,
       isTransfer: type === "transfer",
+      isWithdrawal: false,
       amount: type === "expense" ? -130000 : 130000,
       ...(type === "transfer"
         ? {
