@@ -1,5 +1,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { teamApi, useTeamChatStore } from '@/stores/teamChatStore';
+import { taskDate } from '@/utils/teamTasks';
 
 const groups = [
   { id: 'accounts', label: 'Счета', icon: 'wallet', finance: true },
@@ -10,6 +11,7 @@ const groups = [
   { id: 'subcategories', label: 'Подкатегории', icon: 'grid', finance: true },
   { id: 'people', label: 'Люди', icon: 'people' },
   { id: 'files', label: 'Файлы', icon: 'attach' },
+  { id: 'tasks', label: 'Задачи', icon: 'check' },
 ];
 const normalize = text => String(text || '').toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 const id = value => String(value?._id || value || '');
@@ -19,16 +21,17 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
   const range = ref(null), query = ref(''), category = ref(null), index = ref(0), menu = ref(null);
   const finance = ref(null), fileRows = ref([]), financeLoading = ref(false), filesLoading = ref(false);
   const financeError = ref(''), filesError = ref(''), height = ref(240);
+  const taskRows = ref([]), tasksLoading = ref(false), tasksError = ref('');
   const canFinance = computed(() => !!chat.me?.owner || !!chat.me?.accountIds?.length);
   const availableGroups = computed(() => groups.filter(group => !group.finance || canFinance.value));
   const scope = computed(() => chat.me?.status === 'active' ? JSON.stringify([chat.me.workspaceId, chat.me.actorId, chat.sessionEpoch, chat.me.owner, chat.me.accountIds]) : '');
-  let controller, financeController, timer, loadedAt = 0, projectsLoadedAt = 0, financePromise, projectsPromise, generation = 0, dismissed = '', disposed = false;
+  let controller, financeController, taskController, timer, loadedAt = 0, projectsLoadedAt = 0, tasksLoadedAt = 0, financePromise, projectsPromise, generation = 0, dismissed = '', disposed = false;
   const open = computed(() => !!range.value && !!scope.value && enabled());
   const group = computed(() => groups.find(item => item.id === category.value));
-  const loading = computed(() => open.value && (category.value === 'files' ? filesLoading.value : category.value && group.value?.finance ? financeLoading.value : financeLoading.value || filesLoading.value));
-  const error = computed(() => category.value === 'files' ? filesError.value : group.value?.finance ? financeError.value : '');
+  const loading = computed(() => open.value && (category.value === 'tasks' ? tasksLoading.value : category.value === 'files' ? filesLoading.value : category.value && group.value?.finance ? financeLoading.value : financeLoading.value || filesLoading.value || tasksLoading.value));
+  const error = computed(() => category.value === 'tasks' ? tasksError.value : category.value === 'files' ? filesError.value : group.value?.finance ? financeError.value : '');
 
-  function close() { dismissed = range.value ? `${range.value.start}:${query.value}:${category.value}` : ''; range.value = null; clearTimeout(timer); controller?.abort(); filesLoading.value = false; }
+  function close() { dismissed = range.value ? `${range.value.start}:${query.value}:${category.value}` : ''; range.value = null; clearTimeout(timer); controller?.abort(); taskController?.abort(); filesLoading.value = tasksLoading.value = false; }
   function measure() {
     const input = field(), frame = input?.closest('.codex-chat-window');
     if (input) height.value = Math.max(44, Math.min(280, input.getBoundingClientRect().top - (frame?.getBoundingClientRect().top || window.visualViewport?.offsetTop || 0) - 56));
@@ -66,6 +69,20 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
       } finally { if (!disposed && !request.signal.aborted && current === generation) filesLoading.value = false; }
     }, 180);
   }
+  async function loadTasks() {
+    if (!open.value || (category.value && category.value !== 'tasks') || (!category.value && !query.value.trim()) || tasksLoading.value || Date.now() - tasksLoadedAt < 30000) return;
+    const request = taskController = new AbortController(), identity = scope.value, current = generation;
+    tasksLoading.value = true; tasksError.value = '';
+    try {
+      const { data } = await teamApi.get('/tasks', { signal: request.signal });
+      if (!disposed && !request.signal.aborted && current === generation && identity === scope.value) {
+        taskRows.value = (data.tasks || []).filter(task => !task.deletedAt);
+        tasksLoadedAt = Date.now();
+      }
+    } catch (e) {
+      if (!disposed && !request.signal.aborted && current === generation) tasksError.value = e.response?.data?.message || 'Не удалось загрузить задачи';
+    } finally { if (!disposed && !request.signal.aborted && current === generation) tasksLoading.value = false; }
+  }
   const entities = computed(() => {
     const data = finance.value || {}, result = [];
     const owners = new Map([...(data.companies || []), ...(data.individuals || [])].map(row => [id(row), row.name]));
@@ -82,6 +99,11 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
     for (const row of data.projects || chat.taskOptions.projects || []) add('projects', row, 'Проект');
     for (const row of chat.state.people || []) if (row.status !== 'invited' && row._id !== chat.me?.actorId) add('people', row, chat.me?.roles?.[row.role] || row.position || 'Участник');
     for (const row of fileRows.value) add('files', row, row.uploadedBy?.name || 'Файл');
+    for (const row of taskRows.value) {
+      const title = String(row.description || '').trim().split('\n')[0] || 'Задача';
+      const status = ({ open: 'Новая', progress: 'В процессе', delayed: 'Не успеваю', done: 'Готово' })[row.status] || 'Задача';
+      add('tasks', { ...row, name: title.length > 140 ? title.slice(0, 140) + '…' : title }, `${status} · ${taskDate(row)}`, row.description);
+    }
     return result;
   });
   const choices = computed(() => {
@@ -116,8 +138,8 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
     let inserted;
     if (item.section) inserted = `/${item.label} `;
     else if (item.kind === 'people') { inserted = `@${item.name} `; mention(item.value); }
-    else if (item.kind === 'files') {
-      const source = item.value.sources?.[0];
+    else if (item.kind === 'files' || item.kind === 'tasks') {
+      const source = item.kind === 'tasks' ? { kind: 'task', taskId: item.value._id } : item.value.sources?.[0];
       if (source) {
         const url = new URL('/', window.location.origin); url.searchParams.set('teamChat', chat.me.workspaceId);
         if (source.taskId) url.searchParams.set('task', source.taskId);
@@ -146,10 +168,12 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
     return true;
   }
   watch([query, category, open], loadFiles);
+  watch([query, category, open], loadTasks);
   watch(choices, () => { index.value = Math.min(index.value, Math.max(0, choices.value.length - 1)); });
   watch(scope, () => {
     ++generation; close(); financeController?.abort(); finance.value = null; financePromise = null; financeLoading.value = false;
     financeError.value = ''; fileRows.value = []; loadedAt = projectsLoadedAt = 0; projectsPromise = null; dismissed = '';
+    taskRows.value = []; tasksError.value = ''; tasksLoadedAt = 0;
   }, { flush: 'sync' });
   watch(() => taskId(), close);
   function outside(event) { if (event.target !== field() && !menu.value?.contains(event.target)) close(); }
