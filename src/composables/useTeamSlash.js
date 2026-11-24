@@ -139,13 +139,14 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
     if (item.section) inserted = `/${item.label} `;
     else if (item.kind === 'people') { inserted = `@${item.name} `; mention(item.value); }
     else if (item.kind === 'files' || item.kind === 'tasks') {
+      const label = item.kind === 'tasks' ? 'Задача' : 'Файл';
       const source = item.kind === 'tasks' ? { kind: 'task', taskId: item.value._id } : item.value.sources?.[0];
       if (source) {
         const url = new URL('/', window.location.origin); url.searchParams.set('teamChat', chat.me.workspaceId);
         if (source.taskId) url.searchParams.set('task', source.taskId);
         if (source.kind === 'message' && source.messageId) url.searchParams.set('message', source.messageId);
-        inserted = `[${item.name.replace(/[\\\[\]]/g, '\\$&').replace(/[\r\n]/g, ' ')}](${url.href}) `;
-      } else inserted = `${item.name} `;
+        inserted = `${label}: [${item.name.replace(/[\\\[\]]/g, '\\$&').replace(/[\r\n]/g, ' ')}](${url.href}) `;
+      } else inserted = `${label}: ${item.name} `;
     } else inserted = `${item.name} `;
     setText(text().slice(0, location.start) + inserted + text().slice(location.end));
     range.value = null; dismissed = '';
