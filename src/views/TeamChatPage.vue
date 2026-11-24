@@ -413,6 +413,7 @@ const closedText = (status) =>
       v-else
       :open="true"
       heading-owns-close
+      :hide-compact-heading="['messages', 'tasks'].includes(chat.tab) && !!(chat.requestedTaskId || chat.creatingTask)"
       :mobile="true"
       title="Сотрудники"
       window-id="team-chat-public"

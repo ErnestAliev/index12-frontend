@@ -486,6 +486,8 @@ function showTaskMenu(task, touch = false) {
 const taskContext = useTaskContextMenu(showTaskMenu);
 const keyboardOpen = ref(false),
   detailsOpen = ref(true);
+const narrowViewport = ref((window.visualViewport?.width || innerWidth) < 600);
+const compactTaskHeader = computed(() => props.mobile || narrowViewport.value);
 const detailsCollapsed = computed(() => !detailsOpen.value && !editing.value);
 let detailAnimation = null;
 const interruptedDetails = new WeakMap();
@@ -513,6 +515,7 @@ function animateDetails(element, done, opening) {
   animation.onfinish = () => { done(); animation.cancel(); if (detailAnimation === animation) detailAnimation = null; };
 }
 function viewport() {
+  narrowViewport.value = (window.visualViewport?.width || innerWidth) < 600;
   const open =
     innerHeight - (window.visualViewport?.height || innerHeight) > 120;
   if (open !== keyboardOpen.value) {
@@ -610,17 +613,18 @@ onBeforeUnmount(() => {
       <button aria-label="Назад" :disabled="busy || uploading" @click="back">
         <UiIcon name="back" />
       </button>
-      <span v-if="creating" aria-hidden="true" />
+      <span v-if="creating || (compactTaskHeader && !detailsCollapsed)" aria-hidden="true" />
       <button
         v-else
         class="task-heading-title"
+        :class="{ 'task-heading-restore': compactTaskHeader && detailsCollapsed }"
         :aria-expanded="!detailsCollapsed"
-        aria-label="Параметры задачи"
+        :aria-label="compactTaskHeader ? 'Показать задачу' : 'Параметры задачи'"
         @pointerdown.prevent
         @click="detailsOpen = !detailsOpen"
       >
         <span>{{
-          detailsCollapsed ? task?.description || "Задача" : task?.parentTaskId ? "Подзадача" : "Задача"
+          compactTaskHeader ? 'Показать задачу' : detailsCollapsed ? task?.description || "Задача" : task?.parentTaskId ? "Подзадача" : "Задача"
         }}</span
         ><UiIcon :name="detailsCollapsed ? 'chevron-down' : 'chevron-up'" />
       </button>

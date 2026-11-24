@@ -49,7 +49,7 @@
 }
 .task-header {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   align-items: center;
   text-align: center;
   min-height: 48px;
@@ -573,6 +573,9 @@
   height: 14px;
   flex: none;
 }
+.task-header > .task-heading-restore { position: relative; color: var(--codex-pane-accent); }
+.task-heading-restore::before { content: ''; position: absolute; inset: 6px 8px; border: 1px solid color-mix(in srgb, var(--codex-pane-accent) 60%, transparent); border-radius: 6px; background: var(--codex-pane-accent-soft); }
+.task-heading-restore > span, .task-heading-restore > .ui-icon { position: relative; }
 .task-panel > .task-discussion {
   position: relative;
   flex: 1;
