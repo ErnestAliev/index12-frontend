@@ -17,7 +17,7 @@ import IncomePopup from "./IncomePopup.vue";
 import ExpensePopup from "./ExpensePopup.vue";
 import TransferPopup from "./TransferPopup.vue";
 import TeamOperationShare from "./TeamOperationShare.vue";
-import OperationAudit from "./OperationAudit.vue";
+import { operationHistoryKey } from '@/composables/operationHistoryContext';
 import UiIcon from "./UiIcon.vue";
 const props = defineProps({
   type: String,
@@ -31,7 +31,7 @@ const main = useMainStore();
 const ownerEditor = !!props.messageId && chat.me?.owner === true;
 const workspaceId = String(chat.me?.workspaceId || "");
 const actorId = chat.me?.actorId;
-const operationAudit = ref(null);
+provide(operationHistoryKey, { messageId: props.messageId });
 const operation = ref(null),
   operationSnapshot = ref(null);
 const operationType = computed(() =>
@@ -138,7 +138,6 @@ async function load() {
       }
       if (active) {
         operation.value = data.operation;
-        operationAudit.value = data.audit;
         operationSnapshot.value = data.snapshot;
         ready.value = true;
       }
@@ -254,7 +253,7 @@ onBeforeUnmount(() => {
       :transfer-to-edit="operationType === 'transfer' ? operation : null"
       :submit-operation="submit"
       @close="close"
-      ><template #operation-meta><OperationAudit :audit="operationAudit" /></template><template #header-actions
+      ><template #header-actions
         ><button
           class="finance-close"
           type="button"

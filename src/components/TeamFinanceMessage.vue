@@ -62,7 +62,7 @@ const rows = computed(() => {
     </span>
     <span v-if="operation.unavailable" class="finance-meta">Операция удалена или недоступна</span>
     </button>
-    <OperationAudit :audit="operation.audit || { createdAt: message.createdAt, createdByName: message.authorName }" />
+    <OperationAudit :operation-id="operation.operationId" :message-id="message._id" :audit="operation.audit || { createdAt: message.createdAt, createdByName: message.authorName }" />
     <TeamApprovalMessage v-if="message.approvalRequest" :message="message" />
   </div>
 </template>

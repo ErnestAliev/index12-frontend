@@ -1276,7 +1276,7 @@ watch(
             >
               <header v-if="m.kind !== 'task'">
                 <strong>{{ m.authorName }}</strong>
-                <span v-if="operationPhase(m)" class="team-operation-phase">{{ operationPhase(m) }}</span>
+                <span v-if="operationPhase(m)" class="team-operation-phase" :data-phase="operationPhase(m)">{{ operationPhase(m) }}</span>
               </header>
               <TeamReplyQuote
                 v-if="m.replyTo"
@@ -1509,8 +1509,8 @@ watch(
 </template>
 <style scoped src="./teamChat.css"></style>
 <style scoped>
-.team-message[data-operation-type="income"] { --team-operation-color: var(--op-income-color, var(--codex-pane-accent)); }
-.team-message[data-operation-type="expense"] { --team-operation-color: var(--op-expense-color, var(--codex-pane-danger)); }
+.team-message[data-operation-type="income"] { --team-operation-color: var(--op-income-color, var(--codex-pane-accent)); --team-plan-color: #34c759; }
+.team-message[data-operation-type="expense"] { --team-operation-color: var(--op-expense-color, var(--codex-pane-danger)); --team-plan-color: #ff3b30; }
 .team-message:is([data-operation-type="income"], [data-operation-type="expense"]) > .team-bubble {
   background: var(--codex-pane-surface);
   border-color: color-mix(in srgb, var(--team-operation-color) 40%, var(--codex-pane-border));
@@ -1518,6 +1518,7 @@ watch(
 }
 .team-bubble header > strong { min-width: 0; overflow-wrap: anywhere; }
 .team-operation-phase { flex: none; padding: 2px 6px; border: 1px solid var(--codex-pane-border); border-radius: 4px; background: var(--codex-pane-surface-soft); color: var(--codex-pane-muted); font-size: 10px; font-weight: 500; line-height: 1.4; white-space: nowrap; }
+.team-operation-phase[data-phase="ПЛАН"] { background: var(--team-plan-color); border-color: var(--team-plan-color); color: #111; }
 </style>
 <style scoped>
 .team-slash-list { position:absolute;bottom:calc(100% + 4px);left:max(12px,var(--safe-area-left,0px));right:max(12px,var(--safe-area-right,0px));z-index:45;overflow:auto;overscroll-behavior:contain;padding:4px;border:1px solid var(--codex-pane-border);border-radius:8px;background:var(--codex-pane-surface);box-shadow:0 6px 24px #0003; }

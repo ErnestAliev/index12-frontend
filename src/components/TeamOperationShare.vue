@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import OperationText from "./OperationText.vue";
 import UiIcon from "./UiIcon.vue";
+import OperationAudit from './OperationAudit.vue';
 const props = defineProps({ message: { type: Object, required: true } });
 const emit = defineEmits(["open"]);
 const share = computed(() => props.message.operationShare);
@@ -37,6 +38,7 @@ const amount = computed(
         </tbody>
       </table>
     </template>
+    <OperationAudit v-if="message._id" :operation-id="share.operationId" :message-id="message._id" />
   </div>
 </template>
 <style scoped>

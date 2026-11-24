@@ -21,6 +21,7 @@ const fields = {
   contractor: "Контрагент",
   project: "Проект",
   description: "Описание",
+  comment: "Комментарий",
   recipient: "Получатель",
   reason: "Основание",
   status: "Закрытие",
@@ -146,6 +147,14 @@ export function settingPath(path) {
     )
     .join(" / ");
 }
+function operationDayText(side) {
+  const match = /^(\d{4})-(\d{1,3})$/.exec(side.dateKey || '');
+  if (match) {
+    const date = new Date(Date.UTC(Number(match[1]), 0, Number(match[2])));
+    if (date.getUTCFullYear() === Number(match[1])) return date.toISOString().slice(0, 10).split('-').reverse().join('.');
+  }
+  return dateText(side.date);
+}
 export function historyLines(row) {
   if (row.action !== "updated")
     return [
@@ -163,13 +172,13 @@ export function historyLines(row) {
         ? money(side.amount)
         : field === "date"
           ? before.dateKey === after.dateKey
-            ? `Ячейка ${(side.cellIndex || 0) + 1}`
-            : dateText(side.date)
+            ? before.cellIndex !== after.cellIndex ? `Ячейка ${(side.cellIndex || 0) + 1}` : dateText(side.date, true)
+            : operationDayText(side)
           : field === "category"
             ? valueText(
                 side.categoryIds?.length ? side.categoryIds : side.categoryId,
                 row,
-              )
+              ) + ' / ' + (side.subcategoryId ? 'Подкатегория: ' + valueText(side.subcategoryId, row) : 'Без подкатегории')
             : field === "project"
               ? side.projectScope === "all"
                 ? "Все проекты"
