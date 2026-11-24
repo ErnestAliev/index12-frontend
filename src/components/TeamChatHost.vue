@@ -18,6 +18,23 @@ const main = useMainStore(),
   approvalError = ref("");
 const approvalPanel = ref(null);
 
+// Chat uses its own update stream, which can recover while the ledger socket
+// is disconnected. Reconcile a moved operation without resetting the journal.
+watch(() => [
+  main.user?.currentWorkspaceId,
+  chat.me?.owner ? chat.me.workspaceId : null,
+  [...(chat.state.messages || []), ...Object.values(chat.threads || {}).flatMap(thread => thread.messages || [])]
+    .filter(message => message.kind === 'finance_operation' && message.financeOperation?.operationId && !message.financeOperation.unavailable)
+    .map(message => [message.financeOperation.operationId, message.financeOperation.date, message.financeOperation.audit?.editedAt]),
+], () => {
+  if (!chat.me?.owner || String(main.user?.currentWorkspaceId || '') !== chat.me.workspaceId) return;
+  const operations = new Map();
+  for (const message of [...(chat.state.messages || []), ...Object.values(chat.threads || {}).flatMap(thread => thread.messages || [])]) {
+    if (message.kind === 'finance_operation' && message.financeOperation?.operationId && !message.financeOperation.unavailable) operations.set(message.financeOperation.operationId, message.financeOperation);
+  }
+  for (const operation of operations.values()) void main.reconcileChatOperation(operation.operationId, operation.date, chat.me.workspaceId).catch(() => {});
+}, { immediate: true });
+
 let approvalFocus;
 function approvalKeys(event) {
   if (event.key !== "Tab") return;

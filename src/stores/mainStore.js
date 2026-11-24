@@ -1874,6 +1874,30 @@ export const useMainStore = defineStore('mainStore', () => {
         _triggerProjectionUpdate();
     };
 
+    const chatOperationRefreshes = new Map();
+    async function reconcileChatOperation(operationId, day, workspaceId) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '') || String(user.value?.currentWorkspaceId || '') !== String(workspaceId)) return;
+        const targetKey = _getDateKey(new Date(day + 'T12:00:00'));
+        const positions = _findOperationEntries(operationId);
+        const known = allKnownOperations.value.find(op => _idsMatch(op._id, operationId));
+        if (!known && !positions.length) return;
+        if (known?.dateKey === targetKey && positions.every(position => position.dateKey === targetKey)) return;
+        const actor = String(user.value?.id || user.value?._id || '');
+        const key = actor + ':' + String(workspaceId) + ':' + String(operationId);
+        if (chatOperationRefreshes.has(key)) return chatOperationRefreshes.get(key);
+        const generation = cacheGeneration.value;
+        const refresh = axios.get(`${API_BASE_URL}/events/${operationId}`).then(({ data }) => {
+            if (generation !== cacheGeneration.value || actor !== String(user.value?.id || user.value?._id || '') || String(user.value?.currentWorkspaceId || '') !== String(workspaceId)) return;
+            // Read the full ledger record: a chat card contains display names,
+            // not all reference IDs needed by the timeline and balance widgets.
+            const oldKeys = _findOperationEntries(operationId).map(position => position.dateKey);
+            onSocketOperationUpdated(data, { affectedDateKeys: oldKeys });
+            _publishOperationState(...oldKeys, data.dateKey);
+        }).finally(() => { if (chatOperationRefreshes.get(key) === refresh) chatOperationRefreshes.delete(key); });
+        chatOperationRefreshes.set(key, refresh);
+        return refresh;
+    }
+
     const onSocketOperationDeleted = (opId, meta = {}) => {
         const ids = new Set([_toStr(opId), ...(meta.deletedOperationIds || []).map(_toStr)].filter(Boolean));
         const affected = allKnownOperations.value.filter(op =>
@@ -3671,7 +3695,7 @@ export const useMainStore = defineStore('mainStore', () => {
         retailIndividualId, realizationCategoryId, remainingDebtCategoryId, refundCategoryId,
         _isRetailWriteOff, _isRetailRefund, _isCreditIncome, loanRepaymentCategoryId,
 
-        getAllRelevantOps, allKnownOperations, _isOpVisible,
+        getAllRelevantOps, allKnownOperations, _isOpVisible, reconcileChatOperation,
         checkInsufficientFunds, // 🟢 Export
 
 
