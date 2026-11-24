@@ -486,8 +486,6 @@ function showTaskMenu(task, touch = false) {
 const taskContext = useTaskContextMenu(showTaskMenu);
 const keyboardOpen = ref(false),
   detailsOpen = ref(true);
-const narrowViewport = ref((window.visualViewport?.width || innerWidth) < 600);
-const compactTaskHeader = computed(() => props.mobile || narrowViewport.value);
 const detailsCollapsed = computed(() => !detailsOpen.value && !editing.value);
 let detailAnimation = null;
 const interruptedDetails = new WeakMap();
@@ -515,7 +513,6 @@ function animateDetails(element, done, opening) {
   animation.onfinish = () => { done(); animation.cancel(); if (detailAnimation === animation) detailAnimation = null; };
 }
 function viewport() {
-  narrowViewport.value = (window.visualViewport?.width || innerWidth) < 600;
   const open =
     innerHeight - (window.visualViewport?.height || innerHeight) > 120;
   if (open !== keyboardOpen.value) {
@@ -613,20 +610,17 @@ onBeforeUnmount(() => {
       <button aria-label="Назад" :disabled="busy || uploading" @click="back">
         <UiIcon name="back" />
       </button>
-      <span v-if="creating || (compactTaskHeader && !detailsCollapsed)" aria-hidden="true" />
+      <span v-if="creating || !detailsCollapsed" aria-hidden="true" />
       <button
         v-else
         class="task-heading-title"
-        :class="{ 'task-heading-restore': compactTaskHeader && detailsCollapsed }"
+        :class="{ 'task-heading-restore': detailsCollapsed }"
         :aria-expanded="!detailsCollapsed"
-        :aria-label="compactTaskHeader ? 'Показать задачу' : 'Параметры задачи'"
+        aria-label="Показать задачу"
         @pointerdown.prevent
-        @click="detailsOpen = !detailsOpen"
+        @click="detailsOpen = true"
       >
-        <span>{{
-          compactTaskHeader ? 'Показать задачу' : detailsCollapsed ? task?.description || "Задача" : task?.parentTaskId ? "Подзадача" : "Задача"
-        }}</span
-        ><UiIcon :name="detailsCollapsed ? 'chevron-down' : 'chevron-up'" />
+        <span>Показать задачу</span><UiIcon name="chevron-down" />
       </button>
       <span v-if="creating" aria-hidden="true" />
       <button

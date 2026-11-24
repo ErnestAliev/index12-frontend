@@ -19,7 +19,6 @@ const props = defineProps({
   closable: { type: Boolean, default: true },
   headingOwnsClose: Boolean,
   hideHeading: Boolean,
-  hideCompactHeading: Boolean,
   mobile: Boolean,
   title: { type: String, default: "Codex" },
   windowId: { type: String, default: "codex-chat-window" },
@@ -40,7 +39,6 @@ const readViewport = () => ({
 });
 const viewport = ref(readViewport());
 const isCompact = computed(() => props.mobile || viewport.value.width < 600);
-const headingHidden = computed(() => props.hideHeading || (props.hideCompactHeading && isCompact.value));
 const limits = computed(() => ({
   width: Math.max(280, viewport.value.width - 88),
   height: Math.max(160, viewport.value.height - 32),
@@ -48,7 +46,7 @@ const limits = computed(() => ({
 const dimensions = computed(() =>
   isCompact.value
     ? {
-        '--task-header-safe-top': headingHidden.value ? 'var(--safe-area-top)' : '0px',
+        '--task-header-safe-top': props.hideHeading ? 'var(--safe-area-top)' : '0px',
         left: `${viewport.value.left}px`,
         top: `${viewport.value.top}px`,
         width: `${viewport.value.width}px`,
@@ -227,7 +225,7 @@ onBeforeUnmount(() => {
       tabindex="-1"
       @keydown="escape"
     >
-      <header v-if="!headingHidden" class="codex-window-header">
+      <header v-if="!hideHeading" class="codex-window-header">
         <slot name="heading" :close="() => emit('close')"
           ><slot name="icon"><CodexIcon /></slot><span>{{ title }}</span></slot
         >
