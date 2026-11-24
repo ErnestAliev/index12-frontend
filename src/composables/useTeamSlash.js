@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { teamApi, useTeamChatStore } from '@/stores/teamChatStore';
 import { taskDate } from '@/utils/teamTasks';
+import { teamTaskUrl } from '@/utils/teamDestination';
 
 const groups = [
   { id: 'accounts', label: 'Счета', icon: 'wallet', finance: true },
@@ -142,7 +143,7 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
       const label = item.kind === 'tasks' ? 'Задача' : 'Файл';
       const source = item.kind === 'tasks' ? { kind: 'task', taskId: item.value._id } : item.value.sources?.[0];
       if (source) {
-        const url = new URL('/', window.location.origin); url.searchParams.set('teamChat', chat.me.workspaceId);
+        const url = item.kind === 'tasks' ? new URL(teamTaskUrl(chat.me.workspaceId, source.taskId)) : new URL('/', window.location.origin); url.searchParams.set('teamChat', chat.me.workspaceId);
         if (source.taskId) url.searchParams.set('task', source.taskId);
         if (source.kind === 'message' && source.messageId) url.searchParams.set('message', source.messageId);
         inserted = `${label}: [${item.name.replace(/[\\\[\]]/g, '\\$&').replace(/[\r\n]/g, ' ')}](${url.href}) `;

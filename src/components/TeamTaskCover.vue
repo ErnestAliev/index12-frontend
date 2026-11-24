@@ -56,7 +56,7 @@ async function done() {
   <div
     v-if="task"
     class="task-cover"
-    :draggable="!!transfer.scope.value"
+    :draggable="!taskContext.touch.value && !!transfer.scope.value"
     @dragstart="taskContext.drag(); transfer.task($event, task)"
     :class="{ completed: task.status === 'done', unread: task.unreadCount }"
     :data-status="task.status"

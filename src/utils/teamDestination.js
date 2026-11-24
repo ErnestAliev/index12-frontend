@@ -6,6 +6,12 @@ let pending;
 let opened;
 let restoredClickId;
 const completedClickIds = new Set();
+export function teamTaskUrl(workspaceId, taskId) {
+  const url = new URL('/team/' + workspaceId, window.location.origin);
+  url.searchParams.set('teamChat', workspaceId);
+  url.searchParams.set('task', taskId);
+  return url.href;
+}
 async function clickStore() {
   if (typeof indexedDB === 'undefined') return null;
   return globalThis.index12TeamClickStore;

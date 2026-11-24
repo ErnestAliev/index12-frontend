@@ -38,7 +38,14 @@ const name = ref(""),
   resetName = ref("");
 const accessToken = ref(typeof route.query.access === 'string' ? route.query.access : '');
 const namedLogin = computed(() => invitation.value?.namedLogin === true || !!accessToken.value);
-const startSession = () => chat.start(invitation.value.workspaceId, { chatOnly: namedLogin.value });
+const phoneLogin = ref(false);
+const startSession = () => chat.start(invitation.value.workspaceId, { chatOnly: namedLogin.value && !invitation.value?.publicEntry });
+const ownerEntryUrl = computed(() => {
+  const url = new URL('/', window.location.origin);
+  if (invitation.value?.workspaceId) url.searchParams.set('teamChat', invitation.value.workspaceId);
+  for (const name of ['task', 'message']) if (typeof route.query[name] === 'string') url.searchParams.set(name, route.query[name]);
+  return url.href;
+});
 const originalTitle = document.title,
   viewportHeight = ref(window.visualViewport?.height || window.innerHeight);
 function resizeEntry() {
@@ -225,7 +232,7 @@ const closedText = (status) =>
           : "Подключаемся к чату…"
       }}</span>
     </section>
-    <form v-else-if="namedLogin && (!chat.me || mode !== 'auth')" @submit.prevent="submitNamed">
+    <form v-else-if="namedLogin && !phoneLogin && (!chat.me || mode !== 'auth')" @submit.prevent="submitNamed">
       <h1>{{ mode === 'join' ? 'Вход сотрудника' : 'Вход в Chat' }}</h1>
       <div class="team-invite-context"><strong>{{ invitation?.name }}</strong></div>
       <p v-if="error" role="alert">{{ error }}</p>
@@ -233,6 +240,10 @@ const closedText = (status) =>
         <label>Имя<input v-model="name" aria-label="Имя сотрудника" autocomplete="username" maxlength="100" required /></label>
         <label>Пароль<div class="team-password"><input v-model="password" aria-label="Пароль" :type="visible ? 'text' : 'password'" autocomplete="current-password" maxlength="128" required /><button type="button" :aria-label="visible ? 'Скрыть пароль' : 'Показать пароль'" @click="visible = !visible"><UiIcon name="view" /></button></div></label>
         <button type="submit" class="team-login-primary" :disabled="busy">{{ busy ? 'Входим…' : 'Войти' }}</button>
+        <template v-if="invitation?.publicEntry">
+          <button type="button" @click="phoneLogin = true; register = false; error = ''">Войти по номеру телефона</button>
+          <a :href="ownerEntryUrl">Войти как владелец</a>
+        </template>
       </template>
       <button v-else-if="invitation" type="button" @click="regularLogin">Войти по имени и паролю</button>
     </form>
@@ -360,7 +371,10 @@ const closedText = (status) =>
             @click="switchMode('recovery')"
           >
             Забыли пароль?
-          </button></template
+          </button><template v-if="invitation?.publicEntry">
+            <button type="button" @click="phoneLogin = false; error = ''">Войти по имени</button>
+            <a :href="ownerEntryUrl">Войти как владелец</a>
+          </template></template
         ><button
           v-else-if="mode === 'recovery'"
           type="button"
