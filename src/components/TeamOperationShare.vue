@@ -30,7 +30,7 @@ const amount = computed(
         data-fragment-source
       >
         <tbody>
-          <tr v-for="row in share.rows" :key="row.label">
+          <tr v-for="row in share.rows" :key="row.label" :data-field="row.label">
             <th scope="row">{{ row.label }}</th>
             <td><OperationText :text="row.value || '—'" :workspace-id="message.workspaceId" /></td>
           </tr>
@@ -47,9 +47,11 @@ const amount = computed(
   font-size: 13px;
 }
 .operation-share-button {
-  display: flex;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  width: 100%;
   max-width: 100%;
   min-height: 44px;
   padding: 8px 10px;
@@ -64,7 +66,8 @@ const amount = computed(
 .operation-share-button strong {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .operation-share-button > .ui-icon {
   width: 16px;
@@ -85,6 +88,7 @@ const amount = computed(
   font-size: 14px;
   font-weight: 500;
 }
+.operation-share-button, .operation-share-title, .operation-share-table tr[data-field="Сумма"] > * { color: var(--team-operation-color, var(--codex-pane-text)); }
 .operation-share-table {
   width: 100%;
   border-collapse: collapse;

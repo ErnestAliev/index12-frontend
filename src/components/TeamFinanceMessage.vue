@@ -82,21 +82,24 @@ const rows = computed(() => {
 .finance-label { color: var(--codex-pane-muted); font-size: 12px; }
 .finance-value { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .finance-open:focus-visible { outline: 2px solid var(--codex-pane-focus); outline-offset: 3px; }
-.finance-heading > strong:first-child { flex: 1; }
-.finance-heading > .ui-icon { color: var(--codex-pane-muted); }
+.finance-heading > .ui-icon { position: absolute; top: 2px; right: 0; color: var(--codex-pane-muted); }
 .finance-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  position: relative;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
   gap: 10px;
   margin-bottom: 8px;
+  padding-right: 22px;
   font-size: 14px;
 }
 .finance-heading strong {
   font-weight: 500;
 }
 .finance-amount {
-  white-space: nowrap;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 .finance-meta {
@@ -105,7 +108,8 @@ const rows = computed(() => {
   color: var(--codex-pane-muted);
   font-size: 12px;
 }
-[data-operation-type="income"] .finance-amount {
-  color: var(--codex-pane-accent);
+[data-operation-type="income"] .finance-heading,
+[data-operation-type="expense"] .finance-heading {
+  color: var(--team-operation-color, var(--codex-pane-text));
 }
 </style>

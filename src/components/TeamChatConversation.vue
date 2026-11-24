@@ -585,6 +585,14 @@ const shownMessages = computed(() => {
   return filtered.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id));
 });
 const linkLabels = useTeamLinkLabels({ messages: () => shownMessages.value, extraMessage: () => quoteView.value, active: () => props.active });
+function operationPhase(message) {
+  const operation = message.financeOperation || message.operationShare;
+  if (!operation || !['income', 'expense'].includes(operation.type)) return '';
+  const dateRow = operation.rows?.find(row => row.label === 'Дата')?.value || '';
+  const day = operation.date?.slice(0, 10) || (/^\d{2}\.\d{2}\.\d{4}$/.test(dateRow) ? dateRow.split('.').reverse().join('-') : '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+  return day > chatDateKey(calendarNow.value) ? 'ПЛАН' : 'ФАКТ';
+}
 watch(
   () => search.open,
   async (open) => {
@@ -1228,6 +1236,7 @@ watch(
           </button>
           <article
             :data-message-id="m._id"
+            :data-operation-type="(m.financeOperation || m.operationShare)?.type"
             class="team-message"
             :class="{
               'task-message': m.kind === 'task',
@@ -1267,6 +1276,7 @@ watch(
             >
               <header v-if="m.kind !== 'task'">
                 <strong>{{ m.authorName }}</strong>
+                <span v-if="operationPhase(m)" class="team-operation-phase">{{ operationPhase(m) }}</span>
               </header>
               <TeamReplyQuote
                 v-if="m.replyTo"
@@ -1498,6 +1508,17 @@ watch(
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>
+<style scoped>
+.team-message[data-operation-type="income"] { --team-operation-color: var(--op-income-color, var(--codex-pane-accent)); }
+.team-message[data-operation-type="expense"] { --team-operation-color: var(--op-expense-color, var(--codex-pane-danger)); }
+.team-message:is([data-operation-type="income"], [data-operation-type="expense"]) > .team-bubble {
+  background: var(--codex-pane-surface);
+  border-color: color-mix(in srgb, var(--team-operation-color) 40%, var(--codex-pane-border));
+  border-left: 3px solid var(--team-operation-color);
+}
+.team-bubble header > strong { min-width: 0; overflow-wrap: anywhere; }
+.team-operation-phase { flex: none; padding: 2px 6px; border: 1px solid var(--codex-pane-border); border-radius: 4px; background: var(--codex-pane-surface-soft); color: var(--codex-pane-muted); font-size: 10px; font-weight: 500; line-height: 1.4; white-space: nowrap; }
+</style>
 <style scoped>
 .team-slash-list { position:absolute;bottom:calc(100% + 4px);left:max(12px,var(--safe-area-left,0px));right:max(12px,var(--safe-area-right,0px));z-index:45;overflow:auto;overscroll-behavior:contain;padding:4px;border:1px solid var(--codex-pane-border);border-radius:8px;background:var(--codex-pane-surface);box-shadow:0 6px 24px #0003; }
 .team-compose-area .team-slash-list button { display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:var(--codex-pane-text);font:inherit;font-size:13px;font-weight:400;text-align:left;cursor:pointer; }
