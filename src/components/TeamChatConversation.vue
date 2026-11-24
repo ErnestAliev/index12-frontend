@@ -63,10 +63,7 @@ const props = defineProps({
 const emit = defineEmits(["new", "composer-focus", "composer-blur", "reading-scroll"]);
 import { useTeamChatStore, teamApi, teamError } from "@/stores/teamChatStore";
 import { completeTeamDestination, pendingTeamDestination, parseTeamDestination } from '@/utils/teamDestination';
-import {useAppUpdateStore} from '@/stores/appUpdateStore';
 import {draftKey,takeUpdateDraft} from '@/utils/updateDrafts';
-import TeamAppUpdate from './TeamAppUpdate.vue';
-const updates=useAppUpdateStore();
 const chat = useTeamChatStore(),
   tab = computed(() => (props.taskId ? "messages" : chat.tab)),
   message = ref(""),
@@ -1373,7 +1370,6 @@ watch(
             </div>
           </article>
         </template>
-        <TeamAppUpdate v-if="updates.available && active" inline />
       </div>
       <div
         v-for="(entry, id) in chat.failedMessageDeletions"

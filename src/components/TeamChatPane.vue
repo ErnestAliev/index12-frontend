@@ -12,8 +12,6 @@ import TeamChatAccess from "./TeamChatAccess.vue";
 import TeamChatMcp from "./TeamChatMcp.vue";
 import TeamAppUpdate from "./TeamAppUpdate.vue";
 import TeamFileLibrary from './TeamFileLibrary.vue';
-import { useAppUpdateStore } from "@/stores/appUpdateStore";
-const updates = useAppUpdateStore();
 defineProps({ mobile: Boolean });
 const chat = useTeamChatStore();
 const panelExists = computed(
@@ -101,14 +99,6 @@ onBeforeUnmount(() => {
     >
       <TeamChatMcp />
     </div>
-    <TeamAppUpdate
-      v-if="
-        updates.available &&
-        ['members', 'mcp', 'files'].includes(chat.tab) &&
-        !panelOpen
-      "
-      inline
-    />
   </div>
 </template>
 <style scoped src="./teamChat.css"></style>

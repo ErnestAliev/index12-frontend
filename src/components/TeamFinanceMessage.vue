@@ -69,7 +69,7 @@ const rows = computed(() => {
 <style scoped>
 .team-finance-message {
   min-width: 0;
-  width: 320px;
+  width: 100%;
   max-width: 100%;
   padding: 7px 0 3px;
   font-size: 13px;

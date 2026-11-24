@@ -573,8 +573,8 @@
   height: 14px;
   flex: none;
 }
-.task-header > .task-heading-restore { position: relative; color: var(--codex-pane-accent); }
-.task-heading-restore::before { content: ''; position: absolute; inset: 6px 8px; border: 1px solid color-mix(in srgb, var(--codex-pane-accent) 60%, transparent); border-radius: 6px; background: var(--codex-pane-accent-soft); }
+.task-header > .task-heading-restore { position: relative; justify-self: center; width: max-content; max-width: 100%; padding: 0 10px; color: var(--codex-pane-accent); }
+.task-heading-restore::before { content: ''; position: absolute; inset: 6px 0; border: 1px solid color-mix(in srgb, var(--codex-pane-accent) 60%, transparent); border-radius: 6px; background: var(--codex-pane-accent-soft); }
 .task-heading-restore > span, .task-heading-restore > .ui-icon { position: relative; }
 .task-panel > .task-discussion {
   position: relative;

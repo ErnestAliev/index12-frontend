@@ -8,6 +8,7 @@ import {
   completeTeamDestination,
 } from "@/utils/teamDestination";
 import TeamChatHost from "@/components/TeamChatHost.vue";
+import AppUpdateNotice from '@/components/AppUpdateNotice.vue';
 import TextFieldLinks from "@/components/TextFieldLinks.vue";
 import { useMainStore } from "@/stores/mainStore";
 import { useRepairStore } from "@/stores/repairStore"; // 🟢 Импортируем repairStore
@@ -17,7 +18,6 @@ import {
 } from "@/utils/preferenceHistory.js";
 import { useAppearanceStore } from "@/stores/appearanceStore";
 import { useAppUpdateStore } from "@/stores/appUpdateStore";
-import TeamAppUpdate from "@/components/TeamAppUpdate.vue";
 import { bindChatPush } from "@/utils/teamPush";
 const updates = useAppUpdateStore();
 
@@ -183,17 +183,7 @@ const forceRefresh = async () => {
     :priority-workspace="priorityWorkspace"
     @priority-ready="priorityReady"
   />
-  <div
-    v-if="
-      updates.available &&
-      chat.me?.status === 'active' &&
-      !chat.open &&
-      !route.path.startsWith('/team/')
-    "
-    class="app-update-notice"
-  >
-    <TeamAppUpdate inline />
-  </div>
+  <AppUpdateNotice v-if="updates.available && chat.me?.status === 'active'" />
   <TextFieldLinks />
 
   <!-- 🟢 Шторка обновления базы данных (появляется только при миграции) -->
@@ -209,18 +199,6 @@ const forceRefresh = async () => {
 </template>
 
 <style scoped>
-.app-update-notice {
-  position: fixed;
-  z-index: 110000;
-  right: calc(var(--safe-area-right, 0px) + 12px);
-  bottom: var(--safe-bottom-controls, 24px);
-  width: min(
-    360px,
-    calc(
-      100vw - var(--safe-area-left, 0px) - var(--safe-area-right, 0px) - 24px
-    )
-  );
-}
 /* Стили для корневого компонента приложения */
 
 /* 🟢 Стили для шторки обновления */

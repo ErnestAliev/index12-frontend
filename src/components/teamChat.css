@@ -126,6 +126,7 @@
   width: min(260px, 90%);
   box-sizing: border-box;
 }
+.team-message[data-operation-type] > .team-bubble { width: 100%; max-width: 100%; box-sizing: border-box; }
 .team-bubble header {
   display: flex;
   justify-content: space-between;
