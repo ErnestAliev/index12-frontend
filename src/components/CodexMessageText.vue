@@ -14,14 +14,19 @@ const props = defineProps({
   fieldsDisabled: Boolean,
   highlight: { type: String, default: "" },
   corrections: { type: Array, default: () => [] },
+  linkLabels: { type: Map, default: null },
 });
 const html = computed(() => {
   if (props.plain) return "";
   const rendered = renderCodexMarkdown(props.text);
-  if ((!props.highlight && !props.corrections.length) || typeof document === "undefined") return rendered;
+  if ((!props.highlight && !props.corrections.length && !props.linkLabels?.size) || typeof document === "undefined") return rendered;
   const container = document.createElement("div");
   container.innerHTML = rendered;
   applyTextCorrections(container, props.corrections);
+  for (const link of container.querySelectorAll('a[href]')) {
+    const label = props.linkLabels?.get(JSON.stringify([link.href, link.textContent]));
+    if (label && !/(?:Файл|Задача)\s*:\s*$/iu.test(link.previousSibling?.textContent || '') && !/^(?:Файл|Задача)\s*:/iu.test(link.textContent)) link.before(document.createTextNode(`${label}: `));
+  }
   if (!props.highlight) return container.innerHTML;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT),
     nodes = [];

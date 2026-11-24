@@ -53,6 +53,7 @@ import TeamMediaPreview from "./TeamMediaPreview.vue";
 import { useTeamMedia } from "@/composables/useTeamMedia";
 import { useChatDictation } from "@/composables/useChatDictation";
 import { useTeamSlash } from '@/composables/useTeamSlash';
+import { useTeamLinkLabels } from '@/composables/useTeamLinkLabels';
 const props = defineProps({
   mobile: Boolean,
   taskId: String,
@@ -583,6 +584,7 @@ const shownMessages = computed(() => {
   for (const task of tasks) if (!filtered.some(message => message.kind === 'task' && message.taskId === task._id)) filtered.push({ _id: task._id, taskId: task._id, kind: 'task', text: '', authorId: task.creatorId, authorName: task.creatorName, attachments: [], createdAt: task.createdAt || new Date(0).toISOString() });
   return filtered.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a._id.localeCompare(b._id));
 });
+const linkLabels = useTeamLinkLabels({ messages: () => shownMessages.value, extraMessage: () => quoteView.value, active: () => props.active });
 watch(
   () => search.open,
   async (open) => {
@@ -1119,7 +1121,7 @@ watch(
         ><template v-else
           ><strong>{{ quoteView.authorName }}</strong
           ><p v-if="quoteView.savedFragment" role="status">Фрагмент изменён или удалён. Показана сохранённая цитата.</p
-          ><CodexMessageText :text="quoteView.text" /><button
+          ><CodexMessageText :text="quoteView.text" :link-labels="linkLabels" /><button
             v-for="file in quoteView.attachments"
             :key="file.fileId"
             type="button"
@@ -1285,7 +1287,7 @@ watch(
                 type="button" class="team-search-inside" @click="openTask(m.taskId)"
               ><span>Найдено внутри: {{ search.result.taskMatch.count }}</span><TeamSearchText v-if="search.result.taskMatch.preview" :text="search.result.taskMatch.preview" :query="search.query.trim()" /></button>
               <MessageFragment v-if="m.text && m.kind !== 'task' && m.kind !== 'finance_operation' && m.kind !== 'operation_share' && (m.kind !== 'approval_request' || m.text !== 'Согласование')" :disabled="!!m._delivery" :version="m.contentVersion || 0" :submit="payload => commentFragment(m, payload)" @finished="quoteModeId = null">
-                <CodexMessageText :text="m.text" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
+                <CodexMessageText :text="m.text" :link-labels="linkLabels" :highlight="search.open ? search.query.trim() : ''" class="team-message-content" />
               </MessageFragment>
               <TeamOperationShare v-if="m.kind === 'operation_share' && m.operationShare" :message="m" @open="openedOperationMessage = $event" />
               <TeamFinanceMessage v-if="m.kind === 'finance_operation' && m.financeOperation" :message="m" @open="openedOperationMessage = $event" />
