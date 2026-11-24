@@ -12,11 +12,11 @@ const context = inject(operationHistoryKey, null), store = useOperationStore(), 
 const id = computed(() => String(props.operationId || props.operation?._id || props.operation?.id || ''));
 const messageId = computed(() => props.messageId || context?.messageId || '');
 const identity = computed(() => JSON.stringify([id.value, messageId.value, messageId.value ? chat.me?.workspaceId : store.user?.currentWorkspaceId, messageId.value ? chat.me?.actorId : store.user?.id || store.user?._id, messageId.value ? chat.sessionEpoch : null]));
-const panel = ref(null), opened = ref(false), loading = ref(false), error = ref(''), rows = ref([]), cursor = ref(null), creation = ref(null), bounds = ref({}), side = ref(false);
+const panel = ref(null), opened = ref(false), loading = ref(false), error = ref(''), rows = ref([]), approvals = ref([]), cursor = ref(null), creation = ref(null), bounds = ref({}), side = ref(false);
 let generation = 0, anchor, returnFocus, originalTranslate;
 const format = value => value && Number.isFinite(new Date(value).getTime()) ? new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Almaty', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value)) : 'Время не сохранено';
 const events = computed(() => {
-  const result = [...rows.value];
+  const result = [...rows.value, ...approvals.value];
   if (!cursor.value && !result.some(row => row.action === 'created')) {
     const fallback = creation.value || ((props.audit?.createdAt || props.operation?.createdAt) ? {
       id: 'creation:' + id.value, kind: 'operation', action: 'created', createdAt: props.audit?.createdAt || props.operation?.createdAt,
@@ -27,7 +27,7 @@ const events = computed(() => {
   if (!cursor.value && props.audit?.editedAt && !result.some(row => ['updated', 'reverted'].includes(row.action) && new Date(row.createdAt).getTime() === new Date(props.audit.editedAt).getTime())) result.push({ id: 'edit:' + id.value, action: 'updated', createdAt: props.audit.editedAt, actorName: props.audit.editedByName, detailMissing: true });
   return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 });
-const title = row => row.action === 'reverted' ? 'Изменение отменено' : row.action === 'created' ? 'Операция создана' : row.action === 'deleted' ? 'Операция удалена' : row.change?.field === 'date' && row.change.before.dateKey !== row.change.after.dateKey ? 'Операция перенесена' : row.change?.field === 'date' && row.change.before.cellIndex !== row.change.after.cellIndex ? 'Изменена ячейка' : 'Операция изменена';
+const title = row => ({ approval_requested: 'Отправлено на согласование', approval_approved: 'Согласовано', approval_rejected: 'Отклонено' })[row.action] || (row.action === 'reverted' ? 'Изменение отменено' : row.action === 'created' ? 'Операция создана' : row.action === 'deleted' ? 'Операция удалена' : row.change?.field === 'date' && row.change.before.dateKey !== row.change.after.dateKey ? 'Операция перенесена' : row.change?.field === 'date' && row.change.before.cellIndex !== row.change.after.cellIndex ? 'Изменена ячейка' : 'Операция изменена');
 const changes = row => !row.change || !['updated', 'reverted'].includes(row.action) ? [] : historyLines(row.action === 'reverted' ? { ...row, action: 'updated', change: { ...row.change, before: row.change.after, after: row.change.before } } : row);
 function restoreAnchor() { if (anchor?.isConnected && originalTranslate !== undefined) anchor.style.translate = originalTranslate; }
 function position() {
@@ -61,6 +61,7 @@ async function load(more = false) {
     }
     if (!opened.value || ticket !== generation || current !== identity.value) return;
     rows.value = more ? [...rows.value, ...data.items] : data.items;
+    approvals.value = data.approvalEvents || [];
     cursor.value = data.nextCursor || null; creation.value = data.creation || null;
   } catch (e) { if (ticket === generation && current === identity.value) error.value = e.response?.data?.message || e.message || 'Не удалось загрузить историю'; }
   finally { if (ticket === generation) loading.value = false; }
@@ -69,7 +70,7 @@ async function open(event) {
   returnFocus = event.currentTarget;
   anchor = returnFocus.closest('.financial-operation-popup, .popup-content');
   originalTranslate = anchor?.style.translate;
-  opened.value = true; rows.value = []; cursor.value = null; creation.value = null;
+  opened.value = true; rows.value = []; approvals.value = []; cursor.value = null; creation.value = null;
   position();
   await nextTick();
   panel.value?.showModal();
@@ -94,6 +95,8 @@ onBeforeUnmount(close);
         <li v-for="row in events" :key="row.id">
           <strong>{{ title(row) }}</strong>
           <div class="operation-history-who">{{ row.actorName || 'Автор не сохранён' }} · <time :datetime="row.createdAt">{{ format(row.createdAt) }}</time></div>
+          <div v-if="row.recipients?.length" class="operation-history-change">Согласователи: {{ row.recipients.join(', ') }}</div>
+          <div v-if="row.stage" class="operation-history-who">{{ row.stage }}</div>
           <p v-if="row.detailMissing" class="operation-history-who">Подробности изменения не сохранены</p>
           <div v-for="(line, index) in changes(row)" :key="index" class="operation-history-change">
             <span>{{ line.label }}</span><div><span>{{ line.before }}</span><span aria-label="изменено на"> → </span><span>{{ line.after }}</span></div>
