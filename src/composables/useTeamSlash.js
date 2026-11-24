@@ -147,7 +147,10 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
         if (source.kind === 'message' && source.messageId) url.searchParams.set('message', source.messageId);
         inserted = `${label}: [${item.name.replace(/[\\\[\]]/g, '\\$&').replace(/[\r\n]/g, ' ')}](${url.href}) `;
       } else inserted = `${label}: ${item.name} `;
-    } else inserted = `${item.name} `;
+    } else {
+      const label = ({ accounts: 'Счёт', owners: 'Владелец счёта', parties: 'Контрагент', projects: 'Проект', categories: 'Категория', subcategories: 'Подкатегория' })[item.kind];
+      inserted = `${label ? label + ': ' : ''}${item.name} `;
+    }
     setText(text().slice(0, location.start) + inserted + text().slice(location.end));
     range.value = null; dismissed = '';
     await nextTick();
