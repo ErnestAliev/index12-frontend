@@ -3,7 +3,7 @@ import UiIcon from '@/components/UiIcon.vue';
 import SubcategoryManager from './SubcategoryManager.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
-import { detectCompanyLegalForm, getDefaultTaxPercentByName } from '@/utils/companyTax';
+import { detectCompanyLegalForm, getDefaultTaxPercentByName, LEGAL_FORM_OPTIONS } from '@/utils/companyTax';
 import { accountSuggestions } from '@/data/accountSuggestions.js';
 import CompanyDetailsModal from './CompanyDetailsModal.vue';
 
@@ -26,11 +26,19 @@ const onOwnerNameInput = row => {
   for (const other of rows.value) if (other.ownerKey === row.ownerKey) other.ownerName = row.ownerName;
 };
 const selectedCompanyId = ref(null);
-function openCompany(id) { selectedCompanyId.value = id; }
-function companySaved(company) {
+const syncCompanyOnOpen = ref(false);
+function openCompany(id, sync = false) { selectedCompanyId.value = id; syncCompanyOnOpen.value = sync; }
+function companySaved(company, previous) {
   for (const row of rows.value) if (row.ownerKey === `company-${company._id}`) {
     if (row.iinBin === row.sourceIinBin) row.iinBin = formatIinBin(company.identificationNumber || '');
     row.sourceIinBin = formatIinBin(company.identificationNumber || '');
+    if (row.ownerName === previous?.name) row.ownerName = company.name;
+    row.sourceOwnerName = company.name;
+    if (row.legalForm === previous?.legalForm || !previous?.legalForm) row.legalForm = normalizeLegalForm(company.legalForm, detectCompanyLegalForm(company.name));
+    if (!row.isCashRegister) {
+      if (row.taxRegime === previous?.taxRegime) row.taxRegime = company.taxRegime;
+      if (row.taxPercent === previous?.taxPercent) row.taxPercent = company.taxPercent;
+    }
   }
 }
 watch(() => mainStore.user?.currentWorkspaceId, () => { selectedCompanyId.value = null; });
@@ -38,13 +46,6 @@ let accountSuggestionBlurTimer = null;
 
 const CREATE_OWNER_COMPANY_VALUE = '__create_company__';
 const CREATE_OWNER_INDIVIDUAL_VALUE = '__create_individual__';
-
-const LEGAL_FORM_OPTIONS = [
-  { value: 'too', label: 'ТОО' },
-  { value: 'ip', label: 'ИП' },
-  { value: 'individual', label: 'Физлицо' },
-  { value: 'other', label: 'Другое' }
-];
 
 const COMPANY_TAX_REGIME_OPTIONS = [
   { value: 'our', label: 'ОУР' },
@@ -83,7 +84,7 @@ const ownerIdFromKey = (ownerKey) => {
 
 const normalizeLegalForm = (value, fallback = 'other') => {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'too' || normalized === 'ip' || normalized === 'individual' || normalized === 'other') {
+  if (LEGAL_FORM_OPTIONS.some(item => item.value === normalized)) {
     return normalized;
   }
   return fallback;
@@ -271,6 +272,7 @@ const columnWidths = computed(() => {
     legalForm: 8 + growthByContent(legalFormChars, textLength(COLUMN_HEADERS.legalForm), 0.25, 1.5),
     taxRegime: 10 + growthByContent(taxRegimeChars, textLength(COLUMN_HEADERS.taxRegime), 0.3, 2),
     taxPercent: 5.5 + growthByContent(taxPercentChars, textLength(COLUMN_HEADERS.taxPercent), 0.25, 1),
+    vat: 6,
     delete: 7
   };
 
@@ -287,6 +289,7 @@ const columnWidths = computed(() => {
     legalForm: toPercent(weights.legalForm, totalWeight),
     taxRegime: toPercent(weights.taxRegime, totalWeight),
     taxPercent: toPercent(weights.taxPercent, totalWeight),
+    vat: toPercent(weights.vat, totalWeight),
     delete: toPercent(weights.delete, totalWeight)
   };
 });
@@ -420,6 +423,11 @@ const buildRows = () => {
       ownerCreationName: previous.ownerCreationName || ''
     };
   });
+};
+
+const vatLabel = row => {
+  const company = mainStore.companies.find(item => String(item._id) === ownerIdFromKey(row.ownerKey));
+  return company?.vatPayer === true ? `${company.vatPercent ?? 16}%` : company?.vatPayer === false ? 'Без НДС' : 'Указать';
 };
 
 const getTaxRegimeOptions = (row) => {
@@ -859,6 +867,7 @@ watch(
               <col class="col-legal-form" :style="{ width: columnWidths.legalForm }" />
               <col class="col-tax-regime" :style="{ width: columnWidths.taxRegime }" />
               <col class="col-tax-percent" :style="{ width: columnWidths.taxPercent }" />
+              <col :style="{ width: columnWidths.vat }" />
               <col class="col-delete" :style="{ width: columnWidths.delete }" />
             </colgroup>
             <thead>
@@ -873,6 +882,7 @@ watch(
                 <th>Форма лица</th>
                 <th>Режим налог</th>
                 <th>Ставка</th>
+                <th>НДС</th>
                 <th class="delete-header-cell">Удалить</th>
               </tr>
             </thead>
@@ -969,6 +979,7 @@ watch(
                   <template v-if="!row.ownerCreationType">
                     <div class="owner-name-control">
                       <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="owner-company-link" aria-haspopup="dialog" :title="`Открыть компанию ${row.ownerName}`" @click="openCompany(ownerIdFromKey(row.ownerKey))">{{ row.ownerName }}</button>
+                      <button v-if="ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id" type="button" class="company-sync-link" title="Синхронизировать компанию с 1С" @click="openCompany(ownerIdFromKey(row.ownerKey), true)">1С</button>
                       <input v-if="row.ownerKey" v-model="row.ownerName" type="text" class="cell-input owner-name-input" :class="{ 'has-company-link': ownerTypeFromKey(row.ownerKey) === 'company' && editingOwnerRowId !== row._id }" aria-label="Название владельца счета" @input="onOwnerNameInput(row)" @focus="editingOwnerRowId = row._id" @blur="editingOwnerRowId = null" />
                     <select v-model="row.ownerKey" class="cell-select owner-picker ui-select" :class="{ 'has-owner': !!row.ownerKey }" aria-label="Выбрать владельца счета" @change="onOwnerChange(row); row.ownerName = getOwnerDisplayName(row.ownerKey)">
                       <option value="">Не выбран</option>
@@ -1070,6 +1081,10 @@ watch(
                   <input v-model.number="row.taxPercent" type="number" step="0.01" class="cell-input" />
                 </td>
 
+                <td>
+                  <button v-if="ownerTypeFromKey(row.ownerKey) === 'company'" type="button" class="vat-profile-button" title="Настройки НДС компании" @click="openCompany(ownerIdFromKey(row.ownerKey))">{{ vatLabel(row) }}</button>
+                  <span v-else>—</span>
+                </td>
                 <td class="delete-cell">
                   <button
                     type="button"
@@ -1101,7 +1116,7 @@ watch(
                     <button class="add-btn" :disabled="isSaving" @click="addAccountRow('cash')">+ Касса</button>
                   </div>
                 </td>
-                <td class="add-row-empty" colspan="10"></td>
+                <td class="add-row-empty" colspan="11"></td>
               </tr>
             </tbody>
           </table>
@@ -1141,14 +1156,15 @@ watch(
       </div>
     </div>
   </div>
-    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @saved="companySaved" @close="selectedCompanyId = null" />
+    <CompanyDetailsModal v-if="selectedCompanyId" :company-id="selectedCompanyId" :sync-on-open="syncCompanyOnOpen" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" @saved="companySaved" @close="selectedCompanyId = null" />
 </template>
 
 <style scoped>
+.vat-profile-button { color: var(--color-text); font: inherit; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-background-soft); cursor: pointer; white-space: nowrap; }.company-sync-link { position: absolute; right: 29px; z-index: 2; top: 50%; transform: translateY(-50%); padding: 2px 3px; color: var(--color-primary); background: var(--color-background-soft); border: 0; font: inherit; cursor: pointer; }
 .owner-name-control { position: relative; display: flex; min-width: 0; align-items: stretch; }
 .owner-name-control .owner-name-input { padding-right: 30px; width: 100%; min-width: 0; }
 .owner-name-input.has-company-link { color: transparent; }
-.owner-company-link { position: absolute; z-index: 1; top: 50%; left: 10px; transform: translateY(-50%); max-width: calc(100% - 52px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-primary, #38b86d); text-decoration: none; line-height: 1.5; background: transparent; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+.owner-company-link { position: absolute; z-index: 1; top: 50%; left: 10px; transform: translateY(-50%); max-width: calc(100% - 80px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--color-primary, #38b86d); text-decoration: none; line-height: 1.5; background: transparent; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
 .owner-company-link:hover, .owner-company-link:focus-visible { text-decoration: underline; }
 .owner-name-control .owner-picker.has-owner { position: absolute; right: 0; top: 0; bottom: 0; width: 27px; padding-left: 0; padding-right: 0; color: transparent; cursor: pointer; }
 .owner-picker option, .owner-picker optgroup { color: var(--color-text); }
@@ -1389,6 +1405,8 @@ watch(
 
 .settings-table th:nth-child(11),
 .settings-table td:nth-child(11) { min-width: 74px; }
+.settings-table th:nth-child(12),
+.settings-table td:nth-child(12) { min-width: 74px; }
 
 .cell-input,
 .cell-select {

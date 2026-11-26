@@ -1,3 +1,4 @@
+import { LEGAL_FORM_OPTIONS, detectCompanyLegalForm } from './companyTax';
 export const profileFields = [
   ['name', 'Название в INDEX12'], ['legalName', 'Полное наименование'], ['identificationNumber', 'БИН/ИИН'],
   ['legalAddress', 'Юридический адрес'], ['postalAddress', 'Почтовый адрес'], ['director', 'Руководитель'], ['chiefAccountant', 'Главный бухгалтер'],
@@ -6,11 +7,16 @@ export const profileFields = [
 ];
 export function profileDraft(value) {
   return { ...Object.fromEntries(profileFields.map(([key]) => [key, value?.[key] || ''])), notes: value?.notes || '',
+    legalForm: value?.legalForm || detectCompanyLegalForm(value?.name || value?.legalName || ''),
+    vatPayer: value?.vatPayer ?? null, vatPercent: value?.vatPercent ?? 16, vatIncluded: value?.vatIncluded ?? true,
     bankAccounts: (value?.bankAccounts || []).map(row => ({ iban: row.iban || '', bankName: row.bankName || '', bic: row.bic || '', currency: row.currency || '' })),
     externalLinks: (value?.externalLinks || []).map(row => ({ title: row.title || '', url: row.url || '', purpose: row.purpose || 'documents' })) };
 }
 export function profileText(value) {
   const rows = profileFields.map(([key, label]) => `${label}: ${value[key] || '—'}`);
+  rows.push(`Форма лица: ${LEGAL_FORM_OPTIONS.find(item => item.value === value.legalForm)?.label || '—'}`,
+    `Плательщик НДС: ${value.vatPayer === true ? 'Да' : value.vatPayer === false ? 'Нет' : 'Не указано'}`,
+    `Ставка НДС: ${value.vatPercent ?? 16}%`, `НДС в цене: ${value.vatIncluded ? 'Да' : 'Нет'}`);
   for (const bank of value.bankAccounts || []) rows.push('', `ИИК: ${bank.iban || '—'}`, `Банк: ${bank.bankName || '—'}`, `БИК: ${bank.bic || '—'}`, `Валюта: ${bank.currency || '—'}`);
   for (const link of value.externalLinks || []) rows.push('', `${link.title || 'Документы'}: ${link.url}`);
   if (value.notes) rows.push('', `Примечания: ${value.notes}`);

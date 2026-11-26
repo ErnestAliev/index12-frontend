@@ -1015,7 +1015,7 @@ defineExpose({
                       
                       <template v-if="isCompanyEditor">
                         <button type="button" class="edit-input edit-account-picker" @click="openAccountPicker(item)">Выбрано ({{ item.selectedAccountIds.length }})</button>
-                        <input type="text" v-model="item.identificationNumber" class="edit-input edit-company-bin" placeholder="ИИН/БИН" @blur="debouncedSave" />
+                        <button type="button" class="edit-input edit-company-bin" @click="openProfile(item)" :title="profileSyncTitle(item)">{{ item.identificationNumber || 'Реквизиты · 1С' }}</button>
                         <select v-model="item.taxRegime" @change="handleTaxRegimeChange(item)" class="edit-input edit-tax-regime ui-select">
                           <option value="simplified">Упрощенка</option>
                           <option value="our">ОУР</option>
@@ -1071,7 +1071,7 @@ defineExpose({
     </div>
 
     <!-- Диалоги удаления и создания (без изменений) -->
-    <CompanyDetailsModal v-if="registryItem" :company-id="String(registryItem._id)" kind="contractors" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" :sync-on-open="syncProfileOnOpen" @saved="profileSaved" @close="registryItem = null" />
+    <CompanyDetailsModal v-if="registryItem" :company-id="String(registryItem._id)" :kind="isCompanyEditor ? 'companies' : 'contractors'" :workspace-id="String(mainStore.user?.currentWorkspaceId || '')" :sync-on-open="syncProfileOnOpen" @saved="profileSaved" @close="registryItem = null" />
     <div v-if="showDeletePopup" class="inner-overlay" @click.self="cancelDelete"><div class="delete-confirm-box"><div v-if="isDeleting" class="deleting-state"><h4>Удаление...</h4><p class="sub-note">Пожалуйста, подождите, обновляем данные.</p><div class="progress-container"><div class="progress-bar"></div></div></div><div v-else><h4>Удаление сущности</h4><p>Вы собираетесь удалить <strong>«{{ itemToDelete?.name }}»</strong>.<br>Что делать со связанными операциями?</p><div class="delete-actions"><button class="btn-choice btn-keep" @click="confirmDelete(false)"><span class="main-text">Только сущность</span><span class="sub-text">Операции останутся (связь исчезнет)</span></button><button class="btn-choice btn-nuke" @click="confirmDelete(true)"><span class="main-text">Сущность + Операции</span><span class="sub-text">Удалится всё безвозвратно</span></button></div><button class="btn-cancel" @click="cancelDelete">Отмена</button></div></div></div>
     <div v-if="showCreateOwnerPopup" class="inner-overlay" @click.self="cancelCreateOwner"><div class="create-owner-box"><h4>Новый владелец</h4><p class="sub-text">Создание: <b>{{ ownerTypeToCreate === 'company' ? 'Компания' : 'Физлицо' }}</b></p><input type="text" v-model="newOwnerNameInput" class="create-owner-input" placeholder="Введите название" ref="newOwnerInputRef" @keyup.enter="saveNewOwner" @keyup.esc="cancelCreateOwner"/><div class="owner-actions"><button class="btn-cancel" @click="cancelCreateOwner">Отмена</button><button class="btn-save-owner" @click="saveNewOwner" :disabled="isSavingOwner">{{ isSavingOwner ? '...' : 'Создать' }}</button></div></div></div>
     <AccountPickerModal v-if="showAccountPicker" :all-accounts="mainStore.accounts" :initial-selected-ids="currentItemForPicker ? currentItemForPicker.selectedAccountIds : []" :hint-text="pickerHintText" @close="showAccountPicker = false" @save="onAccountPickerSave"/>

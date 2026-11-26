@@ -4,6 +4,7 @@ import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useMainStore } from '@/stores/mainStore';
 import { businessApi, businessError } from '@/services/businessApi';
 import { profileFields, profileDraft, profileText, downloadProfile } from '@/utils/companyProfile';
+import { LEGAL_FORM_OPTIONS } from '@/utils/companyTax';
 import { matchesCompanySearch } from '@/utils/companySearch';
 
 const props = defineProps({ companyId: { type: String, required: true }, workspaceId: { type: String, default: '' }, kind: { type: String, default: 'companies', validator: v => ['companies', 'contractors'].includes(v) }, syncOnOpen: Boolean });
@@ -11,6 +12,7 @@ const emit = defineEmits(['close', 'saved']);
 const main = useMainStore();
 const company = ref(null), draft = ref(profileDraft()), loading = ref(true), busy = ref(false), error = ref(''), message = ref('');
 const closeButton = ref(null), showSync = ref(false), search = ref(''), candidateForm = ref('all'), candidates = ref([]), selectedRef = ref(''), searching = ref(false), candidatesComplete = ref(false);
+const pushPlan = ref(null);
 const previousFocus = document.activeElement;
 let generation = 0, controller, candidateController, searchGeneration = 0;
 const title = computed(() => props.kind === 'contractors' ? 'Карточка контрагента' : 'Карточка компании');
@@ -26,7 +28,7 @@ const displayCandidates = computed(() => {
   return candidates.value.filter(item => matchesCompanySearch(item, search.value, candidateForm.value)).sort((a, b) => score(b.name) - score(a.name));
 });
 onMounted(() => closeButton.value?.focus());
-function close() { emit('close'); }
+function close() { if (!busy.value) emit('close'); }
 function onDialogKeydown(event) {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
   if (event.key !== 'Tab') return;
@@ -51,7 +53,7 @@ async function action(fn) {
 async function saveCurrent(current) {
   if (!dirty.value) return;
   const { data } = await businessApi.patch(endpoint(), { changes: draft.value, expectedVersion: company.value.profileVersion || 0 }, options());
-  if (current === generation) applyCompany(data.company);
+  if (current === generation) { applyCompany(data.company); pushPlan.value = null; }
 }
 const save = () => action(async current => { await saveCurrent(current); if (current === generation) message.value = 'Реквизиты сохранены'; });
 function showAllCandidates() { search.value = ''; candidateForm.value = 'all'; }
@@ -92,6 +94,19 @@ const sync = () => action(async current => {
   if (current !== generation) return;
   applyCompany(data.company); showSync.value = false; message.value = `Реквизиты обновлены${data.sync?.bankAccounts?.checked ? ` · Счетов из 1С: ${data.sync.bankAccounts.loaded}` : ''}`;
 });
+const preparePush = () => action(async current => {
+  await saveCurrent(current); if (current !== generation) return;
+  const { data } = await businessApi.post(`${endpoint()}/prepare-onec-push`, { expectedVersion: company.value.profileVersion || 0 }, { ...options(), timeout: 90000 });
+  if (current === generation) pushPlan.value = data;
+});
+const push = () => action(async current => {
+  if (!pushPlan.value || dirty.value) return;
+  const { data } = await businessApi.post(`${endpoint()}/push-onec`, { planToken: pushPlan.value.planToken }, { ...options(), timeout: 180000 });
+  if (current !== generation) return;
+  pushPlan.value = data;
+  if (data.company) applyCompany(data.company);
+  message.value = data.completed ? 'Недостающие реквизиты переданы в 1С' : data.error || 'Синхронизация не завершена. Продолжите её той же кнопкой';
+});
 const unlink = () => action(async current => {
   await saveCurrent(current); if (current !== generation) return;
   const { data } = await businessApi.post(`${endpoint()}/unlink-onec`, { expectedVersion: company.value.profileVersion || 0 }, options());
@@ -100,7 +115,7 @@ const unlink = () => action(async current => {
 const copy = async () => { try { await navigator.clipboard.writeText(profileText(draft.value)); message.value = 'Реквизиты скопированы'; } catch { error.value = 'Браузер не разрешил копирование'; } };
 watch(() => [main.user?.id || main.user?._id, main.user?.currentWorkspaceId, props.companyId, props.workspaceId, props.kind], async ([userId]) => {
   const current = ++generation; ++searchGeneration; controller?.abort(); candidateController?.abort(); controller = new AbortController();
-  company.value = null; draft.value = profileDraft(); loading.value = true; busy.value = false; error.value = ''; message.value = ''; showSync.value = false; searching.value = false;
+  company.value = null; pushPlan.value = null; draft.value = profileDraft(); loading.value = true; busy.value = false; error.value = ''; message.value = ''; showSync.value = false; searching.value = false;
   if (!userId) return;
   try {
     const { data } = await businessApi.get(endpoint(), { ...options(), signal: controller.signal });
@@ -115,13 +130,13 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); c
 
 <template>
   <Teleport to="body"><div class="company-overlay" @click.self="close"><section class="company-page" role="dialog" aria-modal="true" :aria-label="title" @keydown="onDialogKeydown">
-    <header class="company-page-header"><div><span>{{ kind === 'contractors' ? 'Контрагент' : 'Компания' }}</span><h1>{{ company?.name || title }}</h1></div><button ref="closeButton" type="button" class="company-close ui-icon-button" :aria-label="`Закрыть ${kind === 'contractors' ? 'карточку контрагента' : 'карточку компании'}`" @click="close"><UiIcon name="close" /></button></header>
+    <header class="company-page-header"><div><span>{{ kind === 'contractors' ? 'Контрагент' : 'Компания' }}</span><h1>{{ company?.name || title }}</h1></div><button ref="closeButton" type="button" :disabled="busy" class="company-close ui-icon-button" :aria-label="`Закрыть ${kind === 'contractors' ? 'карточку контрагента' : 'карточку компании'}`" @click="close"><UiIcon name="close" /></button></header>
     <div class="company-body">
       <div v-if="error" class="company-error" role="alert">{{ error }}</div><div v-if="message" class="company-message" role="status">{{ message }}</div>
       <div v-if="loading && !company" role="status">Загрузка…</div>
       <template v-if="company">
-        <div class="company-toolbar"><button type="button" :disabled="busy || searching" @click="company.onecSync?.ref ? sync() : beginSync()">{{ busy ? 'Обновление…' : searching ? 'Загрузка списка…' : company.onecSync?.ref ? 'Обновить данные' : 'Синхронизировать с 1С' }}</button><button v-if="company.onecSync?.ref" type="button" :disabled="busy || searching" @click="beginSync">Изменить связь</button><button type="button" @click="copy">Копировать реквизиты</button><button type="button" @click="downloadProfile(draft)">Скачать .txt</button><button type="button" @click="downloadProfile(draft, 'json')">Скачать .json</button></div>
-        <div class="company-source"><template v-if="company.onecSync?.ref">1С: {{ company.onecSync.name || company.onecSync.ref }}<template v-if="company.onecSync.identificationNumber"> · {{ company.onecSync.identificationNumber }}</template> · {{ new Date(company.onecSync.checkedAt).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) }}</template><template v-else>С 1С не связано</template><button v-if="company.onecSync?.ref" type="button" :disabled="busy" @click="unlink">Отвязать</button></div>
+        <div class="company-toolbar"><button type="button" :disabled="busy || searching" @click="pushPlan = null; company.onecSync?.ref ? sync() : beginSync()">{{ busy ? 'Обновление…' : searching ? 'Загрузка списка…' : company.onecSync?.ref ? 'Загрузить из 1С' : 'Связать с 1С' }}</button><button v-if="kind === 'companies' && company.onecSync?.ref" type="button" :disabled="busy || searching" @click="preparePush">Дополнить 1С</button><button v-if="company.onecSync?.ref" type="button" :disabled="busy || searching" @click="beginSync">Изменить связь</button><button type="button" @click="copy">Копировать реквизиты</button><button type="button" @click="downloadProfile(draft)">Скачать .txt</button><button type="button" @click="downloadProfile(draft, 'json')">Скачать .json</button></div>
+        <div class="company-source"><template v-if="company.onecSync?.ref">1С: {{ company.onecSync.name || company.onecSync.ref }}<template v-if="company.onecSync.identificationNumber"> · {{ company.onecSync.identificationNumber }}</template> · {{ new Date(company.onecSync.checkedAt).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty' }) }}</template><template v-else>С 1С не связано</template><button v-if="company.onecSync?.ref" type="button" :disabled="busy" @click="pushPlan = null; unlink()">Отвязать</button></div>
         <section v-if="showSync" class="company-section sync-selector" aria-label="Выбор записи 1С">
           <div class="section-heading"><h2>{{ kind === 'contractors' ? 'Контрагенты 1С' : 'Организации 1С' }}</h2><span class="candidate-count" role="status">{{ searching ? `Загружено: ${candidates.length}` : candidatesComplete ? `Найдено: ${displayCandidates.length} из ${candidates.length}` : 'Список не загружен' }}</span></div>
           <div class="sync-search"><input v-model="search" type="search" aria-label="Поиск по названию в 1С" placeholder="Название или часть названия" /><button type="button" @click="showAllCandidates">Показать все</button></div>
@@ -130,9 +145,23 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); c
           <div class="sync-actions"><button v-if="!searching && !candidatesComplete" type="button" @click="loadCandidates">Повторить загрузку</button><button type="button" :disabled="!selectedRef || busy || searching || !candidatesComplete" @click="sync">{{ busy ? 'Синхронизация…' : 'Связать и загрузить' }}</button><button type="button" :disabled="busy" @click="showSync = false">Закрыть список</button></div><div v-if="!searching && candidatesComplete && !displayCandidates.length" role="status">Совпадений в 1С нет</div>
         </section>
         <details v-if="missingLabels.length || syncWarnings.length" class="company-source"><summary>{{ syncWarnings.length ? 'Проверить реквизиты из 1С' : 'Не все реквизиты доступны из 1С' }}</summary><div v-if="missingLabels.length">Не заполнены: {{ missingLabels.join(', ') }}</div><div v-for="warning in syncWarnings" :key="warning">{{ warning }}</div></details>
+        <section v-if="pushPlan" class="company-section sync-selector" aria-label="Передача реквизитов в 1С">
+          <div class="section-heading"><h2>{{ pushPlan.completed ? 'Передано в 1С' : 'Дополнение реквизитов 1С' }}</h2><button type="button" :disabled="busy" @click="pushPlan = null">Закрыть</button></div>
+          <dl class="sync-changes"><template v-for="(change, index) in pushPlan.changes" :key="index"><dt>{{ change.field }}</dt><dd>{{ change.value }}</dd></template></dl>
+          <p v-if="!pushPlan.changes.length">Нет пустых полей 1С для дополнения.</p>
+          <details v-if="pushPlan.conflicts.length"><summary>Расхождения · {{ pushPlan.conflicts.length }}</summary><div v-for="(conflict, index) in pushPlan.conflicts" :key="index" class="sync-difference"><strong>{{ conflict.field }}</strong><div>INDEX12: {{ conflict.index12 }}</div><div>1С: {{ conflict.onec }}</div></div></details>
+          <details v-if="pushPlan.unavailable.length"><summary>Не передаются через подключение · {{ pushPlan.unavailable.length }}</summary><div v-for="field in pushPlan.unavailable" :key="field">{{ field }}</div></details>
+          <div v-if="pushPlan.error" class="company-error" role="alert">{{ pushPlan.error }}</div>
+          <div class="sync-actions"><button v-if="!pushPlan.completed && pushPlan.changes.length" type="button" :disabled="busy || dirty" @click="push">{{ busy ? 'Передача…' : pushPlan.state === 'partial' ? 'Продолжить синхронизацию' : 'Передать в 1С' }}</button></div>
+        </section>
         <div class="company-page-grid">
-          <section class="company-section" aria-label="Реквизиты компании"><h2>Реквизиты</h2><div class="profile-fields"><label v-for="[key, label, type] in profileFields" :key="key" :class="{ wide: ['legalName', 'legalAddress', 'postalAddress', 'activity'].includes(key) }">{{ label }}<input v-model="draft[key]" :aria-label="label" :type="type || 'text'" :disabled="busy" :maxlength="key === 'identificationNumber' ? 12 : 2000" /></label></div></section>
+          <section class="company-section" aria-label="Реквизиты компании"><h2>Реквизиты</h2><div class="profile-fields"><label>Форма лица<select v-model="draft.legalForm" class="ui-select" :disabled="busy"><option v-for="option in LEGAL_FORM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option></select></label><label v-for="[key, label, type] in profileFields" :key="key" :class="{ wide: ['legalName', 'legalAddress', 'postalAddress', 'activity'].includes(key) }">{{ label }}<input v-model="draft[key]" :aria-label="label" :type="type || 'text'" :disabled="busy" :maxlength="key === 'identificationNumber' ? 12 : 2000" /></label></div></section>
           <div class="company-aside">
+            <section class="company-section" aria-label="Настройки НДС"><h2>НДС</h2><div class="profile-fields">
+              <label>Плательщик НДС<select v-model="draft.vatPayer" class="ui-select" :disabled="busy"><option :value="null">Не указано</option><option :value="true">Да</option><option :value="false">Нет</option></select></label>
+              <label>Ставка НДС, %<input v-model.number="draft.vatPercent" type="number" min="0" max="100" step="0.01" :disabled="busy" /></label>
+              <label>НДС в цене<select v-model="draft.vatIncluded" class="ui-select" :disabled="busy"><option :value="true">Включён</option><option :value="false">Начисляется сверху</option></select></label>
+            </div></section>
             <section class="company-section" aria-label="Банковские реквизиты"><div class="section-heading"><h2>Банковские реквизиты</h2><button type="button" :disabled="busy || draft.bankAccounts.length >= 30" @click="draft.bankAccounts.push({ iban: '', bankName: '', bic: '', currency: '' })">+ Счёт</button></div><div v-for="(bank, index) in draft.bankAccounts" :key="index" class="bank-row"><label>ИИК / IBAN<input v-model="bank.iban" :aria-label="`ИИК / IBAN ${index + 1}`" :disabled="busy" maxlength="300" /></label><label>Банк<input v-model="bank.bankName" :aria-label="`Банк ${index + 1}`" :disabled="busy" maxlength="300" /></label><label>БИК<input v-model="bank.bic" :aria-label="`БИК ${index + 1}`" :disabled="busy" maxlength="300" /></label><label>Валюта<input v-model="bank.currency" :aria-label="`Валюта ${index + 1}`" :disabled="busy" maxlength="300" /></label><button type="button" :disabled="busy" :aria-label="`Удалить банковские реквизиты ${index + 1}`" @click="draft.bankAccounts.splice(index, 1)">Удалить</button></div></section>
             <section class="company-section" aria-label="Документы и внешние ссылки"><div class="section-heading"><h2>Документы и ссылки</h2><button type="button" :disabled="busy || draft.externalLinks.length >= 30" @click="draft.externalLinks.push({ title: '', url: '', purpose: 'documents' })">+ Ссылка</button></div><div v-for="(link, index) in draft.externalLinks" :key="index" class="link-row"><label>Название<input v-model="link.title" :aria-label="`Название ссылки ${index + 1}`" :disabled="busy" maxlength="300" /></label><label>Ссылка<input v-model="link.url" type="url" :aria-label="`Внешняя ссылка ${index + 1}`" :disabled="busy" maxlength="2000" placeholder="https://drive.google.com/…" /></label><select v-model="link.purpose" :aria-label="`Назначение ссылки ${index + 1}`" :disabled="busy" class="ui-select"><option value="documents">Документы компании</option><option value="reports">Папка отчётов</option><option value="other">Другое</option></select><div class="link-actions"><a v-if="/^https:\/\//i.test(link.url)" :href="link.url" target="_blank" rel="noopener noreferrer">Открыть</a><button type="button" :disabled="busy" :aria-label="`Удалить ссылку ${index + 1}`" @click="draft.externalLinks.splice(index, 1)">Удалить</button></div></div></section>
             <section class="company-section"><h2>Примечания</h2><textarea v-model="draft.notes" aria-label="Примечания" :disabled="busy" maxlength="10000" rows="5" /></section>
@@ -145,6 +174,7 @@ onBeforeUnmount(() => { ++generation; ++searchGeneration; controller?.abort(); c
 </template>
 
 <style scoped>
+.sync-changes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 16px; font-size: 13px; }.sync-changes dd { margin: 0; overflow-wrap: anywhere; }.sync-difference { margin: 12px 0; font-size: 13px; }.sync-selector details { margin-top: 12px; font-size: 13px; }
 .company-overlay { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 12px; background: #0009; }
 .company-page { box-sizing: border-box; display: flex; flex-direction: column; width: min(1680px, 98vw); height: 94dvh; background: var(--color-background); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 20px 70px #0006; overflow: hidden; }
 .company-page-header { display: flex; justify-content: space-between; gap: 20px; padding: 20px 28px; border-bottom: 1px solid var(--color-border); align-items: center; }
