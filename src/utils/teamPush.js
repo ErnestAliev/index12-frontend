@@ -50,7 +50,15 @@ export const chatPushPreferenceKey = (identity) =>
   identity?.workspaceId && identity?.actorId
     ? `index12-chat-push-disabled:${identity.workspaceId}:${identity.actorId}`
     : null;
-export async function bindChatPush(token, ask = false, identity) {
+const pendingBindings = new Set();
+export function bindChatPush(token, ask = false, identity) {
+  // Call immediately: permission must still be requested in the user's gesture.
+  const pending = bind(token, ask, identity);
+  pendingBindings.add(pending);
+  return pending.finally(() => pendingBindings.delete(pending));
+}
+export const waitForChatPushBindings = () => Promise.allSettled([...pendingBindings]);
+async function bind(token, ask = false, identity) {
   const preference = chatPushPreferenceKey(identity);
   try {
     if (!ask && preference && localStorage.getItem(preference))
@@ -92,11 +100,12 @@ export async function bindChatPush(token, ask = false, identity) {
   }
   await teamApi.post("/push/subscriptions", {
     clientVersion: currentBuildVersion,
+    ...(identity ? { actorId: identity.actorId, workspaceId: identity.workspaceId } : {}),
     subscription: subscription.toJSON(),
     token,
   });
   try {
-    if (preference) localStorage.removeItem(preference);
+    if (ask && preference) localStorage.removeItem(preference);
   } catch {
     /* Subscription is already active. */
   }
