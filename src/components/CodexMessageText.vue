@@ -6,7 +6,8 @@ import { searchTextParts } from "@/utils/teamSearchText";
 import { renderCodexMarkdown } from "@/utils/codexMarkdown.js";
 import { parseFragmentComment } from '@/utils/fragmentComment';
 import { applyTextCorrections } from '@/utils/textCorrections';
-defineEmits(['open-fragment']);
+import { decorateReplyChoices } from '@/utils/codexReplyChoices';
+const emit = defineEmits(['open-fragment', 'choose-reply']);
 const props = defineProps({
   text: { type: String, default: "" },
   plain: Boolean,
@@ -15,14 +16,17 @@ const props = defineProps({
   highlight: { type: String, default: "" },
   corrections: { type: Array, default: () => [] },
   linkLabels: { type: Map, default: null },
+  replyChoices: Boolean,
+  repliesDisabled: Boolean,
 });
 const html = computed(() => {
   if (props.plain) return "";
   const rendered = renderCodexMarkdown(props.text);
-  if ((!props.highlight && !props.corrections.length && !props.linkLabels?.size) || typeof document === "undefined") return rendered;
+  if ((!props.highlight && !props.corrections.length && !props.linkLabels?.size && !props.replyChoices) || typeof document === "undefined") return rendered;
   const container = document.createElement("div");
   container.innerHTML = rendered;
   applyTextCorrections(container, props.corrections);
+  if (props.replyChoices) decorateReplyChoices(container, props.repliesDisabled);
   for (const link of container.querySelectorAll('a[href]')) {
     const label = props.linkLabels?.get(JSON.stringify([link.href, link.textContent]));
     if (label && !/(?:Файл|Задача)\s*:\s*$/iu.test(link.previousSibling?.textContent || '') && !/^(?:Файл|Задача)\s*:/iu.test(link.textContent)) link.before(document.createTextNode(`${label}: `));
@@ -45,17 +49,27 @@ const html = computed(() => {
   return container.innerHTML;
 });
 const fragment = computed(() => props.plain ? parseFragmentComment(props.text) : null);
+function replyClick(event) {
+  const button = event.target.closest('button.codex-reply-choice');
+  if (!props.replyChoices || !button || !event.currentTarget.contains(button)) return;
+  event.preventDefault(); event.stopPropagation();
+  if (!props.repliesDisabled && !button.disabled) emit('choose-reply', button.dataset.reply);
+}
 </script>
 
 <template>
   <div v-if="plain" class="codex-text codex-plain"><button v-if="fragment" type="button" class="codex-fragment-quote" aria-label="Показать процитированный фрагмент" @click="$emit('open-fragment', fragment)">{{ fragment.excerpt }}</button><LinkedText :text="fragment ? fragment.comment : text" :highlight="highlight" /></div>
-  <div v-else-if="fieldEditor" class="codex-text codex-markdown"><CodexDocumentFields :html="html" :save-field="fieldEditor" :disabled="fieldsDisabled" /></div>
-  <div v-else class="codex-text codex-markdown" v-html="html" />
+  <div v-else-if="fieldEditor" class="codex-text codex-markdown" @click.capture="replyClick"><CodexDocumentFields :html="html" :save-field="fieldEditor" :disabled="fieldsDisabled" /></div>
+  <div v-else class="codex-text codex-markdown" @click.capture="replyClick" v-html="html" />
 </template>
 
 <style scoped>
 .codex-text { min-width: 0; color: var(--codex-pane-text); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .codex-plain { white-space: pre-wrap; }
+.codex-markdown :deep(.codex-reply-choice) { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; max-width: 100%; margin: 3px 2px; padding: 6px 10px; box-sizing: border-box; border: 1px solid var(--codex-pane-border); border-radius: 6px; background: var(--codex-pane-accent-soft); color: var(--codex-pane-text); font: inherit; font-size: 13px; font-weight: 400; line-height: 1.4; text-align: left; vertical-align: middle; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.codex-markdown :deep(.codex-reply-choice:hover:not(:disabled)) { border-color: var(--codex-pane-accent); }
+.codex-markdown :deep(.codex-reply-choice:disabled) { opacity: .5; cursor: default; }
+.codex-markdown :deep(.codex-reply-choice:focus-visible) { outline: 2px solid var(--codex-pane-focus); outline-offset: 2px; }
 .codex-text .codex-fragment-quote { display: block; width: 100%; margin: 0 0 8px; padding: 2px 10px; border: 0; border-left: 2px solid var(--codex-pane-accent); background: transparent; border-radius: 0; color: var(--codex-pane-muted); font: inherit; font-size: 12px; line-height: 1.5; max-height: 160px; overflow: auto; white-space: pre-wrap; text-align: left; cursor: pointer; }
 .codex-text :deep(::highlight(index12-quote)) { background-color: color-mix(in srgb, var(--codex-pane-accent, #35a85d) 32%, transparent); color: inherit; }
 .codex-markdown :deep(p) { margin: 0 0 12px; }

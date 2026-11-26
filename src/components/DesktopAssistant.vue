@@ -30,6 +30,28 @@ const connected = ref(false), busy = ref(false), error = ref(''), threadId = ref
 const provider = ref('desktop');
 const progressText = ref('');
 const documentSaving = ref(false);
+const composer = ref(null);
+let previousReply = null;
+function chooseReply(value) {
+  if (busy.value || voiceActive.value || documentSaving.value || transfer.pending.value || recording.value) return;
+  const text = String(value || '').trim(), field = composer.value?.$el?.querySelector('textarea.codex-input');
+  if (!text || text.length > 1000 || !field) return;
+  const context = `${scopeKey.value}:${selectedId.value}`;
+  const replace = previousReply?.context === context && input.value === previousReply.value;
+  const start = replace ? 0 : field.selectionStart ?? input.value.length;
+  const end = replace ? input.value.length : field.selectionEnd ?? start;
+  const before = input.value.slice(0, start), after = input.value.slice(end);
+  const inserted = (before && !/[\s(«]$/.test(before) ? ' ' : '') + text + (after && !/^[\s,.;:!?)»]/.test(after) ? ' ' : '');
+  const next = before + inserted + after;
+  if (next.length > 16000) { error.value = 'Сообщение должно быть не длиннее 16 000 символов.'; return; }
+  input.value = next;
+  previousReply = !before && !after ? { context, value: next } : null;
+  // Focus in the original tap so the iPhone keyboard opens without another tap.
+  field.value = next; field.focus({ preventScroll: true }); field.setSelectionRange(start + inserted.length, start + inserted.length);
+  void nextTick(() => {
+    if (field.isConnected && input.value === next && context === `${scopeKey.value}:${selectedId.value}`) field.setSelectionRange(start + inserted.length, start + inserted.length);
+  });
+}
 const dictation = useChatDictation({ getText: () => input.value, setText: text => { input.value = text; }, onError: message => { error.value = message; } });
 const { recording, supported: speechSupported, stop: stopRecording } = dictation;
 const voiceAvailable = ref(false);
@@ -378,7 +400,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
       <button v-if="cursor" type="button" class="codex-action-btn" :disabled="busy || !connected" @click="loadOlder">Предыдущие сообщения</button>
       <article v-for="message in visibleMessages" :key="message.id" :data-codex-message-id="message.id" class="codex-message" :class="message.role">
         <div class="codex-bubble">
-          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :version="message.contentVersion || 0" :correct="provider === 'cloud' && message.role === 'assistant' && !message.delivery ? payload => correctFragment(payload, message) : null" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :corrections="message.corrections || []" :field-editor="provider === 'cloud' && message.documentFileId ? payload => saveDocumentField(message,payload) : null" :fields-disabled="busy || voiceActive || documentSaving" :plain="message.role === 'user'" @open-fragment="showFragment(message, $event)" /></MessageFragment>
+          <MessageFragment v-if="message.text" :disabled="!!message.delivery" :busy="busy || voiceActive" :version="message.contentVersion || 0" :correct="provider === 'cloud' && message.role === 'assistant' && !message.delivery ? payload => correctFragment(payload, message) : null" :submit="payload => commentFragment(payload, message)"><CodexMessageText :text="message.text" :corrections="message.corrections || []" :field-editor="provider === 'cloud' && message.documentFileId ? payload => saveDocumentField(message,payload) : null" :fields-disabled="busy || voiceActive || documentSaving" :plain="message.role === 'user'" :reply-choices="message.role === 'assistant'" :replies-disabled="busy || voiceActive || documentSaving || transfer.pending.value || recording" @choose-reply="chooseReply" @open-fragment="showFragment(message, $event)" /></MessageFragment>
           <div v-for="(file, i) in message.attachments || []" :key="file.fileId || i" class="desktop-file-message">
             <img v-if="file.previewUrl || file.url || isImage(file)" class="desktop-image" :src="fileUrl(file)" :alt="file.name || 'Изображение'" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" />
             <CodexFileCard v-if="file.fileId || file.name" :file="file" :disabled="!file.fileId" :draggable="!!file.fileId && !!transfer.scope.value" @dragstart="transfer.file($event, () => media.readFile(file))" :uploading="!!file.uploading" :loading="file.uploading || downloadingFiles.has(file.fileId)" :shareable="deviceSharing" @download="downloadFile(file)" @share="media.download(file)" />
@@ -394,7 +416,7 @@ onBeforeUnmount(() => { delivery.interrupt(); voice.stop(); clearInterval(timer)
     <input ref="files" type="file" hidden multiple @change="addFiles" />
     <CodexVoicePanel v-if="voiceActive" :status="voiceStatus" :phase="voicePhase" :muted="voiceMuted" :caption="assistantCaption || userCaption" :playback-blocked="voicePlaybackBlocked"
       @stop="stopVoice" @mute="voice.toggleMute" @play="voice.play" />
-    <CodexComposer v-else v-model="input" :mobile="mobile" :busy="busy || documentSaving || transfer.pending.value" :recording="recording" :speech-supported="speechSupported"
+    <CodexComposer v-else ref="composer" v-model="input" :mobile="mobile" :busy="busy || documentSaving || transfer.pending.value" :recording="recording" :speech-supported="speechSupported"
       live-voice :voice-available="voiceAvailable" :voice-supported="voice.supported" attachments-enabled :has-attachments="!!attachments.length || !!taskRefs.length"
       @voice="startVoice" @send="send()" @microphone="toggleRecording" @attach="files.click()">
       <template #attachments>
