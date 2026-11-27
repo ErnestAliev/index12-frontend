@@ -24,7 +24,7 @@ const parents = computed(() => parentIds.value.map(id => ({ value: id, label: st
 const options = computed(() => [
   { value: null, label: 'Без подкатегории' },
   ...store.subcategories.filter(item => parentIds.value.includes(entityId(item.parentCategoryId))).map(item => ({ value: item._id, label: parents.value.length > 1 ? `${parents.value.find(parent => parent.value === entityId(item.parentCategoryId))?.label} → ${item.name}` : item.name })),
-  ...(!store.chatFinance ? [{ value: '--CREATE_NEW--', label: '+ Добавить подкатегорию' }] : [])
+  ...(!store.chatFinance ? [{ value: '--CREATE_NEW--', label: '+ Создать подкатегорию', isSpecial: true }] : [])
 ]);
 watch(() => parentIds.value.join('|'), () => {
   const ids = parentIds.value;
@@ -59,8 +59,8 @@ const save = async () => {
       <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="parents.length > 1" v-model="parentId" :options="parents" label="Категория подкатегории" placeholder="Категория" :disabled="saving" />
       <div class="subcategory-create">
         <input ref="input" v-model="name" aria-label="Название подкатегории" placeholder="Название подкатегории" maxlength="120" :disabled="saving" @keydown.enter.prevent="save" @keydown.esc.prevent="creating = false" />
-        <button type="button" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim()" @click="save">✓</button>
-        <button type="button" aria-label="Отменить добавление подкатегории" :disabled="saving" @click="creating = false" class="ui-icon-button"><UiIcon name="close" /></button>
+        <button type="button" class="btn-inline-save" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim() || !parentId" @click="save">✓</button>
+        <button type="button" aria-label="Отменить добавление подкатегории" :disabled="saving" @click="creating = false" class="btn-inline-cancel ui-icon-button"><UiIcon name="close" /></button>
       </div>
     </template>
     <p v-if="error" class="subcategory-error" role="alert">{{ error }}</p>
@@ -69,8 +69,10 @@ const save = async () => {
 
 <style scoped>
 .subcategory-field { min-width: 0; margin-bottom: 8px; }
-.subcategory-create { display: flex; gap: 6px; margin-top: 6px; }
-.subcategory-create input { min-width: 0; flex: 1; height: 44px; padding: 0 12px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #222; box-sizing: border-box; font: inherit; }
-.subcategory-create button { width: 40px; flex-shrink: 0; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #222; cursor: pointer; }
+.subcategory-create { display: flex; align-items: center; gap: 8px; }
+.subcategory-create input { min-width: 0; flex: 1; height: 44px; margin: 0; padding: 0 12px; border: 1px solid var(--color-border, #e0e0e0); border-radius: 8px; background: var(--color-background-soft, #fff); color: var(--color-text, #1a1a1a); box-sizing: border-box; font: inherit; }
+.subcategory-create button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; flex-shrink: 0; border: 1px solid var(--color-border, #1a1a1a); border-radius: 8px; background: transparent; color: var(--color-text, #1a1a1a); font-size: 20px; cursor: pointer; }
+.subcategory-create .btn-inline-cancel { border-color: var(--color-danger, #ff3b30); color: var(--color-danger, #ff3b30); }
+.subcategory-create button:disabled { opacity: .6; cursor: not-allowed; }
 .subcategory-error { color: #d32f2f; font-size: 12px; margin: 4px 0; }
 </style>

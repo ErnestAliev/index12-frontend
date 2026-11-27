@@ -29,8 +29,7 @@
 :root:not([data-theme="light"]) .financial-operation-popup :is(
   .custom-input-box, .form-input, .inline-create-form input, .select-trigger,
   .smart-create-tabs button, .icon-btn, .btn-dual-action, .btn-modal-cancel,
-  .offset-toggle-btn, .btn-choice-option, .subcategory-create input,
-  .subcategory-create button
+  .offset-toggle-btn, .btn-choice-option, .subcategory-create input
 ) {
   background: var(--color-background-soft);
   border-color: var(--color-border);
@@ -252,6 +251,21 @@
   padding: 10px var(--operation-field-padding);
   font-size: var(--operation-field-size);
   line-height: 22px;
+}
+/* Creation stays reachable while the choices scroll, in every operation form. */
+:root .financial-operation-popup.financial-operation-popup .options-list {
+  max-height: min(280px, 40dvh);
+  scroll-padding-bottom: 44px;
+}
+:root .financial-operation-popup.financial-operation-popup .list-item-wrapper.is-special {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  box-sizing: border-box;
+  min-height: 44px;
+  border-top: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-background-mute, #fff);
+  font-weight: 600;
 }
 /* A single visible date; the native picker covers the entire field on iOS too. */
 :root .financial-operation-popup.financial-operation-popup .date-box .input-inner-content { position: static; }
