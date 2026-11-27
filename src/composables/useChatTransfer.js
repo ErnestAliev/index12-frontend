@@ -8,7 +8,7 @@ export function useChatTransfer(source) {
   let disposed = false;
   const scope = computed(() => {
     const identity = chatTransferScope(main.user);
-    if (source === 'team' && (!chat.me?.owner || chat.me?.status !== 'active' ||
+    if (['team', 'team-files'].includes(source) && (!chat.me?.owner || chat.me?.status !== 'active' ||
         String(chat.me.workspaceId) !== String(main.user?.currentWorkspaceId) ||
         chat.me.actorId !== `owner:${main.user?._id || main.user?.id}`)) return '';
     return identity;

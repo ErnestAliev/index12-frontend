@@ -11,7 +11,9 @@ import {
 import { teamApi, teamError, useTeamChatStore } from "@/stores/teamChatStore";
 import { useTeamChatSearchStore } from "@/stores/teamChatSearchStore";
 import { defaultTaskFilters } from "@/utils/teamTasks";
-import { dayLabel, fileDay, fileSize, fileDate } from "@/utils/fileLibrary";
+import { dayLabel, fileDay, fileSize, fileDate, fileMime } from "@/utils/fileLibrary";
+import { useChatTransfer } from '@/composables/useChatTransfer';
+import { useTeamMedia } from '@/composables/useTeamMedia';
 import TeamFileThumbnail from "./TeamFileThumbnail.vue";
 import TeamFileInspector from "./TeamFileInspector.vue";
 import TeamFileControls from "./TeamFileControls.vue";
@@ -20,6 +22,8 @@ const props = defineProps({ embedded: Boolean });
 const emit = defineEmits(["source-open"]);
 const chat = useTeamChatStore(),
   search = useTeamChatSearchStore();
+const transfer = useChatTransfer('team-files');
+const { readFile } = useTeamMedia({ recordViews: false });
 const root = ref(null),
   body = ref(null),
   scroller = ref(null),
@@ -199,7 +203,7 @@ function clearFilters() {
   });
 }
 async function revealRequested() {
-  const id = chat.requestedFileId;
+  const id = props.embedded ? chat.requestedFileId : null;
   if (!id || opening) return;
   opening = true;
   try {
@@ -227,7 +231,7 @@ async function revealRequested() {
   }
 }
 watch(
-  () => chat.requestedFileId,
+  () => props.embedded ? chat.requestedFileId : null,
   async (id) => {
     if (!id) return;
     clearFilters();
@@ -280,7 +284,7 @@ async function viewed(id) {
 }
 function close() {
   if (props.embedded) { chat.selectSection('messages'); return; }
-  chat.fileLibraryOpen = false;
+  chat.fileWindowOpen = false;
 }
 function dock() {
   floating.value = true;
@@ -500,6 +504,12 @@ function holdEnd() {
   clearTimeout(hold);
   press = null;
 }
+function startFileDrag(event, file) {
+  holdEnd();
+  context.value = null;
+  suppressUntil = Date.now() + 800;
+  transfer.file(event, () => readFile({ ...file, mimeType: fileMime(file) }));
+}
 function activate(file, event) {
   if (Date.now() < suppressUntil) {
     event.preventDefault();
@@ -559,6 +569,7 @@ function measureHeader() {
 onMounted(async () => {
   previousFocus = document.activeElement;
   measure();
+  if (!props.embedded && !mobile.value) dock();
   headerObserver = new ResizeObserver(measureHeader);
   for (const element of [
     root.value,
@@ -694,6 +705,8 @@ onBeforeUnmount(() => {
               <article
                 v-for="file in group.files"
                 :key="file.fileId"
+                :draggable="!!transfer.scope.value"
+                @dragstart.stop="startFileDrag($event, file)"
                 :data-file-id="file.fileId"
                 :class="{ 'file-selected': file.fileId === selectedId }"
                 @contextmenu.prevent="

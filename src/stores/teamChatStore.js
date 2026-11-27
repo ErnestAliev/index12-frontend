@@ -129,7 +129,12 @@ export const useTeamChatStore = defineStore("teamChat", () => {
   const requestedTaskMessageId = ref(null);
   const requestedMessageId = ref(null),
     fileLibraryOpen = ref(false),
+    fileWindowOpen = ref(false),
     requestedFileId = ref(null);
+  function openFileWindow() {
+    if (!me.value?.owner || me.value.status !== 'active') return;
+    fileWindowOpen.value = true;
+  }
   function openFiles(fileId = null) {
     if (me.value?.status !== "active") return;
     selectSection('files');
@@ -238,6 +243,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     requestedTaskMessageId.value = null;
     requestedMessageId.value = null;
     fileLibraryOpen.value = false;
+    fileWindowOpen.value = false;
     requestedFileId.value = null;
     taskNotifications.value = false;
     creatingTask.value = false;
@@ -293,6 +299,7 @@ export const useTeamChatStore = defineStore("teamChat", () => {
         requestedTaskId.value = null;
         creatingTask.value = false;
         fileLibraryOpen.value = false;
+        fileWindowOpen.value = false;
       }
     }
     error.value = "";
@@ -689,6 +696,8 @@ export const useTeamChatStore = defineStore("teamChat", () => {
     sessionEpoch,
     requestedMessageId,
     fileLibraryOpen,
+    fileWindowOpen,
+    openFileWindow,
     requestedFileId,
     openFiles,
     selectSection,

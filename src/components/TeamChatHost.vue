@@ -6,6 +6,7 @@ import { useTeamChatStore, teamError } from "@/stores/teamChatStore";
 import ChatWindowFrame from "./ChatWindowFrame.vue";
 import TeamChatHeader from "@/components/TeamChatHeader.vue";
 import TeamChatPane from "./TeamChatPane.vue";
+import TeamFileLibrary from './TeamFileLibrary.vue';
 import UiIcon from "./UiIcon.vue";
 import { discardTeamDestination } from '@/utils/teamDestination';
 const props = defineProps({ priorityWorkspace: String });
@@ -126,7 +127,7 @@ function created() {
   void main.forceRefreshAll?.();
 }
 window.addEventListener("index12:open-team-chat", show);
-const openFiles = () => chat.openFiles();
+const openFiles = () => chat.openFileWindow();
 window.addEventListener('index12:open-team-files', openFiles);
 window.addEventListener("index12:team-operation-created", created);
 onBeforeUnmount(() => {
@@ -164,6 +165,10 @@ async function decide(status) {
       ><TeamChatHeader @close="close" @logout="close" /></template
     ><p v-if="priorityWorkspace && !chat.me" class="team-priority-loading" role="status">Открываем чат…</p>
     <TeamChatPane v-else :mobile="route.name === 'mobile-home'" /></ChatWindowFrame>
+  <TeamFileLibrary
+    v-if="!route.path.startsWith('/team/') && chat.fileWindowOpen && chat.me?.owner && chat.me.status === 'active'"
+    :key="chat.me.workspaceId + ':' + chat.me.actorId"
+  />
   <Teleport to="body"
     ><div v-if="pending" class="team-approval-backdrop">
       <section
