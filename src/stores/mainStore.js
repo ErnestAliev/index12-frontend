@@ -3046,8 +3046,8 @@ export const useMainStore = defineStore('mainStore', () => {
         await axios.delete(`${API_BASE_URL}/subcategories/${id}`);
         onSocketEntityDeleted('subcategory', id);
     }
-    async function addSubcategory(name, parentCategoryId) {
-        const res = await axios.post(`${API_BASE_URL}/subcategories`, { name, parentCategoryId });
+    async function addSubcategory(name) {
+        const res = await axios.post(`${API_BASE_URL}/subcategories`, { name });
         onSocketEntityAdded('subcategory', res.data);
         return res.data;
     }

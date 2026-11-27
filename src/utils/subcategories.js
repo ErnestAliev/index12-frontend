@@ -24,7 +24,7 @@ export function aggregateSubcategories(operations, categories = [], subcategorie
     if (opId) seen.add(opId);
     const subId = entityId(op.subcategoryId);
     const sub = subcategories.find(item => entityId(item) === subId) || (typeof op.subcategoryId === 'object' ? op.subcategoryId : null);
-    const parentId = entityId(sub?.parentCategoryId) || entityId(op.categoryId);
+    const parentId = entityId(op.categoryId);
     const parent = categories.find(item => entityId(item) === parentId);
     const parentName = parent?.name || op.categoryId?.name || 'Без категории';
     const name = sub?.name || 'Без подкатегории';

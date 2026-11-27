@@ -95,7 +95,7 @@ export function useTeamSlash({ field, text, setText, mention, enabled, taskId })
       for (const row of data.contractors || []) add('parties', row, 'Контрагент');
       for (const row of data.individuals || []) add('parties', row, 'Физлицо');
       for (const row of data.categories || []) add('categories', row, ({ income: 'Доход', expense: 'Расход' })[row.type] || 'Категория');
-      for (const row of data.subcategories || []) { const parent = (data.categories || []).find(item => id(item) === id(row.parentCategoryId))?.name || ''; add('subcategories', row, parent, parent); }
+      for (const row of data.subcategories || []) add('subcategories', row);
     }
     for (const row of data.projects || chat.taskOptions.projects || []) add('projects', row, 'Проект');
     for (const row of chat.state.people || []) if (row.status !== 'invited' && row._id !== chat.me?.actorId) add('people', row, chat.me?.roles?.[row.role] || row.position || 'Участник');

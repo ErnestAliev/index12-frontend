@@ -1,13 +1,12 @@
 <script setup>
 import UiIcon from '@/components/UiIcon.vue';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 import BaseSelect from './BaseSelect.vue';
 import { useOperationStore } from '@/composables/useOperationStore';
 import { entityId } from '@/utils/subcategories.js';
 
 const props = defineProps({
   modelValue: { type: [String, Object], default: null },
-  categoryIds: { type: Array, default: () => [] },
   disabled: { type: Boolean, default: false },
   hideSelectedLabel: { type: Boolean, default: false }
 });
@@ -18,21 +17,18 @@ const name = ref('');
 const error = ref('');
 const saving = ref(false);
 const input = ref(null);
-const parentId = ref(null);
-const parentIds = computed(() => props.categoryIds.map(entityId).filter(Boolean));
-const parents = computed(() => parentIds.value.map(id => ({ value: id, label: store.categories.find(item => entityId(item) === id)?.name || 'Категория' })));
-const options = computed(() => [
-  { value: null, label: 'Без подкатегории' },
-  ...store.subcategories.filter(item => parentIds.value.includes(entityId(item.parentCategoryId))).map(item => ({ value: item._id, label: parents.value.length > 1 ? `${parents.value.find(parent => parent.value === entityId(item.parentCategoryId))?.label} → ${item.name}` : item.name })),
-  ...(!store.chatFinance ? [{ value: '--CREATE_NEW--', label: '+ Создать подкатегорию', isSpecial: true }] : [])
-]);
-watch(() => parentIds.value.join('|'), () => {
-  const ids = parentIds.value;
-  if (!ids.includes(parentId.value)) parentId.value = ids[0] || null;
-  const selected = store.subcategories.find(item => entityId(item) === entityId(props.modelValue));
-  if (selected && !ids.includes(entityId(selected.parentCategoryId))) emit('update:modelValue', null);
-  creating.value = false;
-}, { immediate: true });
+const options = computed(() => {
+  const unique = new Map();
+  for (const item of store.subcategories) {
+    const key = item.name.trim().toLocaleLowerCase('ru-RU');
+    if (!unique.has(key) || entityId(item) === entityId(props.modelValue)) unique.set(key, item);
+  }
+  return [
+    { value: null, label: 'Без подкатегории' },
+    ...[...unique.values()].map(item => ({ value: entityId(item), label: item.name })),
+    ...(!store.chatFinance ? [{ value: '--CREATE_NEW--', label: '+ Создать подкатегорию', isSpecial: true }] : [])
+  ];
+});
 const select = async value => {
   if (value === '--CREATE_NEW--') {
     creating.value = true;
@@ -41,10 +37,10 @@ const select = async value => {
   } else emit('update:modelValue', value || null);
 };
 const save = async () => {
-  if (saving.value || !name.value.trim() || !parentId.value) return;
+  if (saving.value || !name.value.trim()) return;
   saving.value = true; error.value = '';
   try {
-    const item = await store.addSubcategory(name.value.trim(), parentId.value);
+    const item = await store.addSubcategory(name.value.trim());
     emit('update:modelValue', item._id);
     creating.value = false; name.value = '';
   } catch (e) { error.value = e.response?.data?.message || e.message || 'Не удалось сохранить подкатегорию'; }
@@ -54,12 +50,11 @@ const save = async () => {
 
 <template>
   <div class="subcategory-field input-spacing" data-testid="subcategory-field">
-    <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="!creating" :model-value="entityId(modelValue)" :options="options" label="Подкатегория" :placeholder="parentIds.length ? 'Подкатегория' : 'Подкатегория — сначала выберите категорию'" :disabled="disabled || !parentIds.length" @update:model-value="select" />
+    <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="!creating" :model-value="entityId(modelValue)" :options="options" label="Подкатегория" placeholder="Подкатегория" :disabled="disabled" @update:model-value="select" />
     <template v-else>
-      <BaseSelect :hide-selected-label="hideSelectedLabel" v-if="parents.length > 1" v-model="parentId" :options="parents" label="Категория подкатегории" placeholder="Категория" :disabled="saving" />
       <div class="subcategory-create">
         <input ref="input" v-model="name" aria-label="Название подкатегории" placeholder="Название подкатегории" maxlength="120" :disabled="saving" @keydown.enter.prevent="save" @keydown.esc.prevent="creating = false" />
-        <button type="button" class="btn-inline-save" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim() || !parentId" @click="save">✓</button>
+        <button type="button" class="btn-inline-save" aria-label="Сохранить подкатегорию" :disabled="saving || !name.trim()" @click="save">✓</button>
         <button type="button" aria-label="Отменить добавление подкатегории" :disabled="saving" @click="creating = false" class="btn-inline-cancel ui-icon-button"><UiIcon name="close" /></button>
       </div>
     </template>

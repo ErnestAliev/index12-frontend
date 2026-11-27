@@ -56,7 +56,6 @@ const categoryOptions = computed(() => [
   ...mainStore.categories.map(category => ({ value: category._id, label: category.name }))
 ]);
 const changeCategory = value => {
-  if (value !== categoryId.value) subcategoryId.value = null;
   categoryId.value = value;
 };
 const selectedProjectId = ref(null);
@@ -676,7 +675,7 @@ const closePopup = () => { emit('close'); };
       <div class="input-spacing" data-testid="transfer-category-field">
         <BaseSelect hide-selected-label :model-value="categoryId" :options="categoryOptions" placeholder="Категория" label="Категория" :disabled="isReadOnly" @update:model-value="changeCategory" />
       </div>
-      <SubcategorySelect hide-selected-label v-model="subcategoryId" :category-ids="[categoryId]" :disabled="isReadOnly" />
+      <SubcategorySelect hide-selected-label v-model="subcategoryId" :disabled="isReadOnly" />
 
       <div v-if="isWithdrawal" class="input-spacing">
         <BaseSelect hide-selected-label searchable allow-custom v-model="withdrawalRecipient" :options="recipientOptions.map(name => ({ value: name, label: name }))" label="Получатель средств" placeholder="Получатель средств" :disabled="isReadOnly" />

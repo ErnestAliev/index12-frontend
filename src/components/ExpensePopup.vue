@@ -1141,7 +1141,7 @@ watch(defaultProjectId, (defId) => {
           <button type="button" @click="cancelCreateCategory" class="btn-inline-cancel ui-icon-button" aria-label="Отменить"><UiIcon name="close" /></button>
           <ul v-if="showCategorySuggestions && categorySuggestionsList.length" class="bank-suggestions-list"><li v-for="(c, i) in categorySuggestionsList" :key="i" @mousedown.prevent="selectCategorySuggestion(c)">{{ c.name }}</li></ul>
       </div>
-      <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :category-ids="selectedCategoryIds" :disabled="isReadOnly" />
+      <SubcategorySelect hide-selected-label v-model="selectedSubcategoryId" :disabled="isReadOnly" />
       <textarea v-model="comment" class="operation-comment" placeholder="Комментарий" aria-label="Комментарий к расходу" maxlength="10000" rows="1" :disabled="isReadOnly"></textarea>
       <OperationDetails v-model="description" :operation="props.operationToEdit" :disabled="isReadOnly" @navigate="emit('close')" />
 
