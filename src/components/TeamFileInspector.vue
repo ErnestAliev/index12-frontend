@@ -25,7 +25,8 @@ const emit = defineEmits(["close", "source", "tag", "description", "viewed"]);
 const { preview, download } = useTeamMedia({ recordViews: false });
 const expanded = ref(false),
   description = ref(""),
-  actionError = ref("");
+  actionError = ref(""),
+  deviceActionBusy = ref(false);
 const sharable = computed(
   () => preview.value?.file && canShareDeviceFile(preview.value.file),
 );
@@ -56,19 +57,23 @@ watch(
     description.value = value;
   },
 );
-function save() {
+async function save() {
+  if (deviceActionBusy.value || !preview.value?.file) return;
+  deviceActionBusy.value = true; actionError.value = '';
   try {
-    if (preview.value?.file) saveDeviceFile(preview.value.file);
+    await saveDeviceFile(preview.value.file);
   } catch (error) {
-    actionError.value = teamError(error);
-  }
+    if (error.name !== 'AbortError') actionError.value = teamError(error);
+  } finally { deviceActionBusy.value = false; }
 }
 async function share() {
+  if (deviceActionBusy.value || !preview.value?.file) return;
+  deviceActionBusy.value = true; actionError.value = '';
   try {
     await shareDeviceFile(preview.value.file);
   } catch (error) {
     if (error.name !== "AbortError") actionError.value = teamError(error);
-  }
+  } finally { deviceActionBusy.value = false; }
 }
 </script>
 <template>
@@ -131,7 +136,7 @@ async function share() {
         </div>
       </div>
       <div class="inspector-actions">
-        <button type="button" :disabled="!preview?.file" @click="save">
+        <button type="button" :disabled="!preview?.file || deviceActionBusy" @click="save">
           <UiIcon name="download" />Скачать</button
         ><button
           type="button"
@@ -139,7 +144,7 @@ async function share() {
           @click="expanded = true"
         >
           <UiIcon name="maximize" />Открыть</button
-        ><button v-if="sharable" type="button" @click="share">
+        ><button v-if="sharable" type="button" :disabled="deviceActionBusy" @click="share">
           <UiIcon name="share" />Поделиться
         </button>
       </div>

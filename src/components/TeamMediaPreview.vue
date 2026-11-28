@@ -24,11 +24,12 @@ const shareSupported = computed(() => canShareDeviceFile(exportFile.value));
 let active = true;
 onBeforeUnmount(() => { active = false; });
 watch(() => props.media.file, () => { actionError.value = ''; editedFile.value = null; exported.value = false; });
-function save() {
+async function save() {
   if (!exportFile.value || sharing.value || pendingPdf.value || props.attachmentBusy) return;
-  actionError.value = '';
-  try { saveDeviceFile(exportFile.value, actions.value); if (editedFile.value) exported.value = true; }
-  catch { actionError.value = 'Не удалось начать скачивание. Попробуйте ещё раз.'; }
+  actionError.value = ''; sharing.value = true;
+  try { await saveDeviceFile(exportFile.value, actions.value); if (editedFile.value) exported.value = true; }
+  catch (e) { if (active && e.name !== 'AbortError') actionError.value = e.message || 'Не удалось сохранить файл. Попробуйте ещё раз.'; }
+  finally { if (active) sharing.value = false; }
 }
 async function share() {
   if (!exportFile.value || sharing.value || pendingPdf.value || props.attachmentBusy) return;
@@ -69,7 +70,7 @@ function prepared(file) { editedFile.value = file; exported.value = false; }
       <button v-if="shareAvailable" type="button" :disabled="!shareSupported || sharing || pendingPdf || attachmentBusy" :title="pendingPdf ? 'Нажмите «Готово», чтобы сохранить изменения PDF' : exportFile && !shareSupported ? 'Браузер не поддерживает передачу этого файла' : 'Поделиться'" @click="share"><UiIcon name="share" /><span class="media-action-label">{{ sharing ? 'Отправка…' : 'Поделиться' }}</span></button>
       <template v-if="allowPdfAttachment && media.mimeType === 'application/pdf'">
         <button type="button" title="Добавить текстовый блок" aria-label="Добавить текстовый блок в PDF" :disabled="sharing || attachmentBusy || !pdfState.ready || pdfState.saving" @click="pdfView.addText()"><UiIcon name="text" /><span class="media-action-label">Текст</span></button>
-        <button type="button" title="Добавить изображение подписи или печати" :disabled="sharing || attachmentBusy || !pdfState.ready || pdfState.saving" @click="pdfView.chooseImage()"><UiIcon name="edit" /><span class="media-action-label">Подпись / печать</span></button>
+        <button type="button" title="Добавить изображение" aria-label="Добавить изображение в PDF" :disabled="sharing || attachmentBusy || !pdfState.ready || pdfState.saving" @click="pdfView.chooseImage()"><UiIcon name="plus" /><span class="media-action-label">Изображение</span></button>
         <button v-if="editedFile && !pdfState.modified" type="button" title="Прикрепить готовый PDF в чат" :disabled="sharing || attachmentBusy || pdfState.saving" @click="emit('attach-pdf', editedFile)"><UiIcon name="attach" /><span class="media-action-label">В чат</span></button>
         <button v-else type="button" :class="{ 'pdf-ready-action':pdfState.modified }" title="Сохранить изменения PDF" :disabled="!pdfState.modified || sharing || attachmentBusy || pdfState.saving" @click="pdfView.save()"><UiIcon :name="pdfState.saving ? 'clock' : 'check'" /><span class="media-action-label">{{ pdfState.saving ? 'Сохранение…' : 'Сохранить PDF' }}</span></button>
       </template>

@@ -3,13 +3,16 @@
 export function pdfMarkGeometry(mark, asset, viewport) {
   const pixelsPerMm = viewport.scale * 72 / 25.4;
   const ratio = asset.width / asset.height;
-  const maximum = Math.min(viewport.width, viewport.height * ratio) * .95 / pixelsPerMm;
+  const turned = (mark.turn || 0) % 2;
+  const widthFactor = turned ? 1 / ratio : 1, heightFactor = turned ? 1 : 1 / ratio;
+  const maximum = Math.min(viewport.width / widthFactor, viewport.height / heightFactor) * .95 / pixelsPerMm;
   const widthMm = Math.min(Math.max(5, mark.widthMm), maximum);
-  const width = widthMm * pixelsPerMm, height = width / ratio;
+  const imageWidth = widthMm * pixelsPerMm, imageHeight = imageWidth / ratio;
+  const width = imageWidth * widthFactor, height = imageWidth * heightFactor;
   const left = Math.max(0, Math.min(viewport.width - width, mark.x * viewport.width - width / 2));
   const top = Math.max(0, Math.min(viewport.height - height, mark.y * viewport.height - height / 2));
   const a = viewport.convertToPdfPoint(left, top), b = viewport.convertToPdfPoint(left + width, top + height);
-  return { widthMm, left: left / viewport.width, top: top / viewport.height, width: width / viewport.width, height: height / viewport.height,
+  return { widthMm, imageWidth, imageHeight, left: left / viewport.width, top: top / viewport.height, width: width / viewport.width, height: height / viewport.height,
     rect: [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])], rotation: viewport.rotation };
 }
 
@@ -47,4 +50,23 @@ export async function preparePdfMark(file) {
     const id = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
     return { id, file: new File([blob], 'pdf-mark.png', { type: 'image/png' }), width: output.width, height: output.height };
   } finally { image.src = ''; URL.revokeObjectURL(source); }
+}
+
+// Bake layer transforms into the exported image; the PDF annotation itself keeps
+// the page's rotation. Preview and exported file use the same transform order.
+export async function pdfMarkBitmap(asset, mark) {
+  const bitmap = await createImageBitmap(asset.file);
+  const turn = mark.turn || 0;
+  if (!turn && !mark.flipX && !mark.flipY) return bitmap;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = turn % 2 ? bitmap.height : bitmap.width;
+    canvas.height = turn % 2 ? bitmap.width : bitmap.height;
+    const context = canvas.getContext('2d');
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.scale(mark.flipX ? -1 : 1, mark.flipY ? -1 : 1);
+    context.rotate(turn * Math.PI / 2);
+    context.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    return await createImageBitmap(canvas);
+  } finally { bitmap.close(); }
 }
