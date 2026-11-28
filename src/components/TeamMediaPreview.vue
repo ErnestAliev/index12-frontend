@@ -15,10 +15,10 @@ const props = defineProps({
 });
 const emit = defineEmits(['close', 'retry', 'attach-pdf']);
 const sharing = ref(false), actionError = ref(''), actions = ref(null), editedFile = ref(null);
-const pdfView = ref(null), pdfState = ref({ ready: false, modified: false, saving: false, canUndo: false });
+const pdfView = ref(null), pdfState = ref({ ready: false, modified: false, saving: false, canUndo: false, placing: false, imageBusy: false });
 const exported = ref(false);
 const exportFile = computed(() => editedFile.value || props.media.file);
-const pendingPdf = computed(() => pdfState.value.modified || pdfState.value.saving);
+const pendingPdf = computed(() => pdfState.value.modified || pdfState.value.saving || pdfState.value.placing || pdfState.value.imageBusy);
 const shareAvailable = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 const shareSupported = computed(() => canShareDeviceFile(exportFile.value));
 let active = true;
@@ -38,14 +38,15 @@ async function share() {
   finally { if (active) sharing.value = false; }
 }
 function close() {
-  if (pendingPdf.value && !confirm('Закрыть PDF без сохранения изменений?')) return;
-  if (!pendingPdf.value && editedFile.value && !exported.value && !confirm('Подписанный PDF ещё не отправлен. Закрыть просмотр?')) return;
+  if (pdfState.value.imageBusy || pdfState.value.saving) return;
+  if (pdfState.value.modified && !confirm('Закрыть PDF без сохранения изменений?')) return;
+  if (!pdfState.value.modified && editedFile.value && !exported.value && !confirm('Подписанный PDF ещё не отправлен. Закрыть просмотр?')) return;
   emit('close');
 }
 function prepared(file) { editedFile.value = file; exported.value = false; }
 </script>
 <template>
-  <TeamChatDialog class="media-preview-dialog" :class="{'document-preview-dialog':!!documentFormat(media), 'pdf-preview-dialog':media.mimeType === 'application/pdf', 'editable-pdf':allowPdfAttachment && media.mimeType === 'application/pdf'}" :expanded="media.mimeType === 'application/pdf'" :title="media.name" :busy="sharing || pdfState.saving || attachmentBusy" @close="close">
+  <TeamChatDialog class="media-preview-dialog" :class="{'document-preview-dialog':!!documentFormat(media), 'pdf-preview-dialog':media.mimeType === 'application/pdf', 'editable-pdf':allowPdfAttachment && media.mimeType === 'application/pdf'}" :expanded="media.mimeType === 'application/pdf'" :title="media.name" :busy="sharing || pdfState.saving || pdfState.imageBusy || attachmentBusy" @close="close">
     <template #header-actions>
       <template v-if="media.mimeType === 'application/pdf' && pdfState.ready">
         <button v-if="pdfState.canUndo" class="media-header-action" type="button" aria-label="Отменить действие в PDF" title="Отменить действие" :disabled="sharing || pdfState.saving || attachmentBusy" @click="pdfView.undo()"><UiIcon name="undo" /></button>
@@ -63,14 +64,14 @@ function prepared(file) { editedFile.value = file; exported.value = false; }
     <TeamDocumentPreview v-else-if="media.url && media.file && documentFormat(media)" :file="media.file" :name="media.name" class="expanded-document-preview"/>
     <div v-else-if="media.url" class="media-state"><UiIcon name="attach" /><span>{{ media.name }}</span><small v-if="media.size">{{ Math.max(1, Math.ceil(media.size / 1024)) }} КБ</small></div>
     <p v-if="actionError || attachmentError" class="media-action-error" role="alert">{{ actionError || attachmentError }}</p>
-    <footer ref="actions" class="media-actions">
+    <footer ref="actions" class="media-actions" :inert="pdfState.placing || pdfState.imageBusy" :class="{ 'pdf-placing-actions': pdfState.placing || pdfState.imageBusy }">
       <button type="button" :disabled="!exportFile || sharing || pendingPdf || attachmentBusy" :title="pendingPdf ? 'Нажмите «Готово», чтобы сохранить изменения PDF' : 'Скачать'" @click="save"><UiIcon name="download" /><span class="media-action-label">Скачать</span></button>
       <button v-if="shareAvailable" type="button" :disabled="!shareSupported || sharing || pendingPdf || attachmentBusy" :title="pendingPdf ? 'Нажмите «Готово», чтобы сохранить изменения PDF' : exportFile && !shareSupported ? 'Браузер не поддерживает передачу этого файла' : 'Поделиться'" @click="share"><UiIcon name="share" /><span class="media-action-label">{{ sharing ? 'Отправка…' : 'Поделиться' }}</span></button>
       <template v-if="allowPdfAttachment && media.mimeType === 'application/pdf'">
         <button type="button" title="Добавить текстовый блок" aria-label="Добавить текстовый блок в PDF" :disabled="sharing || attachmentBusy || !pdfState.ready || pdfState.saving" @click="pdfView.addText()"><UiIcon name="text" /><span class="media-action-label">Текст</span></button>
         <button type="button" title="Добавить изображение подписи или печати" :disabled="sharing || attachmentBusy || !pdfState.ready || pdfState.saving" @click="pdfView.chooseImage()"><UiIcon name="edit" /><span class="media-action-label">Подпись / печать</span></button>
         <button v-if="editedFile && !pdfState.modified" type="button" title="Прикрепить готовый PDF в чат" :disabled="sharing || attachmentBusy || pdfState.saving" @click="emit('attach-pdf', editedFile)"><UiIcon name="attach" /><span class="media-action-label">В чат</span></button>
-        <button v-else type="button" :class="{ 'pdf-ready-action':pdfState.modified }" title="Сохранить изменения PDF" :disabled="!pdfState.modified || sharing || attachmentBusy || pdfState.saving" @click="pdfView.save()"><UiIcon :name="pdfState.saving ? 'clock' : 'check'" /><span class="media-action-label">{{ pdfState.saving ? 'Сохранение…' : 'Готово' }}</span></button>
+        <button v-else type="button" :class="{ 'pdf-ready-action':pdfState.modified }" title="Сохранить изменения PDF" :disabled="!pdfState.modified || sharing || attachmentBusy || pdfState.saving" @click="pdfView.save()"><UiIcon :name="pdfState.saving ? 'clock' : 'check'" /><span class="media-action-label">{{ pdfState.saving ? 'Сохранение…' : 'Сохранить PDF' }}</span></button>
       </template>
     </footer>
   </TeamChatDialog>
@@ -89,6 +90,7 @@ function prepared(file) { editedFile.value = file; exported.value = false; }
 .media-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; flex: none; gap: 8px; padding: 8px max(12px,var(--safe-area-right,0px)) 12px max(12px,var(--safe-area-left,0px)); border-top: 1px solid var(--codex-pane-border,var(--color-border)); }
 .media-preview-dialog .media-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--codex-pane-text,var(--color-text)); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .editable-pdf .media-actions { flex-wrap: nowrap; }
+.media-actions.pdf-placing-actions { opacity: .45; }
 .media-preview-dialog .pdf-ready-action { color: var(--codex-pane-accent, var(--color-primary)); }
 @media(max-width:600px){.pdf-preview-dialog .media-action-label{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.pdf-preview-dialog .media-actions button{min-width:44px;padding-inline:6px}}
 .media-actions button:disabled { opacity: .45; cursor: default; }
